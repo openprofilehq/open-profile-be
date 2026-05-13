@@ -50,6 +50,9 @@ jobs:
       CLIENT_SECRET: your_client_secret
       GOOGLE_CALLBACK_URL: http://localhost:3000/auth/google/callback
       CONTACT_EMAIL: test@gmail.com
+      BREVO_SENDER_NAME: Open Profile
+      BREVO_SMTP_USER: your_brevo_smtp_user
+      BREVO_SMTP_PASSWORD: your_brevo_smtp_password
 
     steps:
       - name: Checkout code
