@@ -26,6 +26,7 @@ import { UsernamesModule } from './modules/usernames/usernames.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { SearchModule } from './modules/search/search.module';
 import { ContactModule } from './modules/contact/contact.module';
+import { PortfolioModule } from './modules/portfolio/portfolio.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { ContactModule } from './modules/contact/contact.module';
     SearchModule,
     UsernamesModule,
     ContactModule,
+    PortfolioModule,
   ],
   providers: [
     {
