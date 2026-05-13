@@ -37,12 +37,23 @@ export const env = createEnv({
       .string()
       .min(32, 'JWT_REFRESH_SECRET must be at least 32 chars'),
     JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
-
+    JWT_RESET_SECRET: z
+      .string()
+      .min(32, 'JWT_RESET_SECRET must be at least 32 chars'),
     CORS_ORIGIN: z.string().default('*'),
     SWAGGER_ENABLED: z
       .union([z.boolean(), z.enum(['true', 'false'])])
       .default(true)
       .transform((v) => v === true || v === 'true'),
+    RESEND_API_KEY: z.string().min(1),
+    MAIL_FROM: z.string().min(1),
+    CONTACT_EMAIL: z.string().min(1),
+    FRONTEND_URL: z.string().url(),
+    APP_URL: z.string().url(),
+    CLIENT_ID: z.string().min(1),
+    CLIENT_SECRET: z.string().min(1),
+    GOOGLE_CALLBACK_URL: z.string().url(),
+    REDIS_URL: z.string().min(1),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

@@ -16,6 +16,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { PaginationDto } from './dto/pagination.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -52,5 +53,13 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete a user' })
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.remove(id);
+  }
+
+  @ApiBearerAuth()
+  @Post('onboarding-complete')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Mark a user onboarding complete' })
+  markOnboardingComplete(@CurrentUser('sub') userId: string) {
+    return this.usersService.markOnboardingComplete(userId);
   }
 }
