@@ -17,7 +17,7 @@ on:
       # - feat/cd-pipeline
       # - dev
       - staging
-      - main
+      - production
   
   # pull_request:
   #   branches:
@@ -160,9 +160,9 @@ jobs:
             pm2 save
 
   
-  # ─── Deploy — Main (Production) ───────────────
-  deploy-main:
-    name: Deploy — Main
+  # ─── Deploy — Production ───────────────
+  deploy-production:
+    name: Deploy — Production
     needs: ci
     runs-on: ubuntu-latest
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
