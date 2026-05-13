@@ -1,0 +1,63 @@
+/**
+ * Reserved and blocked usernames.
+ * All entries must be lowercase.
+ */
+export const RESERVED_USERNAMES = new Set<string>([
+  // System / routing conflicts
+  'admin',
+  'administrator',
+  'root',
+  'system',
+  'api',
+  'v1',
+  'v2',
+  'health',
+  'status',
+  'auth',
+  'login',
+  'logout',
+  'register',
+  'signup',
+  'signin',
+  'me',
+  'self',
+  'profile',
+  'settings',
+  'account',
+  'dashboard',
+  'home',
+  'index',
+  'search',
+  'explore',
+  'discover',
+  'feed',
+  'notifications',
+
+  // Brand / trust abuse
+  'support',
+  'help',
+  'security',
+  'privacy',
+  'legal',
+  'terms',
+  'abuse',
+  'contact',
+  'info',
+  'noreply',
+  'no-reply',
+  'bot',
+  'official',
+  'team',
+
+  // Generic / spam magnets
+  'user',
+  'username',
+  'test',
+  'demo',
+  'anonymous',
+  'guest',
+  'null',
+  'undefined',
+  'true',
+  'false',
+]);

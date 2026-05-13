@@ -17,9 +17,15 @@ import { jwtConfig } from './config/jwt.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { HealthModule } from './modules/health/health.module';
+import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { UsersModule } from './modules/users/users.module';
 import { QueueModule } from './modules/queue/queue.module';
+import { MailModule } from './modules/mail/mail.module';
+import { ProfileModule } from './modules/profile/profile.module';
+import { UsernamesModule } from './modules/usernames/usernames.module';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { SearchModule } from './modules/search/search.module';
+import { ContactModule } from './modules/contact/contact.module';
 
 @Module({
   imports: [
@@ -38,9 +44,15 @@ import { ThrottlerModule } from '@nestjs/throttler';
     }),
     RedisModule,
     QueueModule,
+    WaitlistModule,
     HealthModule,
     UsersModule,
     AuthModule,
+    MailModule,
+    ProfileModule,
+    SearchModule,
+    UsernamesModule,
+    ContactModule,
   ],
   providers: [
     {
