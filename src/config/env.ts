@@ -9,6 +9,7 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(['development', 'test', 'production'])
       .default('development'),
+
     PORT: z.coerce.number().int().positive().default(3000),
 
     DATABASE_HOST: z.string().min(1),
@@ -16,14 +17,17 @@ export const env = createEnv({
     DATABASE_USER: z.string().min(1),
     DATABASE_PASSWORD: z.string(),
     DATABASE_NAME: z.string().min(1),
+
     DATABASE_SYNC: z
       .union([z.boolean(), z.enum(['true', 'false'])])
       .default(false)
       .transform((v) => v === true || v === 'true'),
+
     DATABASE_LOGGING: z
       .union([z.boolean(), z.enum(['true', 'false'])])
       .default(false)
       .transform((v) => v === true || v === 'true'),
+
     DATABASE_SSL: z
       .union([z.boolean(), z.enum(['true', 'false'])])
       .default(false)
@@ -32,29 +36,45 @@ export const env = createEnv({
     JWT_ACCESS_SECRET: z
       .string()
       .min(32, 'JWT_ACCESS_SECRET must be at least 32 chars'),
+
     JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
+
     JWT_REFRESH_SECRET: z
       .string()
       .min(32, 'JWT_REFRESH_SECRET must be at least 32 chars'),
+
     JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+
     JWT_RESET_SECRET: z
       .string()
       .min(32, 'JWT_RESET_SECRET must be at least 32 chars'),
+
     CORS_ORIGIN: z.string().default('*'),
+
     SWAGGER_ENABLED: z
       .union([z.boolean(), z.enum(['true', 'false'])])
       .default(true)
       .transform((v) => v === true || v === 'true'),
+
     RESEND_API_KEY: z.string().min(1),
     MAIL_FROM: z.string().min(1),
     CONTACT_EMAIL: z.string().min(1),
+
+    // ✅ BREVO (added correctly)
+    BREVO_API_KEY: z.string().min(1),
+    BREVO_SENDER_NAME: z.string().min(1),
+    BREVO_SENDER_EMAIL: z.string().email(),
+
     FRONTEND_URL: z.string().url(),
     APP_URL: z.string().url(),
+
     CLIENT_ID: z.string().min(1),
     CLIENT_SECRET: z.string().min(1),
     GOOGLE_CALLBACK_URL: z.string().url(),
+
     REDIS_URL: z.string().min(1),
   },
+
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
 });

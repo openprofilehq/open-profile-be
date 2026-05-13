@@ -25,17 +25,15 @@ export class MailProcessor extends WorkerHost {
   }
 
   async process(job: Job): Promise<void> {
+    this.logger.log(`[PROCESSOR] Processing job id="${job.id}" name="${job.name}"`);
+
     switch (job.name) {
       case QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_RESET:
-        await this.handleSendPasswordResetEmail(
-          job.data as ResetPasswordEmailData,
-        );
+        await this.handleSendPasswordResetEmail(job.data as ResetPasswordEmailData);
         break;
 
       case QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED:
-        await this.handleSendPasswordChangedEmail(
-          job.data as PasswordChangedEmailData,
-        );
+        await this.handleSendPasswordChangedEmail(job.data as PasswordChangedEmailData);
         break;
 
       case QUEUE_JOB_NAMES.EMAIL.ACCOUNT_LOCKED:
@@ -45,76 +43,80 @@ export class MailProcessor extends WorkerHost {
       case QUEUE_JOB_NAMES.EMAIL.NEW_IP_LOGIN:
         await this.handleNewIpLoginEmail(job.data as NewIpLoginEmailData);
         break;
+
       case QUEUE_JOB_NAMES.EMAIL.SEND_OTP:
-        await this.handleResendOTP(
-          job.data as {
-            to: string;
-            otp: string;
-            fullName: string;
-          },
-        );
+        await this.handleResendOTP(job.data as { to: string; otp: string; fullName: string });
         break;
 
       default:
-        this.logger.warn(`Unknown job name: ${job.name}`);
+        this.logger.warn(`[PROCESSOR] Unknown job name="${job.name}" — skipping`);
         break;
     }
   }
 
+  // ─── Handlers ─────────────────────────────────────────────────────────────
+
   private async handleSendPasswordResetEmail(data: ResetPasswordEmailData) {
-    const { to, resetLink } = data;
-    const subject = 'Reset your Open Profile password';
-    const html = resetPasswordEmailTemplate({ resetUrl: resetLink });
-    await this.mailService.sendEmail(to, subject, html);
+    this.logger.log(`[PROCESSOR] handleSendPasswordResetEmail → to="${data.to}"`);
+
+    await this.mailService.sendEmail(
+      data.to,
+      'Reset your Open Profile password',
+      resetPasswordEmailTemplate({ resetUrl: data.resetLink }),
+    );
   }
 
   private async handleSendPasswordChangedEmail(data: PasswordChangedEmailData) {
-    const subject = 'Your Open Profile password has been changed';
+    this.logger.log(`[PROCESSOR] handleSendPasswordChangedEmail → to="${data.to}"`);
 
-    const html = renderPasswordChangedEmail();
-
-    await this.mailService.sendEmail(data.to, subject, html);
+    await this.mailService.sendEmail(
+      data.to,
+      'Your Open Profile password has been changed',
+      renderPasswordChangedEmail(),
+    );
   }
 
   private async handleAccountLockedEmail(data: AccountLockedEmailData) {
-    const { to, lockedUntil } = data;
+    this.logger.log(`[PROCESSOR] handleAccountLockedEmail → to="${data.to}"`);
 
-    const subject = 'Unusual sign-in activity on your Open Profile account';
-
-    const html = renderAccountLockedEmail(lockedUntil);
-
-    await this.mailService.sendEmail(to, subject, html);
+    await this.mailService.sendEmail(
+      data.to,
+      'Unusual sign-in activity on your Open Profile account',
+      renderAccountLockedEmail(data.lockedUntil),
+    );
   }
 
   private async handleNewIpLoginEmail(data: NewIpLoginEmailData) {
-    const { to, ip, timestamp } = data;
+    this.logger.log(`[PROCESSOR] handleNewIpLoginEmail → to="${data.to}"`);
 
-    const subject = 'New sign-in to your Open Profile account';
-
-    const html = renderNewIpLoginEmail(ip, timestamp);
-
-    await this.mailService.sendEmail(to, subject, html);
+    await this.mailService.sendEmail(
+      data.to,
+      'New sign-in to your Open Profile account',
+      renderNewIpLoginEmail(data.ip, data.timestamp),
+    );
   }
 
-  private async handleResendOTP(data: {
-    to: string;
-    otp: string;
-    fullName: string;
-  }) {
-    const html = renderVerificationOtpEmail(data.fullName, data.otp);
+  private async handleResendOTP(data: { to: string; otp: string; fullName: string }) {
+    this.logger.log(`[PROCESSOR] handleResendOTP → to="${data.to}"`);
 
-    await this.mailService.sendEmail(data.to, OTP_EMAIL_SUBJECT, html);
+    await this.mailService.sendEmail(
+      data.to,
+      OTP_EMAIL_SUBJECT,
+      renderVerificationOtpEmail(data.fullName, data.otp),
+    );
   }
+
+  // ─── Worker events ────────────────────────────────────────────────────────
 
   @OnWorkerEvent('completed')
   handleCompleted(job: Job) {
-    this.logger.log(`Job ${job.id} completed successfully.`);
+    this.logger.log(`[PROCESSOR] Job id="${job.id}" name="${job.name}" completed`);
   }
 
   @OnWorkerEvent('failed')
   handleFailed(job: Job, error: Error) {
     this.logger.error(
-      `Job ${job.id} failed with error: ${error.message}`,
+      `[PROCESSOR] Job id="${job.id}" name="${job.name}" FAILED — ${error.message}`,
       error.stack,
     );
   }

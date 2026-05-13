@@ -3,6 +3,7 @@ import { env } from '../../config/env';
 import { renderVerificationOtpEmail } from './templates/verification-otp.template';
 import { renderPasswordResetOtpEmail } from './templates/reset-password-otp.template';
 import { Resend } from 'resend';
+import { BrevoClient } from '@getbrevo/brevo';
 
 export const OTP_EMAIL_SUBJECT = 'Verify your Open Profile account';
 
@@ -10,34 +11,99 @@ export const OTP_EMAIL_SUBJECT = 'Verify your Open Profile account';
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly resend: Resend;
+  private readonly brevoClient: BrevoClient;
 
   constructor() {
     this.resend = new Resend(env.RESEND_API_KEY);
+
+    this.brevoClient = new BrevoClient({
+      apiKey: env.BREVO_API_KEY,
+    });
   }
+
+  // ─── Central dispatcher: Brevo → Resend fallback ──────────────────────────
 
   async sendEmail(to: string, subject: string, html: string): Promise<void> {
-    await this.resend.emails.send({
-      from: env.MAIL_FROM,
-      to,
-      subject,
-      html,
-    });
+    // 1. Try Brevo
+    try {
+      await this.sendWithBrevo(to, subject, html);
+      this.logger.log(`[BREVO] Delivered → to="${to}" subject="${subject}"`);
+      return;
+    } catch (brevoError: unknown) {
+      this.logger.error(
+        `[BREVO] FAILED → to="${to}" subject="${subject}" | error="${
+          brevoError instanceof Error ? brevoError.message : String(brevoError)
+        }"`,
+        brevoError instanceof Error ? brevoError.stack : undefined,
+      );
+    }
 
-    this.logger.log(`Email sent to ${to} with subject "${subject}"`);
+    // 2. Fallback to Resend
+    try {
+      const { data, error } = await this.resend.emails.send({
+        from: env.MAIL_FROM,
+        to,
+        subject,
+        html,
+      });
+
+      if (error) {
+        this.logger.error(
+          `[RESEND] FAILED → to="${to}" subject="${subject}" | error="${error.message}"`,
+        );
+        // fall through to the "both failed" block below
+      } else {
+        this.logger.log(
+          `[RESEND] Delivered → emailId="${data?.id}" to="${to}" subject="${subject}"`,
+        );
+        return;
+      }
+    } catch (resendError: unknown) {
+      this.logger.error(
+        `[RESEND] EXCEPTION → to="${to}" subject="${subject}" | error="${
+          resendError instanceof Error ? resendError.message : String(resendError)
+        }"`,
+        resendError instanceof Error ? resendError.stack : undefined,
+      );
+    }
+
+    // 3. Both failed
+    this.logger.error(
+      `[MAIL] BOTH PROVIDERS FAILED → to="${to}" subject="${subject}" — email was NOT delivered`,
+    );
+    throw new Error(
+      `Email delivery failed for "${to}" (subject: "${subject}"). Both Brevo and Resend returned errors.`,
+    );
   }
 
-  // Throws on Resend failure — caller is responsible for catching and logging.
-  async sendPasswordResetOtp(toEmail: string, otp: string): Promise<void> {
-    this.logger.log(`Sending password reset OTP to ${toEmail}`);
+  // ─── Brevo implementation ─────────────────────────────────────────────────
 
-    await this.resend.emails.send({
-      from: env.MAIL_FROM,
-      to: toEmail,
-      subject: 'Reset your Open Profile password',
-      html: renderPasswordResetOtpEmail(otp),
+  private async sendWithBrevo(to: string, subject: string, html: string): Promise<void> {
+    this.logger.log(`[BREVO] Attempting → to="${to}" subject="${subject}"`);
+
+    await this.brevoClient.transactionalEmails.sendTransacEmail({
+      sender: {
+        name: env.BREVO_SENDER_NAME,
+        email: env.BREVO_SENDER_EMAIL,
+      },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
     });
+  }
 
-    this.logger.log(`Password reset OTP delivered to ${toEmail}`);
+  // ─── Public mail methods ──────────────────────────────────────────────────
+
+  async sendPasswordResetOtp(toEmail: string, otp: string): Promise<void> {
+    this.logger.log(`[MAIL] Sending password reset OTP → to="${toEmail}"`);
+
+    await this.sendEmail(
+      toEmail,
+      'Reset your Open Profile password',
+      renderPasswordResetOtpEmail(otp),
+    );
+
+    this.logger.log(`[MAIL] Password reset OTP delivered → to="${toEmail}"`);
   }
 
   async sendVerificationOtp(
@@ -45,22 +111,14 @@ export class MailService {
     fullName: string,
     otp: string,
   ): Promise<void> {
-    this.logger.log(`Sending OTP email to ${toEmail}`);
+    this.logger.log(`[MAIL] Sending verification OTP → to="${toEmail}"`);
 
-    try {
-      await this.resend.emails.send({
-        from: env.MAIL_FROM,
-        to: toEmail,
-        subject: OTP_EMAIL_SUBJECT,
-        html: renderVerificationOtpEmail(fullName, otp),
-      });
-    } catch (error: unknown) {
-      this.logger.error(
-        `Failed to send OTP email to ${toEmail}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw error;
-    }
+    await this.sendEmail(
+      toEmail,
+      OTP_EMAIL_SUBJECT,
+      renderVerificationOtpEmail(fullName, otp),
+    );
 
-    this.logger.log(`OTP email delivered to ${toEmail}`);
+    this.logger.log(`[MAIL] Verification OTP delivered → to="${toEmail}"`);
   }
 }
