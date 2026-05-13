@@ -11,29 +11,20 @@
 #   fi
 # done
 
-echo '��� Checking code formatting...'
-pnpm format ||
+# lint-staged runs Prettier + ESLint --fix on staged files only and re-stages fixes
+# so the commit includes formatting/lint autofix output (plain pnpm format/lint does not)
+echo '📝 Lint-staged (format + lint fixes on staged files)...'
+pnpm lint-staged ||
 (
-    echo '❌ Formatting check failed!'
-    echo '��� Run: pnpm format'
-    echo ''
+    echo '❌ Lint-staged failed!'
     exit 1
 )
 
-echo '��� Running ESLint...'
-pnpm lint ||
-(
-    echo '❌ Linting check failed!'
-    echo '��� Fix the errors above or run: pnpm lint:fix'
-    echo ''
-    exit 1
-)
-
-echo '��� Checking TypeScript types...'
+echo '📝 Checking TypeScript types...'
 pnpm typecheck ||
 (
     echo '❌ TypeScript check failed!'
-    echo '��� Fix the type errors above'
+    echo '   Fix the type errors above'
     echo ''
     exit 1
 )
