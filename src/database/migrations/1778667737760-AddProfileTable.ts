@@ -5,7 +5,7 @@ export class AddProfileTable1778667737760 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "reset_password" DROP CONSTRAINT "FK_reset_password_user"`,
+      `ALTER TABLE "reset_password" DROP CONSTRAINT IF EXISTS "FK_reset_password_user"`,
     );
     await queryRunner.query(
       `CREATE TABLE "waitList" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying NOT NULL, "emailSent" boolean NOT NULL DEFAULT false, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_c964d1d61359c1a9f8aa31eb0c2" UNIQUE ("email"), CONSTRAINT "PK_f96a6aa67f33d3613d1a7f904ea" PRIMARY KEY ("id"))`,

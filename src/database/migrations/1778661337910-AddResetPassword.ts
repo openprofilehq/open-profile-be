@@ -5,7 +5,7 @@ export class AddResetPassword1778661337910 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "reset_password" (
+      CREATE TABLE IF NOT EXISTS "reset_password" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "userId" uuid NOT NULL,
         "tokenSelector" character varying(64) NOT NULL,
