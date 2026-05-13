@@ -1,0 +1,31 @@
+// bull.config.ts
+
+import { env } from '../../../config/env';
+
+export const bullConfig = {
+  connection: {
+    url: env.REDIS_URL,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  },
+
+  defaultJobOptions: {
+    attempts: 3,
+
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+
+    removeOnComplete: {
+      age: 3600,
+      count: 1000,
+    },
+
+    removeOnFail: {
+      age: 86400,
+    },
+  },
+
+  prefix: 'bull',
+};
