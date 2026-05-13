@@ -1,0 +1,80 @@
+name: CI PIPELINE
+
+on:
+  push:
+    branches: [dev, staging, main]
+  pull_request:
+    branches: [dev, staging, main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_HOST: localhost
+      DATABASE_USER: test_user
+      DATABASE_PASSWORD: test_password
+      DATABASE_NAME: test_db
+      DATABASE_PORT: 5432
+      DATABASE_SYNC: false
+      DATABASE_LOGGING: false
+      DATABASE_SSL: false
+      JWT_ACCESS_SECRET: 40860055a0ebb58dde09264b53586655af735543321e3c7f8e73aaa4965d193d7e69da5e828222ddb1acf6cbb65238f47fe27bc55bfa580ba3b76c121fec54b6
+      JWT_ACCESS_EXPIRES_IN: 3600s
+      JWT_REFRESH_SECRET: 40860055a0ebb58dde09264b53586655af735543321e3c7f8e73aaa4965d193d7e69da5e828222ddb1acf6cbb65238f47fe27bc55bfa580ba3b76c121fec54b6
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_RESET_SECRET: 40860055a0ebb58dde09264b53586655af735543321e3c7f8e73aaa4965d193d7e69da5e828222ddb1acf6cbb65238f47fe27bc55bfa580ba3b76c121fec54b6
+      RESEND_API_KEY: your_resend_api_key
+      MAIL_FROM: example@gmail.com
+      FRONTEND_URL: http://localhost:3000
+      APP_URL: http://localhost:3000
+      CLIENT_ID: your_client_id
+      CLIENT_SECRET: your_client_secret
+      GOOGLE_CALLBACK_URL: http://localhost:3000/auth/google/callback
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run linter
+        run: pnpm run lint
+
+      - name: Run migrations
+        run: pnpm run migration:run
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build project
+        run: pnpm run build
