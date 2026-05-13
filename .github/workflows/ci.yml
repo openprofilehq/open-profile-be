@@ -17,6 +17,7 @@ jobs:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: test_db
+
         ports:
           - 5432:5432
         options: >-
@@ -31,6 +32,21 @@ jobs:
       DATABASE_USER: test_user
       DATABASE_PASSWORD: test_password
       DATABASE_NAME: test_db
+      DATABASE_PORT: 5432
+      DATABASE_SYNC: false
+      DATABASE_LOGGING: false
+      DATABASE_SSL: false
+      JWT_ACCESS_EXPIRES_IN: 3600s
+      JWT_REFRESH_SECRET: your_jwt_refresh_secret
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_RESET_SECRET: your_jwt_reset_secret
+      RESEND_API_KEY: your_resend_api_key
+      MAIL_FROM: example@gmail.com
+      FRONTEND_URL: http://localhost:3000
+      APP_URL: http://localhost:3000
+      CLIENT_ID: your_client_id
+      CLIENT_SECRET: your_client_secret
+      GOOGLE_CALLBACK_URL: http://localhost:3000/auth/google/callback
 
     steps:
       - name: Checkout code
