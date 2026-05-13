@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+
+# branch="$(git rev-parse --abbrev-ref HEAD)"
+# protected_branches="main dev staging production prod"
+
+# for protected in $protected_branches; do
+#   if [ "$branch" = "$protected" ]; then
+#     echo "❌ Pushing directly to '$protected' is not allowed."
+#     echo " Please open a Pull Request instead."
+#     exit 1
+#   fi
+# done
