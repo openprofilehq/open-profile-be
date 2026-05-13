@@ -47,6 +47,7 @@ export const env = createEnv({
       .transform((v) => v === true || v === 'true'),
     RESEND_API_KEY: z.string().min(1),
     MAIL_FROM: z.string().min(1),
+    CONTACT_EMAIL: z.string().min(1),
     FRONTEND_URL: z.string().url(),
     APP_URL: z.string().url(),
     CLIENT_ID: z.string().min(1),
