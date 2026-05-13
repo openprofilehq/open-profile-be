@@ -35,6 +35,9 @@ export class CreatePortfolioItems1778684776215 implements MigrationInterface {
       `ALTER TABLE "users" ADD IF NOT EXISTS "deleted_at" TIMESTAMP`,
     );
     await queryRunner.query(
+      `CREATE TABLE IF NOT EXISTS "portfolio_items" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "user_id" uuid NOT NULL, "title" character varying(150) NOT NULL, "description" text, "project_url" character varying(500), "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), CONSTRAINT "PK_portfolio_items" PRIMARY KEY ("id"))`,
+    );
+    await queryRunner.query(
       `CREATE INDEX IF NOT EXISTS "IDX_8419821c2b923a4c66bf4b81c2" ON "portfolio_items" ("user_id") `,
     );
   }
@@ -43,6 +46,7 @@ export class CreatePortfolioItems1778684776215 implements MigrationInterface {
     await queryRunner.query(
       `DROP INDEX IF EXISTS "public"."IDX_8419821c2b923a4c66bf4b81c2"`,
     );
+    await queryRunner.query(`DROP TABLE IF EXISTS "portfolio_items"`);
     await queryRunner.query(
       `ALTER TABLE "users" DROP COLUMN IF EXISTS "deleted_at"`,
     );
