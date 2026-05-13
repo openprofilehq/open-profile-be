@@ -31,35 +31,21 @@ jobs:
       DATABASE_USER: test_user
       DATABASE_PASSWORD: test_password
       DATABASE_NAME: test_db
-      JWT_ACCESS_SECRET: ci-only-not-a-real-secret-access-key-min-32-chars
-      JWT_REFRESH_SECRET: ci-only-not-a-real-secret-refresh-key-min-32-chars
-      JWT_RESET_SECRET: ci-only-not-a-real-secret-reset-key-min-32-chars-x
-      REDIS_URL: redis://localhost:6379
-      APP_URL: http://localhost:3000
-      CONTACT_EMAIL: 'test@test.com'
-
-      RESEND_API_KEY: your_resend_api_key
-      MAIL_FROM: 'test@test.com'
-      FRONTEND_URL: localhost:5000
-      MAIL_SECURE: true
-      CLIENT_ID: your_client_id
-      CLIENT_SECRET: your client secret
-      GOOGLE_CALLBACK_URL: http://localhost:3000/auth/google/callback
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'pnpm'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Install dependencies
         run: pnpm install
