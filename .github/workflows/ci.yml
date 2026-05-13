@@ -78,7 +78,7 @@ jobs:
         run: pnpm run lint
 
       - name: Run migrations
-        run: pnpm exec typeorm migration:run
+        run: pnpm exec typeorm migration:run -d src/database/data-source.ts
 
       - name: Run tests
         run: pnpm test
