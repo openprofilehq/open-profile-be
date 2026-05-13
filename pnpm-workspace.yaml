@@ -1,0 +1,10 @@
+packages:
+  - '.'
+
+allowBuilds:
+  '@nestjs/core': true
+  '@scarf/scarf': false
+  argon2: true
+  bcrypt: true
+  msgpackr-extract: true
+  unrs-resolver: true
