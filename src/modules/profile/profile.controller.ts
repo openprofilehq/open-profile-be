@@ -8,10 +8,10 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Put,
   Res,
   UseGuards,
-  Post,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { PublishProfileDto } from './dto/publish-profile.dto';
@@ -25,15 +25,35 @@ import {
 } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import * as currentUserDecorator from '../../common/decorators/current-user.decorator';
 import { PatchComponentDto } from './dto/patch-component.dto';
 import { ReorderComponentsDto } from './dto/reorder-components.dto';
 import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
+import { CreateProfileDto } from './dto/create-profile.dto';
+
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Complete onboarding with profile details' })
+  @ApiResponse({ status: 201, description: 'Profile created successfully' })
+  @ApiResponse({
+    status: 409,
+    description: 'User already has a profile or username is taken',
+  })
+  @ApiResponse({ status: 422, description: 'Invalid username format' })
+  async createProfile(
+    @Body() createProfileDto: CreateProfileDto,
+    @currentUserDecorator.CurrentUser()
+    user: currentUserDecorator.AuthenticatedUser,
+  ) {
+    return this.profileService.createProfile(createProfileDto, user);
+  }
 
   @Post('publish')
   @HttpCode(HttpStatus.OK)
@@ -62,7 +82,7 @@ export class ProfileController {
     description: 'Invalid action',
   })
   async publishProfile(
-    @CurrentUser('sub') userId: string,
+    @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: PublishProfileDto,
   ) {
     return this.profileService.publishProfile(userId, dto);
@@ -133,7 +153,7 @@ export class ProfileController {
   })
   @ApiParam({ name: 'componentId', description: 'UUID of the component' })
   async patchComponent(
-    @CurrentUser('sub') userId: string,
+    @currentUserDecorator.CurrentUser('sub') userId: string,
     @Param('componentId', new ParseUUIDPipe()) componentId: string,
     @Body() dto: PatchComponentDto,
   ): Promise<ProfileComponent> {
@@ -154,7 +174,7 @@ export class ProfileController {
     summary: 'Reorder all components on the authenticated profile',
   })
   async reorderComponents(
-    @CurrentUser('sub') userId: string,
+    @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: ReorderComponentsDto,
   ): Promise<{ components: ProfileComponent[] }> {
     const components = await this.profileService.reorderComponents(userId, dto);
