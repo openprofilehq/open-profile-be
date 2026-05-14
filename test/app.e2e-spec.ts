@@ -16,9 +16,9 @@ describe('Health (e2e)', () => {
     await app.init();
   });
 
-  it('GET /health → 200', () => {
+  it('GET /api/v1/health → 200', () => {
     return request(app.getHttpServer())
-      .get('/health')
+      .get('/api/v1/health')
       .expect(200)
       .expect((res) => {
         expect(res.body.success).toBe(true);

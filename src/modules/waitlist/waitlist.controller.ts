@@ -15,7 +15,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('waitlist')
-@Controller('waitlist')
+@Controller({ path: 'waitlist', version: '1' })
 export class WaitlistController {
   constructor(private readonly waitListService: WaitListService) {}
   @Public()
