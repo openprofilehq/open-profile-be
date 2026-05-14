@@ -75,7 +75,6 @@ export class ProfileService {
     const profile = this.profileRepo.create({
       userId: user.sub,
       username: usernameCheck.normalizedUsername, // already trimmed + lowercased by UsernamesService
-      fullName: createProfileDto.fullName,
       bio: createProfileDto.bio,
       photoUrl: createProfileDto.photoUrl,
     });
