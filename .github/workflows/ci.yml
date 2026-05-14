@@ -53,6 +53,10 @@ jobs:
       BREVO_SENDER_NAME: Open Profile
       BREVO_SMTP_USER: your_brevo_smtp_user
       BREVO_SMTP_PASSWORD: your_brevo_smtp_password
+      CLOUDINARY_API_KEY:   56376736264237
+      CLOUDINARY_UPLOAD_PRESET: your_preset
+      CLOUDINARY_CLOUD_NAME: your_cloudinary_cloud_name
+      CLOUDINARY_API_SECRET: your_api_key
 
     steps:
       - name: Checkout code
