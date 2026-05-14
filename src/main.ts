@@ -1,7 +1,7 @@
 import { Logger, VersioningType } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { NestFactory } from '@nestjs/core';
-import { Logger } from 'nestjs-pino';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
@@ -36,7 +36,7 @@ async function bootstrap() {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
-  app.useLogger(app.get(Logger));
+  app.useLogger(app.get(PinoLogger));
   await app.listen(process.env.PORT || 3000);
 
   if (env.SWAGGER_ENABLED) {
