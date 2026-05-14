@@ -1,6 +1,5 @@
 import { Logger, VersioningType } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
-import { NestFactory } from '@nestjs/core';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
