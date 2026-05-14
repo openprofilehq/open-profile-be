@@ -36,7 +36,6 @@ export class UploadsService {
         public_id: publicId,
         upload_preset: env.CLOUDINARY_UPLOAD_PRESET,
         allowed_formats: 'jpg,jpeg,png,webp',
-        max_file_size: 5 * 1024 * 1024,
       };
 
       const signature = cloudinary.utils.api_sign_request(
@@ -52,26 +51,19 @@ export class UploadsService {
         public_id: publicId,
         upload_preset: env.CLOUDINARY_UPLOAD_PRESET,
         allowed_formats: 'jpg,jpeg,png,webp',
-        max_file_size: String(5 * 1024 * 1024),
         signature,
       });
 
       const uploadUrl = `${baseUploadUrl}?${queryParams.toString()}`;
 
-      const expectedUrl = cloudinary.url(publicId, {
-        secure: true,
-        transformation: [
-          { width: 400, height: 400, crop: 'limit' },
-          { quality: 'auto', fetch_format: 'webp' },
-        ],
-      });
+      // Build delivery URL manually — no transformations yet
+      const expectedUrl = `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/${publicId}`;
 
       return { uploadUrl, expectedUrl };
     } catch (error) {
       throw new InternalServerErrorException(error);
     }
   }
-
   private generateRandomString(length: number): string {
     const chars =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
