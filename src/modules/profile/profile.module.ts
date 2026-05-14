@@ -1,3 +1,4 @@
+import { User } from '../users/entities/user.entity';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RedisModule } from '../../common/redis/redis.module';
@@ -7,7 +8,10 @@ import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Profile, ProfileComponent]), RedisModule],
+  imports: [
+    TypeOrmModule.forFeature([Profile, ProfileComponent, User]),
+    RedisModule,
+  ],
   controllers: [ProfileController],
   providers: [ProfileService],
   exports: [ProfileService],

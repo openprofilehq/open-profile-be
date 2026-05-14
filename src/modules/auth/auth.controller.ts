@@ -32,7 +32,7 @@ import type { GoogleAuthRequest } from './interfaces/google.interface';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 
 @ApiTags('auth')
-@Controller('auth')
+@Controller({ path: 'auth', version: '1' })
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
