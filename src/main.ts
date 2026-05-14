@@ -15,11 +15,22 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(compression());
-  app.use(cookieParser());
+  const allowedOrigins = new Set(env.CORS_ORIGINS);
+
   app.enableCors({
-    origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
   });
+
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
