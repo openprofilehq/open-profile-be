@@ -26,7 +26,6 @@ export class UploadsService {
   generateProfilePhotoUploadUrl(): UploadPresignedUrlResponse {
     try {
       const timestamp = Math.floor(Date.now() / 1000);
-
       const folder = 'profile_photos';
       const randomSuffix = this.generateRandomString(8);
       const publicId = `${folder}/${timestamp}_${randomSuffix}`;
@@ -56,7 +55,6 @@ export class UploadsService {
 
       const uploadUrl = `${baseUploadUrl}?${queryParams.toString()}`;
 
-      // Build delivery URL manually — no transformations yet
       const expectedUrl = `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/${publicId}`;
 
       return { uploadUrl, expectedUrl };
@@ -64,6 +62,7 @@ export class UploadsService {
       throw new InternalServerErrorException(error);
     }
   }
+
   private generateRandomString(length: number): string {
     const chars =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
