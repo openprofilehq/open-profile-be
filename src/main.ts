@@ -15,6 +15,7 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(compression());
+  app.use(cookieParser());
   const allowedOrigins = new Set(env.CORS_ORIGINS);
 
   app.enableCors({
