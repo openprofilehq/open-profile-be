@@ -21,7 +21,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { ProfileService } from './profile.service';
 
 @ApiTags('profiles')
-@Controller('profiles')
+@Controller({ path: 'profiles', version: '1' })
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 

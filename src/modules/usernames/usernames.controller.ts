@@ -19,7 +19,7 @@ import { CheckUsernameDto } from './dto/check-username.dto';
 import { UsernamesService } from './usernames.service';
 
 @ApiTags('usernames')
-@Controller('usernames')
+@Controller({ path: 'usernames', version: '1' })
 export class UsernamesController {
   constructor(private readonly usernamesService: UsernamesService) {}
 

@@ -23,7 +23,7 @@ import { PortfolioService } from './portfolio.service.js';
 
 @ApiTags('portfolio')
 @ApiBearerAuth()
-@Controller('profiles/me/portfolio')
+@Controller({ path: 'profiles/me/portfolio', version: '1' })
 export class PortfolioController {
   constructor(private readonly portfolioService: PortfolioService) {}
 
