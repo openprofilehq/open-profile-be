@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { PublishProfileDto } from './dto/publish-profile.dto';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -52,6 +53,39 @@ export class ProfileController {
     user: currentUserDecorator.AuthenticatedUser,
   ) {
     return this.profileService.createProfile(createProfileDto, user);
+  }
+
+  @Post('publish')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Publish or unpublish authenticated user profile',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile publish state updated successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Publish requirements not met',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Profile not found',
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'Invalid action',
+  })
+  async publishProfile(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: PublishProfileDto,
+  ) {
+    return this.profileService.publishProfile(userId, dto);
   }
 
   @Public()
