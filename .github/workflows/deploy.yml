@@ -228,4 +228,3 @@ jobs:
             cd /var/www/openprofile-be/main
             pm2 restart openprofile-main-be || pm2 start "pnpm run start:prod" --name openprofile-main-be
             pm2 save
-
