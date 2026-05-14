@@ -415,8 +415,9 @@ export class ProfileService {
        */
       if (!profile.isPublished) {
         profile.isPublished = true;
-        await this.profileRepo.save(profile);
       }
+      profile.hasUnpublishedChanges = false;
+      await this.profileRepo.save(profile);
 
       await this.invalidateCache(profile.username);
 
