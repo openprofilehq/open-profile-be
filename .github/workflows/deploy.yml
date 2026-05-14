@@ -75,7 +75,6 @@ jobs:
       BREVO_SENDER_NAME: Open Profile
       BREVO_SMTP_USER: your_brevo_smtp_user
       BREVO_SMTP_PASSWORD: your_brevo_smtp_password
-      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
 
     steps:
       - name: Checkout code
@@ -136,6 +135,15 @@ jobs:
           script: |
             cd /var/www/openprofile-be
             cp envfile/.env.staging  staging/.env
+
+      - name: Install dependencies and build
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          source: "./"
+          target: /var/www/openprofile-be/staging
 
       - name: Copy env, install, build, migrate, and restart
         uses: appleboy/ssh-action@v1.0.3
@@ -219,4 +227,3 @@ jobs:
             cd /var/www/openprofile-be/main
             pm2 restart openprofile-main-be || pm2 start "pnpm run start:prod" --name openprofile-main-be
             pm2 save
-
