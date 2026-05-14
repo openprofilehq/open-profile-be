@@ -6,11 +6,15 @@ import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
+import { UsersModule } from '../users/users.module';
+import { UsernamesModule } from '../usernames/usernames.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Profile, ProfileComponent, User]),
     RedisModule,
+    UsersModule,
+    UsernamesModule,
   ],
   controllers: [ProfileController],
   providers: [ProfileService],
