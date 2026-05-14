@@ -1,3 +1,5 @@
+// src/modules/auth/auth.controller.ts
+
 import {
   Body,
   Controller,
@@ -20,21 +22,23 @@ import { Public } from '../../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
-import { setAuthCookies } from './utils/cookie.utils';
+import { TokenService } from './services/token.service';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { GoogleAuthRequest } from './interfaces/google.interface';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 
 @ApiTags('auth')
-@Controller({ path: 'auth', version: '1' })
+@Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly tokenService: TokenService,
+  ) {}
 
   @Public()
   @Post('register')
@@ -71,23 +75,25 @@ export class AuthController {
         ?.trim() ??
       req.socket.remoteAddress ??
       'unknown';
-    return this.authService.login(dto, ip, res);
+    return this.authService.login(dto, ip, req, res);
   }
 
   @Public()
-  @Post('refresh')
+  @Post('refresh-token')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Issue a new access token from a refresh token' })
-  refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken);
+  @ApiOperation({
+    summary: 'Silently refresh access token from httpOnly cookie',
+  })
+  refreshToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.authService.refreshTokens(req, res);
   }
 
-  @ApiBearerAuth()
+  @Public()
   @Post('logout')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Revoke the current refresh token' })
-  logout(@CurrentUser('sub') userId: string) {
-    return this.authService.logout(userId);
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Log out and clear session cookies' })
+  logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.authService.logout(req, res);
   }
 
   @ApiBearerAuth()
@@ -148,21 +154,16 @@ export class AuthController {
   @ApiOperation({ summary: 'Verify OTP for email verification' })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.verifyOtp(dto, res);
-
-    if ('httpStatus' in result) {
-      const { httpStatus, ...body } = result;
-      res.status(httpStatus as number);
-      return body;
-    }
-
+    const result = await this.authService.verifyOtp(dto, req, res);
     res.status(HttpStatus.OK);
     return result;
   }
 
-  // google routes
+  // ─── Google OAuth ─────────────────────────────────────────────────────────────
+
   @Get('google')
   @Public()
   @Throttle({ default: { ttl: 900_000, limit: 10 } })
@@ -172,7 +173,7 @@ export class AuthController {
       'google',
       { ip: req.ip },
       300,
-    ); // 5 minutes
+    );
     const params = new URLSearchParams({
       client_id: env.CLIENT_ID,
       redirect_uri: env.GOOGLE_CALLBACK_URL,
@@ -203,12 +204,12 @@ export class AuthController {
       return res.redirect(302, errorUrl);
     }
 
-    // Proceed with existing flow (req.user comes from GoogleStrategy.validate())
-    const response = await this.authService.loginGoogle(req.user, req.ip);
-    setAuthCookies(res, {
+    const response = await this.authService.loginGoogle(req.user, req.ip, req);
+    this.tokenService.setTokenCookies(res, {
       accessToken: response.accessToken,
       refreshToken: response.refreshToken,
     });
+
     const redirectUrl = response.isNewUser
       ? `${env.FRONTEND_URL}/onboarding`
       : `${env.FRONTEND_URL}/dashboard`;
