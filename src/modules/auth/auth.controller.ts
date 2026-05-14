@@ -1,5 +1,3 @@
-// src/modules/auth/auth.controller.ts
-
 import {
   Body,
   Controller,
@@ -88,7 +86,6 @@ export class AuthController {
     return this.authService.refreshTokens(req, res);
   }
 
-  @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Log out and clear session cookies' })

@@ -1,5 +1,3 @@
-// src/modules/auth/services/redis-lock.service.ts
-
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../../../common/redis/redis.service';
 

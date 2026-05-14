@@ -1,5 +1,3 @@
-// src/modules/auth/entities/refresh-token.entity.ts
-
 import {
   Column,
   CreateDateColumn,
