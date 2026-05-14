@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, VersioningType } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -18,13 +18,14 @@ async function bootstrap() {
     origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
     credentials: true,
   });
-  app.setGlobalPrefix('api', { exclude: ['health'] });
+  app.setGlobalPrefix('api');
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
 
   if (env.SWAGGER_ENABLED) {
     const config = new DocumentBuilder()
-      .setTitle('NestJS Starter')
+      .setTitle('Open Profile API')
       .setDescription('REST API documentation')
       .setVersion('1.0.0')
       .addBearerAuth(
