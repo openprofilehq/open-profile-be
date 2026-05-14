@@ -6,7 +6,7 @@ import { SearchQueryDto } from './dto/search-query.dto';
 import { SearchService } from './search.service';
 
 @ApiTags('search')
-@Controller('search')
+@Controller({ path: 'search', version: '1' })
 export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 

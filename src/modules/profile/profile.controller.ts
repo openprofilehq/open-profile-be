@@ -29,7 +29,7 @@ import { ReorderComponentsDto } from './dto/reorder-components.dto';
 import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
 @ApiTags('profiles')
-@Controller('profiles')
+@Controller({ path: 'profiles', version: '1' })
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
