@@ -1,6 +1,15 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { PatchComponentDto } from './dto/patch-component.dto';
+import { ReorderComponentsDto } from './dto/reorder-components.dto';
+import { ComponentSetMismatchException } from './exceptions/component-set-mismatch.exception';
+import { User } from '../users/entities/user.entity';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, Repository, DataSource, In } from 'typeorm';
 import * as crypto from 'crypto';
 import { RedisService } from '../../common/redis/redis.service';
 import { Profile } from './entities/profile.entity';
@@ -19,7 +28,10 @@ export class ProfileService {
     private readonly profileRepo: Repository<Profile>,
     @InjectRepository(ProfileComponent)
     private readonly componentRepo: Repository<ProfileComponent>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly redisService: RedisService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async getPublicProfile(username: string): Promise<{
@@ -120,5 +132,144 @@ export class ProfileService {
 
   private computeEtag(content: string): string {
     return `"${crypto.createHash('md5').update(content).digest('hex')}"`;
+  }
+  /**
+   * PATCH /profiles/me/components/:componentId
+   *
+   * Patches one component owned by the authenticated user. Ownership is
+   * checked by walking componentId → profile.id → profile.userId. Cache
+   * for the owning profile's username is invalidated on success.
+   */
+  async patchComponent(
+    userId: string,
+    componentId: string,
+    dto: PatchComponentDto,
+  ): Promise<ProfileComponent> {
+    const component = await this.componentRepo.findOne({
+      where: { id: componentId },
+    });
+    if (!component) {
+      throw new NotFoundException(`Component ${componentId} not found.`);
+    }
+
+    const profile = await this.profileRepo.findOne({
+      where: { id: component.profileId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(`Component ${componentId} not found.`);
+    }
+    if (profile.userId !== userId) {
+      throw new ForbiddenException(
+        'Component does not belong to the authenticated user.',
+      );
+    }
+
+    // Apply only the fields the DTO actually carries — never blindly
+    // spread, which would overwrite columns with undefined.
+    if (dto.isEnabled !== undefined) component.isEnabled = dto.isEnabled;
+    if (dto.title !== undefined) component.title = dto.title;
+    if (dto.content !== undefined) component.content = dto.content;
+    if (dto.metadata !== undefined) component.metadata = dto.metadata;
+
+    const saved = await this.componentRepo.save(component);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  /**
+   * PUT /profiles/me/components/order
+   *
+   * Replaces the full ordering of components for the authenticated user's
+   * profile in a single transaction.
+   *
+   * Algorithm:
+   *   1. Resolve user → profile (outside the txn, read-only).
+   *   2. BEGIN TXN.
+   *   3. SELECT … FOR UPDATE locks all components of this profile —
+   *      concurrent reorders for the same profile serialize.
+   *   4. Verify submitted ID set equals locked set exactly. Cross-profile
+   *      IDs → 403. Missing or extra IDs → 409 with a diff.
+   *   5. One UPDATE … FROM (VALUES …) writes the new displayOrder values
+   *      in a single statement (parameterised, never interpolated).
+   *   6. COMMIT.
+   *
+   * Why pessimistic locking: no version column on components, and the
+   * retry-loop UX of optimistic locking is bad for drag-and-drop. Profile-
+   * scoped contention is near-zero (one editor per profile).
+   */
+  async reorderComponents(
+    userId: string,
+    dto: ReorderComponentsDto,
+  ): Promise<ProfileComponent[]> {
+    const submittedIds = dto.componentIds;
+
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException('Profile not found for user.');
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const componentsRepo = manager.getRepository(ProfileComponent);
+
+      const currentComponents = await componentsRepo
+        .createQueryBuilder('c')
+        .where('c.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getMany();
+
+      const currentIds = new Set(currentComponents.map((c) => c.id));
+      const submittedSet = new Set(submittedIds);
+
+      // Cross-profile check: any submitted ID that exists in the DB but
+      // on a different profile → 403, not 409.
+      const foreignIds = submittedIds.filter((id) => !currentIds.has(id));
+      if (foreignIds.length > 0) {
+        const foreignRows = await componentsRepo.find({
+          where: { id: In(foreignIds) },
+          select: ['id'],
+        });
+        if (foreignRows.length > 0) {
+          throw new ForbiddenException(
+            'One or more componentIds belong to a different profile.',
+          );
+        }
+      }
+
+      const missing = [...currentIds].filter((id) => !submittedSet.has(id));
+      const extra = submittedIds.filter((id) => !currentIds.has(id));
+      if (missing.length > 0 || extra.length > 0) {
+        throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      // One UPDATE statement, N rows. Parameterised values list.
+      const values = submittedIds
+        .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
+        .join(', ');
+      const params: (string | number)[] = [];
+      submittedIds.forEach((id, i) => {
+        params.push(id, i);
+      });
+      await manager.query(
+        `UPDATE components AS c
+         SET display_order = v.new_order, updated_at = NOW()
+         FROM (VALUES ${values}) AS v(id, new_order)
+         WHERE c.id = v.id`,
+        params,
+      );
+
+      return componentsRepo
+        .createQueryBuilder('c')
+        .where('c.profile_id = :profileId', { profileId: profile.id })
+        .orderBy('c.display_order', 'ASC')
+        .getMany();
+    });
+
+    await this.invalidateCache(profile.username);
+    this.logger.log(
+      `Reordered ${result.length} components for profile ${profile.id}`,
+    );
+    return result;
   }
 }

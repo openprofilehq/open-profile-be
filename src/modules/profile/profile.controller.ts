@@ -1,25 +1,33 @@
 import {
+  Body,
   Controller,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
+  Patch,
+  Put,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import {
-  ApiHeader,
+  ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiHeader,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { PatchComponentDto } from './dto/patch-component.dto';
+import { ReorderComponentsDto } from './dto/reorder-components.dto';
+import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
-
 @ApiTags('profiles')
 @Controller('profiles')
 export class ProfileController {
@@ -71,5 +79,50 @@ export class ProfileController {
     }
 
     return data;
+  }
+  /**
+   * PATCH /profiles/me/components/:componentId
+   *
+   * Toggle visibility or edit a component owned by the authenticated user.
+   * Global JwtAuthGuard handles auth; @CurrentUser('sub') gives us the
+   * user ID (JWT subject claim).
+   *
+   * `displayOrder` is intentionally not patchable — the global
+   * ValidationPipe with forbidNonWhitelisted: true rejects it.
+   */
+  @Patch('me/components/:componentId')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Toggle or edit a component on the authenticated profile',
+  })
+  @ApiParam({ name: 'componentId', description: 'UUID of the component' })
+  async patchComponent(
+    @CurrentUser('sub') userId: string,
+    @Param('componentId', new ParseUUIDPipe()) componentId: string,
+    @Body() dto: PatchComponentDto,
+  ): Promise<ProfileComponent> {
+    return this.profileService.patchComponent(userId, componentId, dto);
+  }
+
+  /**
+   * PUT /profiles/me/components/order
+   *
+   * Replace the full ordering of components for the authenticated user's
+   * profile in one atomic write. The body's array order becomes the new
+   * top-to-bottom display order.
+   */
+  @Put('me/components/order')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Reorder all components on the authenticated profile',
+  })
+  async reorderComponents(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ReorderComponentsDto,
+  ): Promise<{ components: ProfileComponent[] }> {
+    const components = await this.profileService.reorderComponents(userId, dto);
+    return { components };
   }
 }
