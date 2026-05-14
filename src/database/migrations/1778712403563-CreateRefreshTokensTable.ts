@@ -31,9 +31,17 @@ export class CreateRefreshTokensTable1778712403563 implements MigrationInterface
     await queryRunner.query(
       `ALTER TABLE "users" DROP COLUMN IF EXISTS "provider"`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "waitList" ADD CONSTRAINT IF NOT EXISTS "UQ_c964d1d61359c1a9f8aa31eb0c2" UNIQUE ("email")`,
-    );
+    // FIX: PostgreSQL does not support ADD CONSTRAINT IF NOT EXISTS — use a DO block instead
+    await queryRunner.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'UQ_c964d1d61359c1a9f8aa31eb0c2'
+        ) THEN
+          ALTER TABLE "waitList" ADD CONSTRAINT "UQ_c964d1d61359c1a9f8aa31eb0c2" UNIQUE ("email");
+        END IF;
+      END $$
+    `);
     await queryRunner.query(
       `ALTER TABLE "users" DROP COLUMN IF EXISTS "username"`,
     );
