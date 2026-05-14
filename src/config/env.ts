@@ -57,6 +57,11 @@ export const env = createEnv({
     BREVO_SENDER_NAME: z.string().min(1),
     BREVO_SMTP_USER: z.string().min(1),
     BREVO_SMTP_PASSWORD: z.string().min(1),
+
+    CLOUDINARY_CLOUD_NAME: z.string().min(1),
+    CLOUDINARY_API_KEY: z.string().min(1),
+    CLOUDINARY_API_SECRET: z.string().min(1),
+    CLOUDINARY_UPLOAD_PRESET: z.string().min(1).default('restricted'),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

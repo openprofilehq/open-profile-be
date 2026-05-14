@@ -27,6 +27,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { SearchModule } from './modules/search/search.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { PortfolioModule } from './modules/portfolio/portfolio.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { PortfolioModule } from './modules/portfolio/portfolio.module';
     UsernamesModule,
     ContactModule,
     PortfolioModule,
+    UploadsModule,
   ],
   providers: [
     {
