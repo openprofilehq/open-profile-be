@@ -1,5 +1,3 @@
-// src/modules/auth/guards/jwt-auth.guard.ts
-
 import {
   ExecutionContext,
   Injectable,
@@ -27,7 +25,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // Skip guard for public routes
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -37,14 +34,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const req = context.switchToHttp().getRequest<Request>();
     const res = context.switchToHttp().getResponse<Response>();
     const cookies = req.cookies as Record<string, string> | undefined;
-    const accessToken = cookies?.['accessToken'];
 
-    // No access token — reject immediately
+    const accessToken = cookies?.['accessToken'];
+    const rawRefreshToken = cookies?.['refreshToken'];
+
+    // No access token — attempt refresh before rejecting
     if (!accessToken) {
-      throw new UnauthorizedException({
-        error: 'SESSION_EXPIRED',
-        message: 'Your session has expired. Please log in again.',
-      });
+      return this.attemptRefresh(rawRefreshToken, req, res, 'no_access_token');
     }
 
     let payload: JwtPayload & { exp: number };
@@ -52,47 +48,92 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     try {
       payload = await this.tokenService.verifyAccessToken(accessToken);
     } catch {
+      // Access token invalid or expired — attempt refresh before rejecting
+      return this.attemptRefresh(
+        rawRefreshToken,
+        req,
+        res,
+        'invalid_access_token',
+      );
+    }
+
+    // Access token valid but expiring soon — proactive silent refresh
+    if (this.tokenService.needsSilentRefresh(payload)) {
+      await this.attemptRefresh(rawRefreshToken, req, res, 'silent_refresh', {
+        userId: payload.sub,
+        isSilent: true,
+      });
+    }
+
+    req['user'] = payload;
+    return true;
+  }
+
+  private async attemptRefresh(
+    rawRefreshToken: string | undefined,
+    req: Request,
+    res: Response,
+    reason: 'no_access_token' | 'invalid_access_token' | 'silent_refresh',
+    options?: { userId?: string; isSilent?: boolean },
+  ): Promise<boolean> {
+    const isSilent = options?.isSilent ?? false;
+
+    if (!rawRefreshToken) {
+      if (isSilent) return true; // Silent refresh is best-effort — don't block request
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     }
 
-    // Silent refresh — if token has less than 3 minutes remaining
-    if (this.tokenService.needsSilentRefresh(payload)) {
-      const rawRefreshToken = cookies?.['refreshToken'];
-
-      if (rawRefreshToken) {
-        const deviceId = this.tokenService.extractDeviceId(req);
-        const lockAcquired = await this.redisLockService.acquireLock(
-          payload.sub,
+    // For silent refresh, acquire Redis lock to prevent concurrent rotations
+    if (isSilent && options?.userId) {
+      const lockAcquired = await this.redisLockService.acquireLock(
+        options.userId,
+      );
+      if (!lockAcquired) {
+        // Another request is already refreshing — continue with current token
+        this.logger.log(
+          `Silent refresh skipped (lock busy): userId=${options.userId}`,
         );
-
-        if (lockAcquired) {
-          try {
-            const tokens = await this.tokenService.rotateTokens(
-              rawRefreshToken,
-              deviceId,
-            );
-            this.tokenService.setTokenCookies(res, tokens);
-            this.logger.log(`Silent refresh: userId=${payload.sub}`);
-          } catch (err) {
-            // Silent refresh failed — let the current token continue
-            // if it's still valid, otherwise the next request will 401
-            this.logger.warn(
-              `Silent refresh failed for userId=${payload.sub}`,
-              err,
-            );
-          } finally {
-            await this.redisLockService.releaseLock(payload.sub);
-          }
-        }
-        // Lock not acquired means another request is already refreshing — continue
+        return true;
       }
     }
 
-    // Attach user to request for @CurrentUser() decorator
-    req['user'] = payload;
-    return true;
+    try {
+      const deviceId = this.tokenService.extractDeviceId(req);
+      const tokens = await this.tokenService.rotateTokens(
+        rawRefreshToken,
+        deviceId,
+      );
+      this.tokenService.setTokenCookies(res, tokens);
+
+      const newPayload = await this.tokenService.verifyAccessToken(
+        tokens.accessToken,
+      );
+      req['user'] = newPayload;
+
+      this.logger.log(
+        `Token refresh succeeded [${reason}]: deviceId=${deviceId}`,
+      );
+      return true;
+    } catch (err) {
+      if (isSilent) {
+        // Silent refresh is best-effort — log and continue with existing token
+        this.logger.warn(`Silent refresh failed [${reason}]`, err);
+        return true;
+      }
+      // Hard failure — clear cookies and reject
+      this.logger.warn(`Refresh failed [${reason}]`, err);
+      this.tokenService.clearTokenCookies(res);
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.',
+      });
+    } finally {
+      if (isSilent && options?.userId) {
+        await this.redisLockService.releaseLock(options.userId);
+      }
+    }
   }
 }
