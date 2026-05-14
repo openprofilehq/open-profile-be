@@ -42,7 +42,7 @@ pnpm seed
 pnpm start:dev
 ```
 
-Open `http://localhost:3000/docs` for the Swagger UI.
+Open `http://localhost:3000/docs` for the Swagger UI. All API routes are versioned under `/api/v1/`.
 
 ## Scripts
 
@@ -89,12 +89,12 @@ src/
 │   ├── migrations/
 │   └── seeds/
 ├── modules/
-│   ├── auth/               # /auth/register, /login, /refresh, /logout, /me
-│   ├── health/             # /health (public)
+│   ├── auth/               # /api/v1/auth/register, /login, /refresh, /logout, /me
+│   ├── health/             # /api/v1/health (public)
 │   ├── mail/               # nodemailer sender + queue worker for emails
 │   ├── queue/              # BullMQ root config + shared queue service
-│   ├── search/             # GET /search — trigram profile search
-│   ├── usernames/          # GET /usernames/check — availability check
+│   ├── search/             # GET /api/v1/search — trigram profile search
+│   ├── usernames/          # GET /api/v1/usernames/check — availability check
 │   └── users/              # CRUD example using the repository pattern
 │       ├── actions/        # UserModelAction extends AbstractModelAction<User>
 │       ├── dto/
@@ -157,13 +157,13 @@ const port = env.PORT; // typed as number
 
 ### Auth flow
 
-| Endpoint         | Method | Auth   | Purpose                                         |
-| ---------------- | ------ | ------ | ----------------------------------------------- |
-| `/auth/register` | POST   | public | Create account, returns access + refresh tokens |
-| `/auth/login`    | POST   | public | Returns access + refresh tokens                 |
-| `/auth/refresh`  | POST   | public | Issue a new access token from a refresh token   |
-| `/auth/logout`   | POST   | bearer | Revoke the current refresh token                |
-| `/auth/me`       | GET    | bearer | Return current user                             |
+| Endpoint                | Method | Auth   | Purpose                                         |
+| ----------------------- | ------ | ------ | ----------------------------------------------- |
+| `/api/v1/auth/register` | POST   | public | Create account, returns access + refresh tokens |
+| `/api/v1/auth/login`    | POST   | public | Returns access + refresh tokens                 |
+| `/api/v1/auth/refresh`  | POST   | public | Issue a new access token from a refresh token   |
+| `/api/v1/auth/logout`   | POST   | bearer | Revoke the current refresh token                |
+| `/api/v1/auth/me`       | GET    | bearer | Return current user                             |
 
 The global `JwtAuthGuard` protects every route by default. Decorate handlers (or controllers) with `@Public()` to opt out.
 
@@ -261,7 +261,7 @@ Errors go through `HttpExceptionFilter`:
   "statusCode": 400,
   "error": "BadRequestException",
   "message": ["email must be an email"],
-  "path": "/api/users",
+  "path": "/api/v1/users",
   "timestamp": "2026-04-28T12:34:56.000Z"
 }
 ```
@@ -302,7 +302,7 @@ Availability checking for user-chosen profile usernames. The feature enforces st
 
 ## Endpoints
 
-### `GET /usernames/check` (Public, Rate-Limited)
+### `GET /api/v1/usernames/check` (Public, Rate-Limited)
 
 | Attribute   | Value                                     |
 | ----------- | ----------------------------------------- |
@@ -339,7 +339,7 @@ Availability checking for user-chosen profile usernames. The feature enforces st
 }
 ```
 
-### `GET /usernames/check/internal` (Authenticated, No Rate Limit)
+### `GET /api/v1/usernames/check/internal` (Authenticated, No Rate Limit)
 
 Same behavior as the public endpoint but requires a Bearer JWT and bypasses the rate-limit guard. Useful for server-to-server checks.
 
@@ -375,13 +375,7 @@ If Redis is unreachable, falls back to an in-memory store with a 10 req/min/IP l
 ## Architecture
 
 ```
-Controller  (GET /usernames/check)
-    ↓
-UsernamesService  (normalize → validate → check DB)
-    ↓
-UsersService → UserModelAction  (DB lookup)
-    ↓
-TypeORM → PostgreSQL
+Controller  (GET /api/v1/usernames/check)
 ```
 
 ### Files
@@ -400,7 +394,7 @@ TypeORM → PostgreSQL
 ## Example Request
 
 ```bash
-curl -X GET 'http://localhost:3000/usernames/check?username=adebayo'
+curl -X GET 'http://localhost:3000/api/v1/usernames/check?username=adebayo'
 ```
 
 ### Response
@@ -439,7 +433,7 @@ Public profile search endpoint that allows visitors to find published user profi
 ## Endpoint
 
 ```
-GET /search?q={query}
+GET /api/v1/search?q={query}
 ```
 
 - Publicly accessible — no authentication required
@@ -540,7 +534,7 @@ Returned when `q` is missing, under 2 characters, or blank after trimming.
 ## Architecture
 
 ```
-Controller  (GET /search)
+Controller  (GET /api/v1/search)
     ↓
 SearchService  (input validation + orchestration)
     ↓
@@ -589,8 +583,7 @@ CREATE UNIQUE INDEX users_username_unique_idx ON users (username) WHERE username
 ## Example Request
 
 ```bash
-curl -X GET 'http://localhost:3000/search?q=ade' \
-  -H 'accept: */*'
+curl -X GET 'http://localhost:3000/api/v1/search?q=ade' \
 ```
 
 ### Response
@@ -619,4 +612,4 @@ curl -X GET 'http://localhost:3000/search?q=ade' \
 
 - `pnpm build` — passed
 - `pnpm test` — passed
-- Live: `GET /search?q=ade` returns correct shape with rate limit headers
+- Live: `GET /api/v1/search?q=ade` returns correct shape with rate limit headers

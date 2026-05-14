@@ -5,7 +5,7 @@ import { ContactService } from './contact.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 
 @ApiTags('contact')
-@Controller('contact')
+@Controller({ path: 'contact', version: '1' })
 export class ContactController {
   constructor(private readonly contactService: ContactService) {}
 
