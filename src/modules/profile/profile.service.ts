@@ -7,6 +7,8 @@ import {
   Logger,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository, DataSource, In } from 'typeorm';
@@ -14,6 +16,7 @@ import * as crypto from 'crypto';
 import { RedisService } from '../../common/redis/redis.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
+import { PublishProfileDto } from './dto/publish-profile.dto';
 
 const CACHE_TTL_SECONDS = 60;
 const MAX_COMPONENTS = 50;
@@ -271,5 +274,85 @@ export class ProfileService {
       `Reordered ${result.length} components for profile ${profile.id}`,
     );
     return result;
+  }
+
+  async publishProfile(
+    userId: string,
+    dto: PublishProfileDto,
+  ): Promise<Record<string, string>> {
+    const { action } = dto;
+
+    if (!action) {
+      throw new UnprocessableEntityException({
+        message: 'Please specify an action: publish or unpublish.',
+      });
+    }
+
+    if (action !== 'publish' && action !== 'unpublish') {
+      throw new UnprocessableEntityException({
+        message: 'Action must be either publish or unpublish.',
+      });
+    }
+
+    const profile = await this.profileRepo.findOne({
+      where: {
+        userId,
+        deletedAt: IsNull(),
+      },
+    });
+
+    if (!profile) {
+      throw new NotFoundException({
+        message: 'Complete your profile setup before publishing.',
+      });
+    }
+
+    /**
+     * PUBLISH
+     */
+    if (action === 'publish') {
+      const missingRequirements = !profile.fullName || !profile.username;
+
+      if (missingRequirements) {
+        throw new BadRequestException({
+          error: 'PUBLISH_REQUIREMENTS_NOT_MET',
+          message:
+            'Your profile needs a fullName and username before it can be published.',
+        });
+      }
+
+      /**
+       * Idempotent behavior:
+       * already published => still return success
+       */
+      if (!profile.isPublished) {
+        profile.isPublished = true;
+        await this.profileRepo.save(profile);
+      }
+
+      await this.invalidateCache(profile.username);
+
+      return {
+        status: 'success',
+        message: 'Your profile is now live.',
+        profileUrl: `openprofile.com/${profile.username}`,
+      };
+    }
+
+    /**
+     * UNPUBLISH
+     */
+    if (profile.isPublished) {
+      profile.isPublished = false;
+      await this.profileRepo.save(profile);
+    }
+
+    await this.invalidateCache(profile.username);
+
+    return {
+      status: 'success',
+      message:
+        'Your profile has been unpublished. It is no longer visible to the public.',
+    };
   }
 }
