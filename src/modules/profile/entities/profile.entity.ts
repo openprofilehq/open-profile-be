@@ -44,6 +44,12 @@ export class Profile {
   @Column({ name: 'theme_settings', nullable: true, type: 'jsonb' })
   themeSettings: Record<string, unknown> | null;
 
+  @Column({ type: 'varchar', name: 'cta_label', nullable: true })
+  ctaLabel: string | null;
+
+  @Column({ type: 'varchar', name: 'cta_url', nullable: true })
+  ctaUrl: string | null;
+
   @Column({ type: 'boolean', name: 'is_searchable', default: true })
   isSearchable: boolean;
 
