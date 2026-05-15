@@ -208,7 +208,7 @@ export class AuthController {
     });
 
     const redirectUrl = response.isNewUser
-      ? `${env.FRONTEND_URL}/onboarding`
+      ? `${env.FRONTEND_URL}/create-profile`
       : `${env.FRONTEND_URL}/dashboard`;
     return res.redirect(302, redirectUrl);
   }
