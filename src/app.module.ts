@@ -3,6 +3,7 @@ import {
   UnprocessableEntityException,
   ValidationPipe,
 } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
@@ -33,6 +34,15 @@ import { PortfolioModule } from './modules/portfolio/portfolio.module';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, databaseConfig, jwtConfig],
+    }),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+        transport: process.env.NODE_ENV !== 'production'
+          ? { target: 'pino-pretty' }
+          : undefined,
+        autoLogging: true, // logs every HTTP request automatically
+      },
     }),
     ThrottlerModule.forRoot([
       {
