@@ -8,6 +8,9 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { env } from './config/env';
 import cookieParser from 'cookie-parser';
+import { join } from 'path';
+import * as fs from 'fs';
+import * as express from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -35,6 +38,10 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+
+  const uploadsDir = join(process.cwd(), 'uploads', 'profiles');
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
   app.useLogger(app.get(PinoLogger));
