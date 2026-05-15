@@ -796,3 +796,192 @@ See test procedures in the ticket. All 9 acceptance criteria verified manually:
 ✅ 401 + cookies cleared on invalid refresh token
 ✅ Logout clears cookies + deletes DB record
 ✅ Per-device logout isolation
+
+//Dashboard
+
+# BE-ONB-007 — Dashboard Profile Data Endpoint
+
+## Overview
+
+Authenticated endpoint that returns the full current profile state for the logged-in user. Unlike the public profile endpoint, this returns all components regardless of active state and reflects the live editing state including unpublished changes.
+
+---
+
+## Endpoint
+
+```
+GET /api/v1/profiles/dashboard
+```
+
+### Authentication
+
+Requires a valid JWT access token. The global `JwtAuthGuard` protects this route automatically — no `@Public()` decorator means auth is enforced.
+
+### Headers
+
+| Header          | Value                   |
+| --------------- | ----------------------- |
+| `Authorization` | `Bearer <access_token>` |
+
+---
+
+## Responses
+
+### 200 OK — Profile found
+
+```json
+{
+  "success": true,
+  "data": {
+    "username": "johndoe",
+    "fullName": "Jane Doe",
+    "bio": "Software developer passionate about open source",
+    "photoUrl": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+    "templateType": null,
+    "themeSettings": null,
+    "isPublished": true,
+    "hasUnpublishedChanges": false,
+    "ctaLabel": null,
+    "ctaUrl": null,
+    "components": []
+  }
+}
+```
+
+### 401 Unauthorized — Missing or invalid token
+
+```json
+{
+  "success": false,
+  "statusCode": 401,
+  "error": "Unauthorized"
+}
+```
+
+### 404 Not Found — User has not completed onboarding
+
+```json
+{
+  "success": false,
+  "statusCode": 404,
+  "error": "Not Found",
+  "message": "Profile not found. Please complete your profile setup."
+}
+```
+
+---
+
+## Key Difference from Public Endpoint
+
+|                         | `GET /profiles/:username` | `GET /profiles/dashboard`      |
+| ----------------------- | ------------------------- | ------------------------------ |
+| Auth required           | No                        | Yes                            |
+| Components returned     | Active + has content only | All (including inactive/empty) |
+| State reflected         | Last published snapshot   | Live current state             |
+| `hasUnpublishedChanges` | Not included              | Included                       |
+| Cached                  | Yes (Redis, 60s)          | No                             |
+
+---
+
+## Implementation
+
+### Files changed
+
+| File                                                            | Change                               |
+| --------------------------------------------------------------- | ------------------------------------ |
+| `src/modules/profile/profile.controller.ts`                     | Added `GET /dashboard` route         |
+| `src/modules/profile/profile.service.ts`                        | Added `getDashboardProfile()` method |
+| `src/modules/profile/entities/profile.entity.ts`                | Added `ctaLabel`, `ctaUrl` columns   |
+| `src/database/migrations/AddCtaFieldsToProfile1778844521139.ts` | Migration for `cta_label`, `cta_url` |
+
+### Controller
+
+```typescript
+@Get('dashboard')
+@HttpCode(HttpStatus.OK)
+@ApiBearerAuth()
+@ApiOperation({ summary: 'Get full current profile data for the authenticated user' })
+@ApiResponse({ status: 200, description: 'Profile returned successfully' })
+@ApiResponse({ status: 401, description: 'Unauthorized' })
+@ApiResponse({ status: 404, description: 'Profile not found. Please complete your profile setup.' })
+async getDashboardProfile(
+  @currentUserDecorator.CurrentUser('sub') userId: string,
+) {
+  return this.profileService.getDashboardProfile(userId);
+}
+```
+
+> Must be placed **above** `@Get(':username')` in the controller — NestJS matches routes top to bottom and `dashboard` would otherwise be captured as a `:username` param.
+
+### Service
+
+```typescript
+async getDashboardProfile(userId: string): Promise<Record<string, unknown>> {
+  const profile = await this.profileRepo.findOne({
+    where: { userId, deletedAt: IsNull() },
+  });
+
+  if (!profile) {
+    throw new NotFoundException(
+      'Profile not found. Please complete your profile setup.',
+    );
+  }
+
+  const components = await this.componentRepo.find({
+    where: { profileId: profile.id },
+    order: { displayOrder: 'ASC' },
+  });
+
+  return {
+    username: profile.username,
+    fullName: profile.fullName,
+    bio: profile.bio,
+    photoUrl: profile.photoUrl,
+    templateType: profile.templateType,
+    themeSettings: profile.themeSettings,
+    isPublished: profile.isPublished,
+    hasUnpublishedChanges: profile.hasUnpublishedChanges,
+    ctaLabel: profile.ctaLabel,
+    ctaUrl: profile.ctaUrl,
+    components: components.map((c) => ({
+      id: c.id,
+      sectionType: c.sectionType,
+      title: c.title,
+      content: c.content,
+      displayOrder: c.displayOrder,
+      isEnabled: c.isEnabled,
+      metadata: c.metadata,
+    })),
+  };
+}
+```
+
+---
+
+## Migration
+
+`AddCtaFieldsToProfile1778844521139` adds `cta_label` and `cta_url` to the `profiles` table.
+
+```bash
+pnpm run migration:run
+```
+
+---
+
+## Dependencies
+
+- `POST /profiles` must have run successfully (profile must exist)
+- `has_unpublished_changes` column — added in `UpdateProfileTable1778760000000`
+- `cta_label`, `cta_url` columns — added in `AddCtaFieldsToProfile1778844521139`
+
+---
+
+## QA Checklist
+
+- [x] Logged-in user with profile receives `200` with full profile data
+- [x] Response includes `hasUnpublishedChanges` field
+- [x] After editing profile, `hasUnpublishedChanges` returns `true`
+- [x] After republishing, `hasUnpublishedChanges` returns `false`
+- [x] All components returned including inactive/empty ones
+- [x] User without a profile receives `404`
+- [x] Unauthenticated request receives `401`
