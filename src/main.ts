@@ -1,4 +1,4 @@
-import { Logger, VersioningType } from '@nestjs/common';
+import { Logger, RequestMethod, VersioningType } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { ClassSerializerInterceptor } from '@nestjs/common';
@@ -36,7 +36,10 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: 'health', method: RequestMethod.GET }],
+  });
+
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   const uploadsDir = join(process.cwd(), 'uploads', 'profiles');
