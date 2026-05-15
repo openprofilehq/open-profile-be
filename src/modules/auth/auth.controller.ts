@@ -206,6 +206,7 @@ export class AuthController {
       accessToken: response.accessToken,
       refreshToken: response.refreshToken,
     });
+    this.tokenService.setDeviceIdCookie(res, response.deviceId);
 
     const redirectUrl = response.isNewUser
       ? `${env.FRONTEND_URL}/onboarding`

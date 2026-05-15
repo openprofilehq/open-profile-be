@@ -11,6 +11,8 @@ import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../../users/entities/user.entity';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
+const DEVICE_ID_COOKIE = 'deviceId';
+const DEVICE_ID_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
 const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
@@ -73,21 +75,31 @@ export class TokenService {
     rawRefreshToken: string,
     deviceId: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    // Find the record for this device
-    const record = await this.refreshTokenRepo.findOne({
+    // Find ALL records for this device and verify hash against each
+    const records = await this.refreshTokenRepo.find({
       where: { deviceId },
       relations: ['user'],
     });
 
-    if (!record) {
+    if (!records.length) {
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     }
 
-    // Check expiry
-    if (new Date() > record.expiresAt) {
+    // Find the record whose hash matches the raw token
+    let matchedRecord: RefreshToken | null = null;
+    for (const record of records) {
+      const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
+      if (isValid) {
+        matchedRecord = record;
+        break;
+      }
+    }
+
+    if (!matchedRecord) {
+      // Token reuse attack or wrong token — invalidate all for this device
       await this.refreshTokenRepo.delete({ deviceId });
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
@@ -95,20 +107,17 @@ export class TokenService {
       });
     }
 
-    // Validate hash
-    const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-    if (!isValid) {
-      // Possible token reuse attack — invalidate all tokens for this device
-      await this.refreshTokenRepo.delete({ deviceId });
+    // Check expiry on matched record
+    if (new Date() > matchedRecord.expiresAt) {
+      await this.refreshTokenRepo.delete({ id: matchedRecord.id });
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     }
 
-    const user = record.user;
+    const user = matchedRecord.user;
 
-    // Issue new tokens
     const [accessToken, newRawRefreshToken] = await Promise.all([
       this.generateAccessToken(user),
       this.generateRefreshToken(user.id, deviceId),
@@ -154,6 +163,18 @@ export class TokenService {
   clearTokenCookies(res: Response): void {
     res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
     res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
+    res.cookie(DEVICE_ID_COOKIE, '', { maxAge: 0, httpOnly: true });
+  }
+
+  // Add after setTokenCookies()
+  setDeviceIdCookie(res: Response, deviceId: string): void {
+    const isProd = env.NODE_ENV === 'production';
+    res.cookie(DEVICE_ID_COOKIE, deviceId, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'strict',
+      maxAge: DEVICE_ID_MAX_AGE_MS,
+    });
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
