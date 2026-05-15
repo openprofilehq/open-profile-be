@@ -10,6 +10,7 @@ import { env } from '../../../config/env';
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../../users/entities/user.entity';
 import { JwtPayload } from '../strategies/jwt.strategy';
+import { DataSource } from 'typeorm';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
@@ -26,6 +27,7 @@ export class TokenService {
     private readonly jwtService: JwtService,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
+    private readonly dataSource: DataSource,
   ) {}
 
   // ─── Access Token ────────────────────────────────────────────────────────────
@@ -65,46 +67,65 @@ export class TokenService {
   async rotateTokens(
     rawRefreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    // Load all records for matching — userId not known at this point
-    const records = await this.refreshTokenRepo.find({
-      relations: ['user'],
-    });
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(RefreshToken);
 
-    let matchedRecord: RefreshToken | null = null;
-    for (const record of records) {
-      const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-      if (isValid) {
-        matchedRecord = record;
-        break;
+      // Load all records — userId unknown at this point
+      const records = await repo.find({
+        relations: ['user'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      let matchedRecord: RefreshToken | null = null;
+      for (const record of records) {
+        const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
+        if (isValid) {
+          matchedRecord = record;
+          break;
+        }
       }
-    }
 
-    if (!matchedRecord) {
-      throw new UnauthorizedException({
-        error: 'SESSION_EXPIRED',
-        message: 'Your session has expired. Please log in again.',
+      if (!matchedRecord) {
+        throw new UnauthorizedException({
+          error: 'SESSION_EXPIRED',
+          message: 'Your session has expired. Please log in again.',
+        });
+      }
+
+      if (new Date() > matchedRecord.expiresAt) {
+        await repo.delete({ id: matchedRecord.id });
+        throw new UnauthorizedException({
+          error: 'SESSION_EXPIRED',
+          message: 'Your session has expired. Please log in again.',
+        });
+      }
+
+      // Delete old record atomically before issuing new tokens
+      const deleteResult = await repo.delete({
+        id: matchedRecord.id,
+        tokenHash: matchedRecord.tokenHash,
       });
-    }
 
-    if (new Date() > matchedRecord.expiresAt) {
-      await this.refreshTokenRepo.delete({ id: matchedRecord.id });
-      throw new UnauthorizedException({
-        error: 'SESSION_EXPIRED',
-        message: 'Your session has expired. Please log in again.',
-      });
-    }
+      if (deleteResult.affected === 0) {
+        throw new UnauthorizedException({
+          error: 'SESSION_EXPIRED',
+          message: 'Session already refreshed. Please try again.',
+        });
+      }
 
-    const user = matchedRecord.user;
+      const user = matchedRecord.user;
 
-    // Delete old record then issue new tokens
-    await this.refreshTokenRepo.delete({ id: matchedRecord.id });
+      // Generate new refresh token within the same transaction
+      const rawToken = uuidv4();
+      const tokenHash = await argon2.hash(rawToken);
+      const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
+      const newRecord = repo.create({ userId: user.id, tokenHash, expiresAt });
+      await repo.save(newRecord);
 
-    const [accessToken, newRawRefreshToken] = await Promise.all([
-      this.generateAccessToken(user),
-      this.generateRefreshToken(user.id),
-    ]);
+      const accessToken = await this.generateAccessToken(user);
 
-    return { accessToken, refreshToken: newRawRefreshToken };
+      return { accessToken, refreshToken: rawToken };
+    });
   }
 
   // ─── Silent Refresh Check ────────────────────────────────────────────────────
