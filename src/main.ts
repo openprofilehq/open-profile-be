@@ -38,7 +38,6 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
   app.useLogger(app.get(PinoLogger));
-  await app.listen(process.env.PORT || 3000);
 
   if (env.SWAGGER_ENABLED) {
     const config = new DocumentBuilder()
