@@ -2,7 +2,7 @@ import { AbstractModelAction } from '@hng-sdk/orm';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
+import { Profile } from '../../profile/entities/profile.entity';
 
 type SearchProfileRow = {
   username: string;
@@ -13,33 +13,34 @@ type SearchProfileRow = {
 };
 
 @Injectable()
-export class SearchAction extends AbstractModelAction<User> {
+export class SearchAction extends AbstractModelAction<Profile> {
   constructor(
-    @InjectRepository(User)
-    private readonly repo: Repository<User>,
+    @InjectRepository(Profile)
+    private readonly repo: Repository<Profile>,
   ) {
-    super(repo, User);
+    super(repo, Profile);
   }
 
   async searchProfiles(q: string): Promise<SearchProfileRow[]> {
     return this.repo
-      .createQueryBuilder('u')
+      .createQueryBuilder('p')
       .select([
-        'u.username        AS username',
-        'u.full_name       AS "fullName"',
-        'u.bio             AS bio',
-        'u.photo_url       AS "photoUrl"',
-        'u.is_verified     AS "isVerified"',
+        'p.username        AS username',
+        'p.full_name       AS "fullName"',
+        'p.bio             AS bio',
+        'p.photo_url       AS "photoUrl"',
+        'p.is_verified     AS "isVerified"',
       ])
-      .where('u.is_published = true')
-      .andWhere('u.deleted_at IS NULL')
-      .andWhere('(u.full_name % :q OR u.username % :q)')
+      .where('p.is_published = true')
+      .andWhere('p.deleted_at IS NULL')
+      .andWhere('p.is_searchable = true') // 👈 respect is_searchable flag
+      .andWhere('(p.full_name % :q OR p.username % :q)')
       .orderBy(
-        'CASE WHEN lower(u.username) = lower(:q) THEN 1 ELSE 0 END',
+        'CASE WHEN lower(p.username) = lower(:q) THEN 1 ELSE 0 END',
         'DESC',
       )
       .addOrderBy(
-        `GREATEST(similarity(u.full_name, :q), similarity(u.username, :q))`,
+        `GREATEST(similarity(p.full_name, :q), similarity(p.username, :q))`,
         'DESC',
       )
       .setParameter('q', q)

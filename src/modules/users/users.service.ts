@@ -107,14 +107,6 @@ export class UsersService {
     return updated;
   }
 
-  async setRefreshTokenHash(id: string, hash: string | null): Promise<void> {
-    await this.userModelAction.update({
-      ...NO_TRANSACTION,
-      identifierOptions: { id },
-      updatePayload: { refreshTokenHash: hash },
-    });
-  }
-
   async setPasswordResetToken(
     id: string,
     tokenSelector: string,

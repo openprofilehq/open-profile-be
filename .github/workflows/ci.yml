@@ -53,6 +53,7 @@ jobs:
       BREVO_SENDER_NAME: Open Profile
       BREVO_SMTP_USER: your_brevo_smtp_user
       BREVO_SMTP_PASSWORD: your_brevo_smtp_password
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
 
     steps:
       - name: Checkout code
@@ -61,12 +62,12 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: 22
           cache: 'pnpm'
 
       - name: Install dependencies
