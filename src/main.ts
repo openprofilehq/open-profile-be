@@ -7,6 +7,7 @@ import compression from 'compression';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { env } from './config/env';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -15,6 +16,7 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(compression());
+  app.use(cookieParser());
   const allowedOrigins = new Set(env.CORS_ORIGINS);
 
   app.enableCors({
