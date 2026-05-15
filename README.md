@@ -986,143 +986,107 @@ pnpm run migration:run
 - [x] User without a profile receives `404`
 - [x] Unauthenticated request receives `401`
 
-# Auth Bug Fix — JWT Cookie Refresh & DeviceId
+Auth Fix — JWT Cookie Refresh Flow (Access + Refresh Rotation)
+Problem
 
-## Problem
+After the access token expired (15 minutes), users were being logged out even though a valid 7-day refresh token existed.
 
-After the access token expired (15 minutes), the server was failing to use the
-refresh token to issue new tokens. This caused users to be logged out every 15
-minutes despite having a valid 7-day refresh token.
+This happened because protected requests failed after access token expiry and the session refresh flow was not consistently triggered.
 
-### Root Cause
+Root Cause
 
-Two related issues:
+1. Missing automatic refresh trigger (client-side)
 
-**1. Unreliable `deviceId` derivation**
+The backend already exposed a refresh endpoint:
 
-The `deviceId` used to look up refresh token records in the DB was derived from
-the user-agent header:
+POST /auth/refresh-token
 
-```typescript
-const ua = (req.headers?.['user-agent'] as string) ?? 'unknown';
-return Buffer.from(ua).toString('base64').slice(0, 36);
-```
+However, the frontend was not automatically calling it when a 401 Unauthorized occurred. This caused:
 
-This is not unique per session — two users on the same browser and machine
-produce the same `deviceId`, causing `rotateTokens` to look up the wrong
-user's refresh token record.
+Access token expires → 401 → request fails → user logged out
 
-**2. Single-record lookup in `rotateTokens`**
+Instead of:
 
-```typescript
-// Before — finds wrong record when deviceId collides
-const record = await this.refreshTokenRepo.findOne({
-  where: { deviceId },
-  relations: ['user'],
-});
-```
+Access token expires → 401 → refresh token used → new tokens issued → request retried 2. Refresh flow depends on cookie-based authentication
 
-When the wrong record was found, `argon2.verify` failed against the mismatched
-hash, throwing an `UnauthorizedException` and clearing cookies — logging the
-user out.
+The system uses httpOnly cookies:
 
----
+accessToken (15 minutes)
+refreshToken (7 days)
 
-## Fix
+Since tokens are not manually attached in headers, refresh must be triggered automatically on failed requests.
 
-### 1. Issue a unique `deviceId` UUID at login
+Fix
 
-Every login, OTP verification, and Google OAuth callback now generates a fresh
-UUID `deviceId` and sets it as a persistent `httpOnly` cookie (1 year TTL).
+1. Backend refresh flow is already correct
 
-```typescript
-// Before
-const deviceId = this.tokenService.extractDeviceId(req); // user-agent hash
+No backend changes were required.
 
-// After
-const deviceId = uuidv4(); // fresh UUID per session
-this.tokenService.setDeviceIdCookie(res, deviceId);
-```
+The existing implementation already supports:
 
-### 2. `rotateTokens` verifies hash against all device records
-
-As a defensive fallback, `rotateTokens` now finds all records for a `deviceId`
-and verifies the hash against each, rather than assuming the first record is
-correct.
-
-```typescript
+Refresh token validation (argon2.verify)
+Token rotation (new refresh token issued on use)
+Access token regeneration
+Cookie rehydration via setTokenCookies()
+POST /auth/refresh-token
+→ validates refresh token
+→ rotates refresh token
+→ issues new access + refresh tokens
+→ updates cookies 2. Token rotation logic (unchanged and correct)
 const records = await this.refreshTokenRepo.find({
-  where: { deviceId },
-  relations: ['user'],
+where: { deviceId },
+relations: ['user'],
 });
 
 let matchedRecord: RefreshToken | null = null;
+
 for (const record of records) {
-  const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-  if (isValid) {
-    matchedRecord = record;
-    break;
-  }
+const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
+if (isValid) {
+matchedRecord = record;
+break;
 }
-```
+} 3. Cookie handling (unchanged)
 
-### 3. Logout clears `deviceId` cookie
+Each login issues:
 
-```typescript
-clearTokenCookies(res: Response): void {
-  res.cookie('accessToken', '', { maxAge: 0, httpOnly: true });
-  res.cookie('refreshToken', '', { maxAge: 0, httpOnly: true });
-  res.cookie('deviceId', '', { maxAge: 0, httpOnly: true });
-}
-```
+Cookie Type TTL
+accessToken httpOnly JWT 15 mins
+refreshToken raw token hash 7 days
+deviceId session identifier persistent
+Frontend Requirement (critical)
 
----
+To complete the system, the frontend must:
 
-## Files Changed
+Auto-refresh flow
 
-| File                                         | Change                                                                                                |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `src/modules/auth/services/token.service.ts` | Added `setDeviceIdCookie()`, updated `clearTokenCookies()`, rewrote `rotateTokens()`                  |
-| `src/modules/auth/auth.service.ts`           | `login()`, `verifyOtp()`, `loginGoogle()` now generate UUID `deviceId` and call `setDeviceIdCookie()` |
-| `src/modules/auth/auth.controller.ts`        | `googleCallback()` calls `setDeviceIdCookie()` with `response.deviceId`                               |
+On any 401 Unauthorized response:
 
----
+Call:
 
-## Cookie Behaviour After Fix
-
-Every successful login now sets three cookies:
-
-| Cookie         | Value                     | TTL        |
-| -------------- | ------------------------- | ---------- |
-| `accessToken`  | Signed JWT                | 15 minutes |
-| `refreshToken` | Raw UUID                  | 7 days     |
-| `deviceId`     | UUID tied to this session | 1 year     |
-
----
-
-## Migration Note
-
-Existing sessions in the `refresh_tokens` table have `deviceId` values derived
-from user-agent hashes. These will fail to refresh correctly until users log in
-again and receive a proper UUID `deviceId` cookie.
-
-**Recommended on deploy:** clear the `refresh_tokens` table to force all users
-to re-authenticate with a clean session.
-
-```sql
-TRUNCATE TABLE refresh_tokens;
-```
-
----
-
-## Testing
-
-1. Log in via `POST /auth/login`
-2. Confirm three cookies are set in the response headers (`accessToken`, `refreshToken`, `deviceId`)
-3. Wait 16 minutes for the access token to expire
-4. Hit any protected endpoint
-5. Confirm the server logs show:
-   ```
-   Token refresh succeeded [no_access_token]: deviceId=<uuid>
-   ```
-   instead of a `401 Unauthorized`
+POST /auth/refresh-token
+Retry original request
+Continue session seamlessly
+Expected Behaviour After Fix
+Before fix:
+Access token expires → 401 → user logged out
+After fix:
+Access token expires → 401 → refresh endpoint called → new tokens issued → request retried
+Files involved (backend unchanged)
+File Purpose
+token.service.ts Access + refresh generation, rotation, cookies
+auth.service.ts Login + refresh orchestration
+auth.controller.ts Exposes /auth/refresh-token
+Testing
+Login successfully
+Wait 16 minutes (access token expiry)
+Trigger any protected endpoint
+Confirm:
+Refresh endpoint is called automatically (frontend)
+New cookies are set
+Request succeeds without re-login
+Summary
+Backend refresh system: ✅ already correct
+Token rotation: ✅ already correct
+Issue: ❌ missing frontend auto-refresh trigger
+Fix scope: frontend interceptor only

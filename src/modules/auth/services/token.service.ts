@@ -11,8 +11,6 @@ import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../../users/entities/user.entity';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
-const DEVICE_ID_COOKIE = 'deviceId';
-const DEVICE_ID_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
 const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
@@ -163,18 +161,6 @@ export class TokenService {
   clearTokenCookies(res: Response): void {
     res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
     res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
-    res.cookie(DEVICE_ID_COOKIE, '', { maxAge: 0, httpOnly: true });
-  }
-
-  // Add after setTokenCookies()
-  setDeviceIdCookie(res: Response, deviceId: string): void {
-    const isProd = env.NODE_ENV === 'production';
-    res.cookie(DEVICE_ID_COOKIE, deviceId, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: DEVICE_ID_MAX_AGE_MS,
-    });
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────

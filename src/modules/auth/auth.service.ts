@@ -36,7 +36,6 @@ import { PasswordChangedEmailData } from '../mail/interfaces/password-changed-em
 import { AccountLockedEmailData } from '../mail/interfaces/account-locked-email.interface';
 import { NewIpLoginEmailData } from '../mail/interfaces/new-ip-login-email.interface';
 import { GoogleUser } from './interfaces/google.interface';
-import { v4 as uuidv4 } from 'uuid';
 
 const FORGOT_PASSWORD_GENERIC_MSG =
   'If an account exists for this email, a verification code has been sent.';
@@ -243,15 +242,13 @@ export class AuthService {
     await this.usersService.updateLastLoginIp(user.id, ip);
 
     // Issue tokens using TokenService — stores in refresh_tokens table per device
-    const deviceId = uuidv4(); // generate fresh UUID
+    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(
       user.id,
       deviceId,
     );
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
-    this.tokenService.setDeviceIdCookie(res, deviceId);
-
     return {
       status: 'success',
       user: {
@@ -515,14 +512,13 @@ export class AuthService {
     await this.usersService.clearOtp(user.id);
 
     // Issue tokens via TokenService — per-device refresh token
-    const deviceId = uuidv4();
+    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(
       user.id,
       deviceId,
     );
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
-    this.tokenService.setDeviceIdCookie(res, deviceId);
 
     return {
       status: 'success',
@@ -568,11 +564,11 @@ export class AuthService {
   async loginGoogle(
     user: User,
     ipAddress: string,
-    _req: Request,
+    req: Request,
   ): Promise<GoogleAuthResponse> {
     this.usersService.logOAuthLogin(user.id, ipAddress, 'google');
 
-    const deviceId = uuidv4();
+    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(
       user.id,
