@@ -69,7 +69,6 @@ const IP_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 export interface GoogleAuthResponse extends AuthTokens {
   user: Omit<User, 'password' | 'refreshTokenHash' | 'deletedAt'>;
   isNewUser: boolean;
-  deviceId: string;
 }
 
 @Injectable()
@@ -242,12 +241,8 @@ export class AuthService {
     await this.usersService.updateLastLoginIp(user.id, ip);
 
     // Issue tokens using TokenService — stores in refresh_tokens table per device
-    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
-    const refreshToken = await this.tokenService.generateRefreshToken(
-      user.id,
-      deviceId,
-    );
+    const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
     return {
       status: 'success',
@@ -274,14 +269,8 @@ export class AuthService {
         message: 'Your session has expired. Please log in again.',
       });
     }
-
-    const deviceId = this.tokenService.extractDeviceId(req);
-
     try {
-      const tokens = await this.tokenService.rotateTokens(
-        rawRefreshToken,
-        deviceId,
-      );
+      const tokens = await this.tokenService.rotateTokens(rawRefreshToken);
       this.tokenService.setTokenCookies(res, tokens);
       return { status: 'success' };
     } catch {
@@ -296,21 +285,16 @@ export class AuthService {
   async logout(req: Request, res: Response): Promise<{ message: string }> {
     const cookies = req.cookies as Record<string, string> | undefined;
     const accessToken = cookies?.['accessToken'];
-    const deviceId = this.tokenService.extractDeviceId(req);
+    const rawRefreshToken = cookies?.['refreshToken'];
 
-    // Try to get userId from the access token — even if expired
-    if (accessToken) {
+    if (accessToken && rawRefreshToken) {
       try {
-        const payload = await this.jwtService.verifyAsync<JwtPayload>(
-          accessToken,
-          {
-            secret: env.JWT_ACCESS_SECRET,
-            ignoreExpiration: true,
-          },
-        );
-        await this.tokenService.invalidateRefreshToken(payload.sub, deviceId);
+        await this.jwtService.verifyAsync<JwtPayload>(accessToken, {
+          secret: env.JWT_ACCESS_SECRET,
+          ignoreExpiration: true,
+        });
+        await this.tokenService.invalidateRefreshToken(rawRefreshToken);
       } catch {
-        // Token is tampered — still clear cookies and return 200
         this.logger.warn('Logout called with unverifiable access token');
       }
     }
@@ -318,7 +302,6 @@ export class AuthService {
     this.tokenService.clearTokenCookies(res);
     return { message: 'You have been logged out successfully.' };
   }
-
   async getProfile(userId: string): Promise<User> {
     return this.usersService.findOne(userId);
   }
@@ -512,12 +495,8 @@ export class AuthService {
     await this.usersService.clearOtp(user.id);
 
     // Issue tokens via TokenService — per-device refresh token
-    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
-    const refreshToken = await this.tokenService.generateRefreshToken(
-      user.id,
-      deviceId,
-    );
+    const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
 
     return {
@@ -564,16 +543,12 @@ export class AuthService {
   async loginGoogle(
     user: User,
     ipAddress: string,
-    req: Request,
+    _req: Request,
   ): Promise<GoogleAuthResponse> {
     this.usersService.logOAuthLogin(user.id, ipAddress, 'google');
 
-    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
-    const refreshToken = await this.tokenService.generateRefreshToken(
-      user.id,
-      deviceId,
-    );
+    const refreshToken = await this.tokenService.generateRefreshToken(user.id);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, deletedAt, ...safeUser } = user;
@@ -581,7 +556,6 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      deviceId,
       user: safeUser,
       isNewUser: !user.onboardingComplete,
     };

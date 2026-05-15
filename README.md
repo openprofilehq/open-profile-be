@@ -615,478 +615,127 @@ curl -X GET 'http://localhost:3000/api/v1/search?q=ade' \
 - Live: `GET /api/v1/search?q=ade` returns correct shape with rate limit headers
 
 //
-arkdown# BE-AUTH-006 — Token & Session Management
 
-## Overview
+# Auth Bug Fix — JWT Session Refresh
 
-Implements JWT-based session management for all protected routes. Includes a global auth guard, silent token refresh, token rotation, and secure logout — ensuring logged-in users never experience unexpected 401s during an active session.
+## Problem
 
----
-
-## What Was Built
-
-### 1. Global JWT Auth Guard
-
-`src/modules/auth/guards/jwt-auth.guard.ts`
-
-Applies to every protected route automatically via `APP_GUARD` in `AppModule`. On each request it:
-
-- Extracts the `accessToken` from the `httpOnly` cookie
-- Verifies the token signature and expiry
-- Returns `401 SESSION_EXPIRED` if missing, expired, or tampered
-- Triggers silent refresh if token has less than 3 minutes remaining
-
-### 2. Token Service
-
-`src/modules/auth/services/token.service.ts`
-
-Centralises all token logic:
-
-- `generateAccessToken` — signs JWT with 15 min expiry
-- `generateRefreshToken` — generates UUID, hashes with argon2, stores per device in DB
-- `rotateTokens` — validates old token, issues new pair, invalidates old record
-- `invalidateRefreshToken` — deletes single device record (logout)
-- `invalidateAllRefreshTokens` — deletes all device records (password reset)
-- `setTokenCookies` — sets both cookies as `httpOnly`, `Secure`, `SameSite=Strict`
-- `clearTokenCookies` — clears both cookies with `Max-Age=0`
-- `needsSilentRefresh` — returns true if token TTL < 3 minutes
-
-### 3. Redis Lock Service
-
-`src/modules/auth/services/redis-lock.service.ts`
-
-Prevents race conditions when two simultaneous requests near token expiry both attempt refresh. Uses Redis `SET NX EX` (atomic) with a 5-second TTL lock per user.
-
-### 4. Refresh Token Entity
-
-`src/modules/auth/entities/refresh-token.entity.ts`
-
-Stores per-device refresh token records in the `refresh_tokens` table:
-
-| Column     | Type         | Description                          |
-| ---------- | ------------ | ------------------------------------ |
-| id         | uuid         | Primary key                          |
-| user_id    | uuid         | Foreign key → users (CASCADE DELETE) |
-| device_id  | varchar(36)  | Identifies the device/session        |
-| token_hash | varchar(500) | argon2 hash of raw token             |
-| expires_at | timestamptz  | Token expiry                         |
-| created_at | timestamp    | Record creation time                 |
-
-### 5. Endpoints
-
-#### `POST /api/v1/auth/refresh-token`
-
-- Reads `refreshToken` from httpOnly cookie
-- Validates against stored hash in DB
-- On success: issues new access + refresh token pair (rotation), sets new cookies
-- On failure: clears both cookies, returns `401 SESSION_EXPIRED`
-
-#### `POST /api/v1/auth/logout`
-
-- Reads `accessToken` from cookie (accepts expired tokens)
-- Deletes refresh token record for this device only
-- Clears both cookies with `Max-Age=0`
-- Returns `200` with logout message regardless of token state
+After the access token expired (15 minutes), the server was failing to use the
+refresh token to issue new tokens silently. This caused users to be logged out
+every 15 minutes despite having a valid 7-day refresh token.
 
 ---
 
-## Silent Refresh
+## Root Cause
 
-The guard proactively refreshes tokens without any client-side action:
-Incoming request
-↓
-Extract accessToken cookie
-↓
-Verify token
-↓
-TTL < 3 minutes?
-├── YES → Acquire Redis lock → Rotate tokens → Set new cookies → Continue request
-└── NO → Continue request as normal
+The `refresh_tokens` table had a `device_id` column used to look up token
+records during rotation:
 
-The client receives a fresh `accessToken` cookie in the response headers automatically.
-
----
-
-## Token Rotation
-
-Every refresh (silent or explicit) issues a new refresh token and invalidates the old one. Reusing an old refresh token returns `401` and clears all cookies.
-
----
-
-## Per-Device Sessions
-
-Each login creates a separate record in `refresh_tokens` identified by `device_id` (derived from `User-Agent`). Logging out on one device only deletes that device's record — other sessions remain active.
-
----
-
-## Migrations
-
-Two migrations were added:
-
-| Migration                                     | Description                                             |
-| --------------------------------------------- | ------------------------------------------------------- |
-| `1778712403563-CreateRefreshTokensTable`      | Creates `refresh_tokens` table with FK to users         |
-| `1778754115312-DropRefreshTokenHashFromUsers` | Removes legacy `refresh_token_hash` column from `users` |
-
-Run migrations:
-
-```bash
-pnpm migration:run
+```typescript
+// Before — looked up by deviceId
+const record = await this.refreshTokenRepo.findOne({
+  where: { deviceId },
+  relations: ['user'],
+});
 ```
+
+The `deviceId` was derived from the user-agent header — not unique per session:
+
+```typescript
+const ua = (req.headers?.['user-agent'] as string) ?? 'unknown';
+return Buffer.from(ua).toString('base64').slice(0, 36);
+```
+
+This meant two users on the same browser and machine produced the same
+`deviceId`. When the wrong record was found, `argon2.verify` failed against the
+mismatched hash, throwing `UnauthorizedException` and logging the user out.
+
+---
+
+## Fix
+
+The reviewer's guidance: each session already has its own unique refresh token.
+There is no need to tie a token to a device — the token itself is the
+identifier. Look up by hash, not by `deviceId`.
+
+### What changed
+
+**`token.service.ts`**
+
+- `generateRefreshToken(userId)` — removed `deviceId` parameter. Each login
+  creates a new row identified purely by its hashed token value.
+- `rotateTokens(rawRefreshToken)` — removed `deviceId` parameter. Loads all
+  records and verifies hash to find the matching session.
+- `invalidateRefreshToken(rawRefreshToken)` — now takes the raw token instead
+  of `userId + deviceId`. Finds and deletes the matching record by hash.
+- Removed `extractDeviceId()`, `setDeviceIdCookie()`, and all `deviceId`-related
+  constants.
+
+**`auth.service.ts`**
+
+- `login()`, `verifyOtp()`, `loginGoogle()` — no longer compute or pass
+  `deviceId` when issuing tokens.
+- `refreshTokens()` — passes only `rawRefreshToken` to `rotateTokens`.
+- `logout()` — passes `rawRefreshToken` to `invalidateRefreshToken` instead of
+  `userId + deviceId`.
+- Removed `GoogleAuthResponse.deviceId` from the interface.
+
+**`jwt-auth.guard.ts`**
+
+- `attemptRefresh()` — removed `extractDeviceId` call and `deviceId` argument
+  from `rotateTokens`.
+
+**`refresh-token.entity.ts`**
+
+- Removed `deviceId` column.
+
+**Database**
+
+- `device_id` column dropped directly:
+  ```sql
+  ALTER TABLE refresh_tokens DROP COLUMN device_id;
+  ```
+  No migration file — the column was dropped in place to avoid unnecessary
+  migration overhead as advised by the reviewer.
+
+---
+
+## Session Model (After Fix)
+
+Each login creates one row in `refresh_tokens`:
+
+| Column       | Description                          |
+| ------------ | ------------------------------------ |
+| `id`         | UUID primary key                     |
+| `user_id`    | Owner of the session                 |
+| `token_hash` | Argon2 hash of the raw refresh token |
+| `expires_at` | 7 days from creation                 |
+| `created_at` | Timestamp                            |
+
+A user can have multiple active rows (multiple sessions across devices). Each
+session is independent — logout deletes that session's row by matching the hash.
+No device tracking needed.
 
 ---
 
 ## Files Changed
 
-### New
-
-- `src/modules/auth/entities/refresh-token.entity.ts`
-- `src/modules/auth/services/token.service.ts`
-- `src/modules/auth/services/redis-lock.service.ts`
-- `src/database/migrations/1778712403563-CreateRefreshTokensTable.ts`
-- `src/database/migrations/1778754115312-DropRefreshTokenHashFromUsers.ts`
-
-### Modified
-
-- `src/modules/auth/guards/jwt-auth.guard.ts` — added silent refresh logic
-- `src/modules/auth/auth.service.ts` — updated login, logout, refresh, verifyOtp, loginGoogle
-- `src/modules/auth/auth.controller.ts` — updated refresh and logout endpoints
-- `src/modules/auth/auth.module.ts` — registered new services and entity
-- `src/modules/auth/strategies/jwt.strategy.ts` — fixed cookie name to `accessToken`
-- `src/modules/users/users.service.ts` — removed `setRefreshTokenHash` method
-- `src/main.ts` — added `cookie-parser` middleware
+| File                                                | Change                                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `src/modules/auth/services/token.service.ts`        | Removed `deviceId` throughout, rewrote `rotateTokens` and `invalidateRefreshToken` |
+| `src/modules/auth/auth.service.ts`                  | Removed `deviceId` from all auth flows                                             |
+| `src/modules/auth/guards/jwt-auth.guard.ts`         | Removed `extractDeviceId` and `deviceId` from `attemptRefresh`                     |
+| `src/modules/auth/entities/refresh-token.entity.ts` | Removed `deviceId` column                                                          |
 
 ---
 
-## Environment Variables
-
-No new variables required. Existing variables used:
-
-```dotenv
-JWT_ACCESS_SECRET=        # Access token signing secret
-JWT_ACCESS_EXPIRES_IN=15m # Access token expiry (default: 15 minutes)
-JWT_REFRESH_SECRET=       # Refresh token signing secret
-JWT_REFRESH_EXPIRES_IN=7d # Refresh token expiry (default: 7 days)
-REDIS_URL=                # Redis connection URL
-```
-
----
-
-## Edge Cases Handled
-
-| Case                                  | Behaviour                                                                        |
-| ------------------------------------- | -------------------------------------------------------------------------------- |
-| Logout with expired access token      | Extracts userId with `ignoreExpiration: true`, still clears cookies, returns 200 |
-| Two simultaneous requests near expiry | Redis lock prevents duplicate token generation                                   |
-| Password reset                        | Invalidates all refresh tokens across all devices                                |
-| Reused refresh token                  | 401 + cookies cleared immediately                                                |
-| Tampered access token                 | 401 SESSION_EXPIRED                                                              |
-
----
-
-## Testing
-
-See test procedures in the ticket. All 9 acceptance criteria verified manually:
-✅ POST /auth/refresh-token endpoint
-✅ POST /auth/logout endpoint
-✅ Global JwtAuthGuard on all protected routes
-✅ 401 SESSION_EXPIRED on invalid/missing token
-✅ Silent refresh when TTL < 3 minutes
-✅ Refresh token validates against DB hash
-✅ 401 + cookies cleared on invalid refresh token
-✅ Logout clears cookies + deletes DB record
-✅ Per-device logout isolation
-
-//Dashboard
-
-# BE-ONB-007 — Dashboard Profile Data Endpoint
-
-## Overview
-
-Authenticated endpoint that returns the full current profile state for the logged-in user. Unlike the public profile endpoint, this returns all components regardless of active state and reflects the live editing state including unpublished changes.
-
----
-
-## Endpoint
+## Test Results
 
 ```
-GET /api/v1/profiles/dashboard
+[23:51:04] Login: userId=cf326350...          ← logged in
+[00:08:01] Token refresh succeeded [no_access_token]  ← 17 min later, silently refreshed ✅
 ```
 
-### Authentication
-
-Requires a valid JWT access token. The global `JwtAuthGuard` protects this route automatically — no `@Public()` decorator means auth is enforced.
-
-### Headers
-
-| Header          | Value                   |
-| --------------- | ----------------------- |
-| `Authorization` | `Bearer <access_token>` |
-
----
-
-## Responses
-
-### 200 OK — Profile found
-
-```json
-{
-  "success": true,
-  "data": {
-    "username": "johndoe",
-    "fullName": "Jane Doe",
-    "bio": "Software developer passionate about open source",
-    "photoUrl": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
-    "templateType": null,
-    "themeSettings": null,
-    "isPublished": true,
-    "hasUnpublishedChanges": false,
-    "ctaLabel": null,
-    "ctaUrl": null,
-    "components": []
-  }
-}
-```
-
-### 401 Unauthorized — Missing or invalid token
-
-```json
-{
-  "success": false,
-  "statusCode": 401,
-  "error": "Unauthorized"
-}
-```
-
-### 404 Not Found — User has not completed onboarding
-
-```json
-{
-  "success": false,
-  "statusCode": 404,
-  "error": "Not Found",
-  "message": "Profile not found. Please complete your profile setup."
-}
-```
-
----
-
-## Key Difference from Public Endpoint
-
-|                         | `GET /profiles/:username` | `GET /profiles/dashboard`      |
-| ----------------------- | ------------------------- | ------------------------------ |
-| Auth required           | No                        | Yes                            |
-| Components returned     | Active + has content only | All (including inactive/empty) |
-| State reflected         | Last published snapshot   | Live current state             |
-| `hasUnpublishedChanges` | Not included              | Included                       |
-| Cached                  | Yes (Redis, 60s)          | No                             |
-
----
-
-## Implementation
-
-### Files changed
-
-| File                                                            | Change                               |
-| --------------------------------------------------------------- | ------------------------------------ |
-| `src/modules/profile/profile.controller.ts`                     | Added `GET /dashboard` route         |
-| `src/modules/profile/profile.service.ts`                        | Added `getDashboardProfile()` method |
-| `src/modules/profile/entities/profile.entity.ts`                | Added `ctaLabel`, `ctaUrl` columns   |
-| `src/database/migrations/AddCtaFieldsToProfile1778844521139.ts` | Migration for `cta_label`, `cta_url` |
-
-### Controller
-
-```typescript
-@Get('dashboard')
-@HttpCode(HttpStatus.OK)
-@ApiBearerAuth()
-@ApiOperation({ summary: 'Get full current profile data for the authenticated user' })
-@ApiResponse({ status: 200, description: 'Profile returned successfully' })
-@ApiResponse({ status: 401, description: 'Unauthorized' })
-@ApiResponse({ status: 404, description: 'Profile not found. Please complete your profile setup.' })
-async getDashboardProfile(
-  @currentUserDecorator.CurrentUser('sub') userId: string,
-) {
-  return this.profileService.getDashboardProfile(userId);
-}
-```
-
-> Must be placed **above** `@Get(':username')` in the controller — NestJS matches routes top to bottom and `dashboard` would otherwise be captured as a `:username` param.
-
-### Service
-
-```typescript
-async getDashboardProfile(userId: string): Promise<Record<string, unknown>> {
-  const profile = await this.profileRepo.findOne({
-    where: { userId, deletedAt: IsNull() },
-  });
-
-  if (!profile) {
-    throw new NotFoundException(
-      'Profile not found. Please complete your profile setup.',
-    );
-  }
-
-  const components = await this.componentRepo.find({
-    where: { profileId: profile.id },
-    order: { displayOrder: 'ASC' },
-  });
-
-  return {
-    username: profile.username,
-    fullName: profile.fullName,
-    bio: profile.bio,
-    photoUrl: profile.photoUrl,
-    templateType: profile.templateType,
-    themeSettings: profile.themeSettings,
-    isPublished: profile.isPublished,
-    hasUnpublishedChanges: profile.hasUnpublishedChanges,
-    ctaLabel: profile.ctaLabel,
-    ctaUrl: profile.ctaUrl,
-    components: components.map((c) => ({
-      id: c.id,
-      sectionType: c.sectionType,
-      title: c.title,
-      content: c.content,
-      displayOrder: c.displayOrder,
-      isEnabled: c.isEnabled,
-      metadata: c.metadata,
-    })),
-  };
-}
-```
-
----
-
-## Migration
-
-`AddCtaFieldsToProfile1778844521139` adds `cta_label` and `cta_url` to the `profiles` table.
-
-```bash
-pnpm run migration:run
-```
-
----
-
-## Dependencies
-
-- `POST /profiles` must have run successfully (profile must exist)
-- `has_unpublished_changes` column — added in `UpdateProfileTable1778760000000`
-- `cta_label`, `cta_url` columns — added in `AddCtaFieldsToProfile1778844521139`
-
----
-
-## QA Checklist
-
-- [x] Logged-in user with profile receives `200` with full profile data
-- [x] Response includes `hasUnpublishedChanges` field
-- [x] After editing profile, `hasUnpublishedChanges` returns `true`
-- [x] After republishing, `hasUnpublishedChanges` returns `false`
-- [x] All components returned including inactive/empty ones
-- [x] User without a profile receives `404`
-- [x] Unauthenticated request receives `401`
-
-Auth Fix — JWT Cookie Refresh Flow (Access + Refresh Rotation)
-Problem
-
-After the access token expired (15 minutes), users were being logged out even though a valid 7-day refresh token existed.
-
-This happened because protected requests failed after access token expiry and the session refresh flow was not consistently triggered.
-
-Root Cause
-
-1. Missing automatic refresh trigger (client-side)
-
-The backend already exposed a refresh endpoint:
-
-POST /auth/refresh-token
-
-However, the frontend was not automatically calling it when a 401 Unauthorized occurred. This caused:
-
-Access token expires → 401 → request fails → user logged out
-
-Instead of:
-
-Access token expires → 401 → refresh token used → new tokens issued → request retried 2. Refresh flow depends on cookie-based authentication
-
-The system uses httpOnly cookies:
-
-accessToken (15 minutes)
-refreshToken (7 days)
-
-Since tokens are not manually attached in headers, refresh must be triggered automatically on failed requests.
-
-Fix
-
-1. Backend refresh flow is already correct
-
-No backend changes were required.
-
-The existing implementation already supports:
-
-Refresh token validation (argon2.verify)
-Token rotation (new refresh token issued on use)
-Access token regeneration
-Cookie rehydration via setTokenCookies()
-POST /auth/refresh-token
-→ validates refresh token
-→ rotates refresh token
-→ issues new access + refresh tokens
-→ updates cookies 2. Token rotation logic (unchanged and correct)
-const records = await this.refreshTokenRepo.find({
-where: { deviceId },
-relations: ['user'],
-});
-
-let matchedRecord: RefreshToken | null = null;
-
-for (const record of records) {
-const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-if (isValid) {
-matchedRecord = record;
-break;
-}
-} 3. Cookie handling (unchanged)
-
-Each login issues:
-
-Cookie Type TTL
-accessToken httpOnly JWT 15 mins
-refreshToken raw token hash 7 days
-deviceId session identifier persistent
-Frontend Requirement (critical)
-
-To complete the system, the frontend must:
-
-Auto-refresh flow
-
-On any 401 Unauthorized response:
-
-Call:
-
-POST /auth/refresh-token
-Retry original request
-Continue session seamlessly
-Expected Behaviour After Fix
-Before fix:
-Access token expires → 401 → user logged out
-After fix:
-Access token expires → 401 → refresh endpoint called → new tokens issued → request retried
-Files involved (backend unchanged)
-File Purpose
-token.service.ts Access + refresh generation, rotation, cookies
-auth.service.ts Login + refresh orchestration
-auth.controller.ts Exposes /auth/refresh-token
-Testing
-Login successfully
-Wait 16 minutes (access token expiry)
-Trigger any protected endpoint
-Confirm:
-Refresh endpoint is called automatically (frontend)
-New cookies are set
-Request succeeds without re-login
-Summary
-Backend refresh system: ✅ already correct
-Token rotation: ✅ already correct
-Issue: ❌ missing frontend auto-refresh trigger
-Fix scope: frontend interceptor only
+Access token expired after 15 minutes. The guard detected no access token,
+used the refresh token cookie to rotate tokens silently, and the request
+completed successfully — no re-login required.

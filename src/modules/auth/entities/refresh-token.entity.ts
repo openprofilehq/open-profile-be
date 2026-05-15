@@ -22,9 +22,6 @@ export class RefreshToken {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column({ type: 'varchar', length: 36, name: 'device_id' })
-  deviceId: string;
-
   @Column({ type: 'varchar', length: 500, name: 'token_hash' })
   tokenHash: string;
 
