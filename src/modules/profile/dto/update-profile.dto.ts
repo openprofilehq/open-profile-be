@@ -1,11 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUrl,
-  MaxLength,
-} from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @ApiPropertyOptional({
@@ -29,15 +23,4 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(200, { message: 'Bio cannot exceed 200 characters.' })
   bio?: string | null;
-
-  @ApiPropertyOptional({
-    description: 'Cloudinary URL to profile photo',
-    example: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
-  })
-  @IsOptional()
-  @IsUrl(
-    { host_whitelist: [/\.cloudinary\.com$/] },
-    { message: 'photoUrl must be a valid Cloudinary URL' },
-  )
-  photoUrl?: string;
 }
