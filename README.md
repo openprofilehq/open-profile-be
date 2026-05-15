@@ -613,3 +613,186 @@ curl -X GET 'http://localhost:3000/api/v1/search?q=ade' \
 - `pnpm build` — passed
 - `pnpm test` — passed
 - Live: `GET /api/v1/search?q=ade` returns correct shape with rate limit headers
+
+//
+arkdown# BE-AUTH-006 — Token & Session Management
+
+## Overview
+
+Implements JWT-based session management for all protected routes. Includes a global auth guard, silent token refresh, token rotation, and secure logout — ensuring logged-in users never experience unexpected 401s during an active session.
+
+---
+
+## What Was Built
+
+### 1. Global JWT Auth Guard
+
+`src/modules/auth/guards/jwt-auth.guard.ts`
+
+Applies to every protected route automatically via `APP_GUARD` in `AppModule`. On each request it:
+
+- Extracts the `accessToken` from the `httpOnly` cookie
+- Verifies the token signature and expiry
+- Returns `401 SESSION_EXPIRED` if missing, expired, or tampered
+- Triggers silent refresh if token has less than 3 minutes remaining
+
+### 2. Token Service
+
+`src/modules/auth/services/token.service.ts`
+
+Centralises all token logic:
+
+- `generateAccessToken` — signs JWT with 15 min expiry
+- `generateRefreshToken` — generates UUID, hashes with argon2, stores per device in DB
+- `rotateTokens` — validates old token, issues new pair, invalidates old record
+- `invalidateRefreshToken` — deletes single device record (logout)
+- `invalidateAllRefreshTokens` — deletes all device records (password reset)
+- `setTokenCookies` — sets both cookies as `httpOnly`, `Secure`, `SameSite=Strict`
+- `clearTokenCookies` — clears both cookies with `Max-Age=0`
+- `needsSilentRefresh` — returns true if token TTL < 3 minutes
+
+### 3. Redis Lock Service
+
+`src/modules/auth/services/redis-lock.service.ts`
+
+Prevents race conditions when two simultaneous requests near token expiry both attempt refresh. Uses Redis `SET NX EX` (atomic) with a 5-second TTL lock per user.
+
+### 4. Refresh Token Entity
+
+`src/modules/auth/entities/refresh-token.entity.ts`
+
+Stores per-device refresh token records in the `refresh_tokens` table:
+
+| Column     | Type         | Description                          |
+| ---------- | ------------ | ------------------------------------ |
+| id         | uuid         | Primary key                          |
+| user_id    | uuid         | Foreign key → users (CASCADE DELETE) |
+| device_id  | varchar(36)  | Identifies the device/session        |
+| token_hash | varchar(500) | argon2 hash of raw token             |
+| expires_at | timestamptz  | Token expiry                         |
+| created_at | timestamp    | Record creation time                 |
+
+### 5. Endpoints
+
+#### `POST /api/v1/auth/refresh-token`
+
+- Reads `refreshToken` from httpOnly cookie
+- Validates against stored hash in DB
+- On success: issues new access + refresh token pair (rotation), sets new cookies
+- On failure: clears both cookies, returns `401 SESSION_EXPIRED`
+
+#### `POST /api/v1/auth/logout`
+
+- Reads `accessToken` from cookie (accepts expired tokens)
+- Deletes refresh token record for this device only
+- Clears both cookies with `Max-Age=0`
+- Returns `200` with logout message regardless of token state
+
+---
+
+## Silent Refresh
+
+The guard proactively refreshes tokens without any client-side action:
+Incoming request
+↓
+Extract accessToken cookie
+↓
+Verify token
+↓
+TTL < 3 minutes?
+├── YES → Acquire Redis lock → Rotate tokens → Set new cookies → Continue request
+└── NO → Continue request as normal
+
+The client receives a fresh `accessToken` cookie in the response headers automatically.
+
+---
+
+## Token Rotation
+
+Every refresh (silent or explicit) issues a new refresh token and invalidates the old one. Reusing an old refresh token returns `401` and clears all cookies.
+
+---
+
+## Per-Device Sessions
+
+Each login creates a separate record in `refresh_tokens` identified by `device_id` (derived from `User-Agent`). Logging out on one device only deletes that device's record — other sessions remain active.
+
+---
+
+## Migrations
+
+Two migrations were added:
+
+| Migration                                     | Description                                             |
+| --------------------------------------------- | ------------------------------------------------------- |
+| `1778712403563-CreateRefreshTokensTable`      | Creates `refresh_tokens` table with FK to users         |
+| `1778754115312-DropRefreshTokenHashFromUsers` | Removes legacy `refresh_token_hash` column from `users` |
+
+Run migrations:
+
+```bash
+pnpm migration:run
+```
+
+---
+
+## Files Changed
+
+### New
+
+- `src/modules/auth/entities/refresh-token.entity.ts`
+- `src/modules/auth/services/token.service.ts`
+- `src/modules/auth/services/redis-lock.service.ts`
+- `src/database/migrations/1778712403563-CreateRefreshTokensTable.ts`
+- `src/database/migrations/1778754115312-DropRefreshTokenHashFromUsers.ts`
+
+### Modified
+
+- `src/modules/auth/guards/jwt-auth.guard.ts` — added silent refresh logic
+- `src/modules/auth/auth.service.ts` — updated login, logout, refresh, verifyOtp, loginGoogle
+- `src/modules/auth/auth.controller.ts` — updated refresh and logout endpoints
+- `src/modules/auth/auth.module.ts` — registered new services and entity
+- `src/modules/auth/strategies/jwt.strategy.ts` — fixed cookie name to `accessToken`
+- `src/modules/users/users.service.ts` — removed `setRefreshTokenHash` method
+- `src/main.ts` — added `cookie-parser` middleware
+
+---
+
+## Environment Variables
+
+No new variables required. Existing variables used:
+
+```dotenv
+JWT_ACCESS_SECRET=        # Access token signing secret
+JWT_ACCESS_EXPIRES_IN=15m # Access token expiry (default: 15 minutes)
+JWT_REFRESH_SECRET=       # Refresh token signing secret
+JWT_REFRESH_EXPIRES_IN=7d # Refresh token expiry (default: 7 days)
+REDIS_URL=                # Redis connection URL
+```
+
+---
+
+## Edge Cases Handled
+
+| Case                                  | Behaviour                                                                        |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| Logout with expired access token      | Extracts userId with `ignoreExpiration: true`, still clears cookies, returns 200 |
+| Two simultaneous requests near expiry | Redis lock prevents duplicate token generation                                   |
+| Password reset                        | Invalidates all refresh tokens across all devices                                |
+| Reused refresh token                  | 401 + cookies cleared immediately                                                |
+| Tampered access token                 | 401 SESSION_EXPIRED                                                              |
+
+---
+
+## Testing
+
+See test procedures in the ticket. All 9 acceptance criteria verified manually:
+✅ POST /auth/refresh-token endpoint
+✅ POST /auth/logout endpoint
+✅ Global JwtAuthGuard on all protected routes
+✅ 401 SESSION_EXPIRED on invalid/missing token
+✅ Silent refresh when TTL < 3 minutes
+✅ Refresh token validates against DB hash
+✅ 401 + cookies cleared on invalid refresh token
+✅ Logout clears cookies + deletes DB record
+✅ Per-device logout isolation
