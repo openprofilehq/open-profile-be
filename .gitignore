@@ -4,6 +4,9 @@ cookies.txt
 /dist
 /node_modules
 /build
+
+# Local file uploads (use cloud storage in production)
+/uploads
 *.tsbuildinfo
 
 # Logs
