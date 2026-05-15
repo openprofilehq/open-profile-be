@@ -18,6 +18,7 @@ import { RedisService } from '../../common/redis/redis.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
 import { CreateProfileDto } from './dto/create-profile.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UsernamesService } from '../usernames/usernames.service';
 import { PublishProfileDto } from './dto/publish-profile.dto';
@@ -74,7 +75,6 @@ export class ProfileService {
     const profile = this.profileRepo.create({
       userId: user.sub,
       username: usernameCheck.normalizedUsername, // already trimmed + lowercased by UsernamesService
-      fullName: createProfileDto.fullName,
       bio: createProfileDto.bio,
       photoUrl: createProfileDto.photoUrl,
     });
@@ -324,6 +324,45 @@ export class ProfileService {
     return result;
   }
 
+  async updateProfile(
+    username: string,
+    dto: UpdateProfileDto,
+    userId: string,
+  ): Promise<Record<string, unknown>> {
+    const profile = await this.profileRepo.findOne({
+      where: { username: username.toLowerCase(), deletedAt: IsNull() },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    if (profile.userId !== userId) {
+      throw new ForbiddenException(
+        "You don't have permission to update this profile.",
+      );
+    }
+
+    if (dto.fullName !== undefined) profile.fullName = dto.fullName;
+    if (dto.bio !== undefined) profile.bio = dto.bio;
+    if (dto.photoUrl !== undefined) profile.photoUrl = dto.photoUrl;
+
+    profile.hasUnpublishedChanges = true;
+
+    const saved = await this.profileRepo.save(profile);
+    await this.invalidateCache(saved.username);
+
+    return {
+      username: saved.username,
+      fullName: saved.fullName,
+      bio: saved.bio,
+      photoUrl: saved.photoUrl,
+      hasUnpublishedChanges: saved.hasUnpublishedChanges,
+    };
+  }
+
   async publishProfile(
     userId: string,
     dto: PublishProfileDto,
@@ -375,8 +414,9 @@ export class ProfileService {
        */
       if (!profile.isPublished) {
         profile.isPublished = true;
-        await this.profileRepo.save(profile);
       }
+      profile.hasUnpublishedChanges = false;
+      await this.profileRepo.save(profile);
 
       await this.invalidateCache(profile.username);
 

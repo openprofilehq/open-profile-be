@@ -26,16 +26,6 @@ export class CreateProfileDto {
   username: string;
 
   @ApiProperty({
-    description: 'Display name for the profile',
-    example: 'John Doe',
-    maxLength: 100,
-  })
-  @IsNotEmpty()
-  @IsString()
-  @MaxLength(100)
-  fullName: string;
-
-  @ApiProperty({
     description: 'Short biography',
     example: 'Software developer passionate about open source',
     maxLength: 300,

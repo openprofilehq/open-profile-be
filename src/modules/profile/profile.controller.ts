@@ -31,6 +31,7 @@ import { ReorderComponentsDto } from './dto/reorder-components.dto';
 import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -86,6 +87,27 @@ export class ProfileController {
     @Body() dto: PublishProfileDto,
   ) {
     return this.profileService.publishProfile(userId, dto);
+  }
+
+  @Patch(':username')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update profile fields for the authenticated user' })
+  @ApiParam({ name: 'username', description: 'The profile username' })
+  @ApiResponse({ status: 200, description: 'Profile updated successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Profile does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'Validation error' })
+  async updateProfile(
+    @Param('username') username: string,
+    @Body() dto: UpdateProfileDto,
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ) {
+    return this.profileService.updateProfile(username, dto, userId);
   }
 
   @Public()

@@ -53,6 +53,9 @@ export class Profile {
   @Column({ type: 'boolean', name: 'is_published', default: false })
   isPublished: boolean;
 
+  @Column({ type: 'boolean', name: 'has_unpublished_changes', default: false })
+  hasUnpublishedChanges: boolean;
+
   @OneToMany(() => ProfileComponent, (component) => component.profile)
   components: ProfileComponent[];
 

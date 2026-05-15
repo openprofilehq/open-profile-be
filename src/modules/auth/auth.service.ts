@@ -12,7 +12,6 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
-import type { StringValue } from 'ms';
 import { env } from '../../config/env';
 import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
 import { AuthProvider, User, UserRole } from '../users/entities/user.entity';
@@ -27,7 +26,8 @@ import { JwtPayload } from './strategies/jwt.strategy';
 import { QueueService } from '../queue/queue.service';
 import { MailService } from '../mail/mail.service';
 import { RedisService } from '../../common/redis/redis.service';
-import type { Response } from 'express';
+import { TokenService } from './services/token.service';
+import type { Request, Response } from 'express';
 import {
   QUEUE_JOB_NAMES,
   QUEUE_NAMES,
@@ -61,7 +61,6 @@ export interface RegisterDegradedResponse {
 }
 
 const OTP_TTL_MS = 5 * 60 * 1000;
-
 const BRUTE_MAX_ATTEMPTS = 5;
 const BRUTE_LOCKOUT_SECONDS = 30 * 60;
 const IP_RATE_LIMIT_MAX = 10;
@@ -83,6 +82,7 @@ export class AuthService {
     private readonly rateLimiterService: RateLimiterService,
     private readonly mailService: MailService,
     private readonly redisService: RedisService,
+    private readonly tokenService: TokenService,
   ) {}
 
   async register(
@@ -107,12 +107,10 @@ export class AuthService {
         otp,
       );
     } catch (err) {
-      // Edge case #1: log failure, return 202, user record is intact
       this.logger.error(
         `Resend failure for user ${user.id} (${user.email})`,
         err instanceof Error ? err.stack : err,
       );
-
       return {
         status: 'pending',
         message:
@@ -121,7 +119,6 @@ export class AuthService {
       };
     }
 
-    // AC #11, AC #12: 201, no tokens
     return {
       status: 'success',
       message: 'A verification code has been sent to your email address.',
@@ -131,6 +128,7 @@ export class AuthService {
   async login(
     dto: LoginDto,
     ip: string,
+    req: Request,
     res: Response,
   ): Promise<{
     status: string;
@@ -242,22 +240,14 @@ export class AuthService {
     );
     await this.usersService.updateLastLoginIp(user.id, ip);
 
-    const tokens = await this.signTokens(user);
-    await this.persistRefreshToken(user.id, tokens.refreshToken);
-
-    const isProd = env.NODE_ENV === 'production';
-    res.cookie('access_token', tokens.accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000,
-    });
-    res.cookie('refresh_token', tokens.refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Issue tokens using TokenService — stores in refresh_tokens table per device
+    const deviceId = this.tokenService.extractDeviceId(req);
+    const accessToken = await this.tokenService.generateAccessToken(user);
+    const refreshToken = await this.tokenService.generateRefreshToken(
+      user.id,
+      deviceId,
+    );
+    this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
 
     return {
       status: 'success',
@@ -270,31 +260,63 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string): Promise<AuthTokens> {
-    let payload: JwtPayload;
-    try {
-      payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
-        secret: env.JWT_REFRESH_SECRET,
+  async refreshTokens(
+    req: Request,
+    res: Response,
+  ): Promise<{ status: string }> {
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const rawRefreshToken = cookies?.['refreshToken'];
+
+    if (!rawRefreshToken) {
+      this.tokenService.clearTokenCookies(res);
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.',
       });
+    }
+
+    const deviceId = this.tokenService.extractDeviceId(req);
+
+    try {
+      const tokens = await this.tokenService.rotateTokens(
+        rawRefreshToken,
+        deviceId,
+      );
+      this.tokenService.setTokenCookies(res, tokens);
+      return { status: 'success' };
     } catch {
-      throw new UnauthorizedException('Invalid refresh token');
+      this.tokenService.clearTokenCookies(res);
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.',
+      });
     }
-
-    const user = await this.usersService.findOne(payload.sub);
-    if (!user.refreshTokenHash) {
-      throw new UnauthorizedException('Refresh token has been revoked');
-    }
-
-    const matches = await argon2.verify(user.refreshTokenHash, refreshToken);
-    if (!matches) throw new UnauthorizedException('Invalid refresh token');
-
-    const tokens = await this.signTokens(user);
-    await this.persistRefreshToken(user.id, tokens.refreshToken);
-    return tokens;
   }
 
-  async logout(userId: string): Promise<void> {
-    await this.usersService.setRefreshTokenHash(userId, null);
+  async logout(req: Request, res: Response): Promise<{ message: string }> {
+    const cookies = req.cookies as Record<string, string> | undefined;
+    const accessToken = cookies?.['accessToken'];
+    const deviceId = this.tokenService.extractDeviceId(req);
+
+    // Try to get userId from the access token — even if expired
+    if (accessToken) {
+      try {
+        const payload = await this.jwtService.verifyAsync<JwtPayload>(
+          accessToken,
+          {
+            secret: env.JWT_ACCESS_SECRET,
+            ignoreExpiration: true,
+          },
+        );
+        await this.tokenService.invalidateRefreshToken(payload.sub, deviceId);
+      } catch {
+        // Token is tampered — still clear cookies and return 200
+        this.logger.warn('Logout called with unverifiable access token');
+      }
+    }
+
+    this.tokenService.clearTokenCookies(res);
+    return { message: 'You have been logged out successfully.' };
   }
 
   async getProfile(userId: string): Promise<User> {
@@ -321,21 +343,16 @@ export class AuthService {
 
     const user = await this.usersService.findByEmail(lowercasedEmail);
 
-    // Only generate OTP for email-based accounts. Google OAuth users have no local
-    // password to reset, and we must not reveal their auth provider to the caller.
     if (user && user.authProvider === AuthProvider.EMAIL) {
       const otp = this.generateOtp();
       const otpHash = await argon2.hash(otp);
       const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
 
-      // Overwrites any existing OTP, invalidating previous codes immediately.
       await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
 
       try {
         await this.mailService.sendPasswordResetOtp(user.email, otp);
       } catch (err) {
-        // Log the delivery failure but do not surface it — the generic response
-        // must be returned regardless to avoid leaking whether the email exists.
         this.logger.error(
           `Failed to send password reset OTP to ${user.email}`,
           err instanceof Error ? err.stack : err,
@@ -343,8 +360,6 @@ export class AuthService {
       }
     }
 
-    // Always return the same response whether the email exists or not,
-    // to prevent user enumeration.
     return { status: 'success', message: FORGOT_PASSWORD_GENERIC_MSG };
   }
 
@@ -373,7 +388,6 @@ export class AuthService {
 
     const isValid = await argon2.verify(user.otpHash, dto.otp);
     if (!isValid) {
-      // Invalidate the OTP after too many wrong attempts to prevent brute force.
       const attempts = await this.redisService.increment(
         attemptsKey,
         OTP_TTL_MS / 1000,
@@ -389,10 +403,8 @@ export class AuthService {
     }
 
     await this.redisService.del(attemptsKey);
-    // Clear the OTP and mark the account as verified — receiving the OTP proves email ownership.
     await this.usersService.clearOtp(user.id);
 
-    // Signed with a dedicated secret so reset tokens cannot be used as access tokens.
     const resetToken = await this.jwtService.signAsync(
       { sub: user.id, purpose: 'password_reset' },
       { secret: env.JWT_RESET_SECRET, expiresIn: '10m' },
@@ -419,7 +431,6 @@ export class AuthService {
       );
     }
 
-    // Guard against tokens signed with a different secret or purpose.
     if (payload.purpose !== 'password_reset') {
       throw new HttpException(
         {
@@ -433,8 +444,7 @@ export class AuthService {
 
     const user = await this.usersService.findOne(payload.sub);
     await this.usersService.updatePassword(user.id, dto.newPassword);
-    // Invalidate all existing sessions after password change.
-    await this.usersService.setRefreshTokenHash(user.id, null);
+    await this.tokenService.invalidateAllRefreshTokens(user.id);
 
     await this.queueService.addJob<PasswordChangedEmailData>(
       QUEUE_NAMES.EMAIL,
@@ -451,6 +461,7 @@ export class AuthService {
 
   async verifyOtp(
     dto: VerifyOtpDto,
+    req: Request,
     res: Response,
   ): Promise<{
     status: string;
@@ -500,75 +511,25 @@ export class AuthService {
 
     await this.usersService.clearOtp(user.id);
 
-    const tokens = await this.issueTokens(user);
-
-    res.cookie('accessToken', tokens.accessToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes
-    });
-
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, refreshTokenHash, deletedAt, ...safeUser } = user;
+    // Issue tokens via TokenService — per-device refresh token
+    const deviceId = this.tokenService.extractDeviceId(req);
+    const accessToken = await this.tokenService.generateAccessToken(user);
+    const refreshToken = await this.tokenService.generateRefreshToken(
+      user.id,
+      deviceId,
+    );
+    this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
 
     return {
       status: 'success',
       message: 'Email verified successfully.',
       user: {
-        id: safeUser.id,
-        email: safeUser.email,
-        role: safeUser.role,
-        onboardingComplete: safeUser.onboardingComplete,
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        onboardingComplete: user.onboardingComplete,
       },
     };
-  }
-
-  // Helper method to simulate OTP generation and sending for non-existent emails
-
-  private async issueTokens(user: User): Promise<AuthResponse> {
-    const tokens = await this.signTokens(user);
-    await this.persistRefreshToken(user.id, tokens.refreshToken);
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, refreshTokenHash, deletedAt, ...safeUser } = user;
-
-    return { ...tokens, user: safeUser };
-  }
-
-  private async signTokens(user: User): Promise<AuthTokens> {
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role ?? UserRole.USER,
-      onboardingComplete: user.onboardingComplete,
-    };
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        secret: env.JWT_ACCESS_SECRET,
-        expiresIn: env.JWT_ACCESS_EXPIRES_IN as StringValue,
-      }),
-      this.jwtService.signAsync(payload, {
-        secret: env.JWT_REFRESH_SECRET,
-        expiresIn: env.JWT_REFRESH_EXPIRES_IN as StringValue,
-      }),
-    ]);
-    return { accessToken, refreshToken };
-  }
-
-  private async persistRefreshToken(
-    userId: string,
-    refreshToken: string,
-  ): Promise<void> {
-    const hash = await argon2.hash(refreshToken);
-    await this.usersService.setRefreshTokenHash(userId, hash);
   }
 
   private generateOtp(): string {
@@ -582,20 +543,13 @@ export class AuthService {
     let isNewUser = false;
 
     if (user) {
-      /**
-       * Link google account if not already linked (email account exists)
-       */
       if (user.authProvider === AuthProvider.EMAIL) {
         await this.usersService.linkGoogleAccount(user.id);
         user = await this.usersService.findOne(user.id);
       }
-
       return { user, isNewUser };
     }
 
-    /**
-     * If user does not exist, create a new Google user with is_verified = true and onboardingComplete = false
-     */
     const created = await this.usersService.createGoogleUser({
       email: googleUser.email,
       fullName: googleUser.fullName,
@@ -610,108 +564,28 @@ export class AuthService {
   async loginGoogle(
     user: User,
     ipAddress: string,
+    req: Request,
   ): Promise<GoogleAuthResponse> {
-    /**
-     * Log the OAuth login with timestamp, IP, and user ID
-     */
     this.usersService.logOAuthLogin(user.id, ipAddress, 'google');
 
-    /**
-     * Generate tokens with full payload: sub, email, role, onboardingComplete
-     */
-    const tokens = await this.signGoogleTokens(user);
-    await this.persistRefreshToken(user.id, tokens.refreshToken);
+    const deviceId = this.tokenService.extractDeviceId(req);
+    const accessToken = await this.tokenService.generateAccessToken(user);
+    const refreshToken = await this.tokenService.generateRefreshToken(
+      user.id,
+      deviceId,
+    );
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, refreshTokenHash, deletedAt, ...safeUser } = user;
+    const { password, deletedAt, ...safeUser } = user;
 
     return {
-      ...tokens,
+      accessToken,
+      refreshToken,
       user: safeUser,
       isNewUser: !user.onboardingComplete,
     };
   }
 
-  private async signGoogleTokens(user: User): Promise<AuthTokens> {
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      onboardingComplete: user.onboardingComplete,
-    };
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        secret: env.JWT_ACCESS_SECRET,
-        expiresIn: env.JWT_ACCESS_EXPIRES_IN as StringValue,
-      }),
-      this.jwtService.signAsync(payload, {
-        secret: env.JWT_REFRESH_SECRET,
-        expiresIn: env.JWT_REFRESH_EXPIRES_IN as StringValue,
-      }),
-    ]);
-    return { accessToken, refreshToken };
-  }
-
-  async resendOtp(email: string): Promise<{ message: string }> {
-    const lowercasedEmail = email.toLowerCase();
-
-    const rateLimitKey = `resend-otp:${lowercasedEmail}`;
-    const allowed = await this.rateLimiterService.isAllowed(
-      rateLimitKey,
-      3,
-      3600,
-    );
-    const user = await this.usersService.findByEmail(lowercasedEmail);
-
-    if (!allowed) {
-      throw new HttpException(
-        'You have requested too many code.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    // Prevent email enumeration
-    if (!user) {
-      return {
-        message: 'If the email exists, an OTP has been sent',
-      };
-    }
-    if (user.isVerified) {
-      this.logger.warn('Resend OTP requested for already-verified user', {
-        userId: user.id,
-      });
-
-      return {
-        message:
-          'If this email is registered, you will receive instructions shortly.',
-      };
-    }
-
-    // invalidate the otp
-
-    await this.usersService.clearOtp(user.id);
-
-    const otp = this.generateOtp();
-    const otpHash = await argon2.hash(otp);
-    const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
-    await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
-
-    await this.queueService.addJob(
-      QUEUE_NAMES.EMAIL,
-      QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
-      {
-        to: user.email,
-        otp,
-        fullName: user.fullName,
-      },
-    );
-
-    return {
-      message: 'OTP has been sent successfully',
-    };
-  }
-
-  // Additional Services for Oauth state implementation
   async createOauthState(
     provider: string,
     meta: Record<string, unknown> = {},
@@ -759,7 +633,6 @@ export class AuthService {
       return null;
     }
 
-    // Consume state (delete from Redis) to prevent replay
     await this.redisService.del(key);
     this.logger.debug(`[OAuth] State consumed successfully for ${provider}`, {
       stateSample: state.slice(0, 8),
@@ -767,5 +640,52 @@ export class AuthService {
     });
 
     return parsed;
+  }
+
+  async resendOtp(email: string): Promise<{ message: string }> {
+    const lowercasedEmail = email.toLowerCase();
+    const rateLimitKey = `resend-otp:${lowercasedEmail}`;
+    const allowed = await this.rateLimiterService.isAllowed(
+      rateLimitKey,
+      3,
+      3600,
+    );
+    const user = await this.usersService.findByEmail(lowercasedEmail);
+
+    if (!allowed) {
+      throw new HttpException(
+        'You have requested too many code.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (!user) {
+      return { message: 'If the email exists, an OTP has been sent' };
+    }
+
+    if (user.isVerified) {
+      this.logger.warn('Resend OTP requested for already-verified user', {
+        userId: user.id,
+      });
+      return {
+        message:
+          'If this email is registered, you will receive instructions shortly.',
+      };
+    }
+
+    await this.usersService.clearOtp(user.id);
+
+    const otp = this.generateOtp();
+    const otpHash = await argon2.hash(otp);
+    const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
+    await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
+
+    await this.queueService.addJob(
+      QUEUE_NAMES.EMAIL,
+      QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+      { to: user.email, otp, fullName: user.fullName },
+    );
+
+    return { message: 'OTP has been sent successfully' };
   }
 }

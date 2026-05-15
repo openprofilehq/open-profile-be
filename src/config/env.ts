@@ -40,7 +40,10 @@ export const env = createEnv({
     JWT_RESET_SECRET: z
       .string()
       .min(32, 'JWT_RESET_SECRET must be at least 32 chars'),
-    CORS_ORIGIN: z.string().default('*'),
+    CORS_ORIGINS: z
+      .string()
+      .default('http://localhost:3000,http://localhost:5173')
+      .transform((val) => val.split(',').map((v) => v.trim())),
     SWAGGER_ENABLED: z
       .union([z.boolean(), z.enum(['true', 'false'])])
       .default(true)
