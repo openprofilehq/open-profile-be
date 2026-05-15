@@ -156,6 +156,45 @@ export class ProfileService {
     }
   }
 
+  async getDashboardProfile(userId: string): Promise<Record<string, unknown>> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete your profile setup.',
+      );
+    }
+
+    const components = await this.componentRepo.find({
+      where: { profileId: profile.id },
+      order: { displayOrder: 'ASC' },
+    });
+
+    return {
+      username: profile.username,
+      fullName: profile.fullName,
+      bio: profile.bio,
+      photoUrl: profile.photoUrl,
+      templateType: profile.templateType,
+      themeSettings: profile.themeSettings,
+      isPublished: profile.isPublished,
+      hasUnpublishedChanges: profile.hasUnpublishedChanges,
+      ctaLabel: profile.ctaLabel ?? null,
+      ctaUrl: profile.ctaUrl ?? null,
+      components: components.map((c) => ({
+        id: c.id,
+        sectionType: c.sectionType,
+        title: c.title,
+        content: c.content,
+        displayOrder: c.displayOrder,
+        isEnabled: c.isEnabled,
+        metadata: c.metadata,
+      })),
+    };
+  }
+
   async invalidateCache(username: string): Promise<void> {
     await this.redisService.del(`profile:${username.toLowerCase()}`);
   }

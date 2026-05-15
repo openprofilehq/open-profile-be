@@ -110,6 +110,24 @@ export class ProfileController {
     return this.profileService.updateProfile(username, dto, userId);
   }
 
+  @Get('dashboard')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get full current profile data for the authenticated user',
+  })
+  @ApiResponse({ status: 200, description: 'Profile returned successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 404,
+    description: 'Profile not found. Please complete your profile setup.',
+  })
+  async getDashboardProfile(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ) {
+    return this.profileService.getDashboardProfile(userId);
+  }
+
   @Public()
   @Get(':username')
   @HttpCode(HttpStatus.OK)
@@ -157,6 +175,7 @@ export class ProfileController {
 
     return data;
   }
+
   /**
    * PATCH /profiles/me/components/:componentId
    *
