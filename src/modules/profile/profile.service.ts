@@ -71,10 +71,21 @@ export class ProfileService {
       );
     }
 
-    // Step 3 - create and save the profile
+    // Step 3 - fetch user record to get fullName stored at registration
+    const dbUser = await this.userRepo.findOne({
+      where: { id: user.sub },
+      select: ['fullName'],
+    });
+
+    if (!dbUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Step 4 - create and save the profile
     const profile = this.profileRepo.create({
       userId: user.sub,
       username: usernameCheck.normalizedUsername, // already trimmed + lowercased by UsernamesService
+      fullName: createProfileDto.fullName,
       bio: createProfileDto.bio,
       photoUrl: createProfileDto.photoUrl,
     });
@@ -367,6 +378,7 @@ export class ProfileService {
     username: string,
     dto: UpdateProfileDto,
     userId: string,
+    file?: Express.Multer.File,
   ): Promise<Record<string, unknown>> {
     const profile = await this.profileRepo.findOne({
       where: { username: username.toLowerCase(), deletedAt: IsNull() },
@@ -386,7 +398,7 @@ export class ProfileService {
 
     if (dto.fullName !== undefined) profile.fullName = dto.fullName;
     if (dto.bio !== undefined) profile.bio = dto.bio;
-    if (dto.photoUrl !== undefined) profile.photoUrl = dto.photoUrl;
+    if (file) profile.photoUrl = `/${file.path.replace(/\\/g, '/')}`;
 
     profile.hasUnpublishedChanges = true;
 

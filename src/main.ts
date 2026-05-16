@@ -1,4 +1,4 @@
-import { Logger, VersioningType } from '@nestjs/common';
+import { Logger, RequestMethod, VersioningType } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { ClassSerializerInterceptor } from '@nestjs/common';
@@ -8,6 +8,9 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { env } from './config/env';
 import cookieParser from 'cookie-parser';
+import { join } from 'path';
+import * as fs from 'fs';
+import * as express from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -19,22 +22,35 @@ async function bootstrap() {
   app.use(cookieParser());
   const allowedOrigins = new Set(env.CORS_ORIGINS);
 
+  const corsOrigin = (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void,
+  ) => {
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.has(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(null, false);
+  };
+
   app.enableCors({
-    origin: (
-      origin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void,
-    ) => {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: corsOrigin,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: [{ path: 'health', method: RequestMethod.GET }],
+  });
+
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+
+  const uploadsDir = join(process.cwd(), 'uploads', 'profiles');
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
   app.useLogger(app.get(PinoLogger));
