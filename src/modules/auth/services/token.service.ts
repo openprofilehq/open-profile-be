@@ -134,7 +134,7 @@ export class TokenService {
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'strict' : 'lax',
+      sameSite: isProd ? 'strict' : 'none',
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
@@ -142,7 +142,7 @@ export class TokenService {
     res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'strict' : 'lax',
+      sameSite: isProd ? 'strict' : 'none',
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
       path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
