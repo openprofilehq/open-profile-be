@@ -133,15 +133,15 @@ export class TokenService {
 
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
+      secure: env.NODE_ENV !== 'development',
+      sameSite: isProd ? 'strict' : 'none',
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
     });
 
     res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
+      secure: env.NODE_ENV !== 'development',
+      sameSite: isProd ? 'strict' : 'none',
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
     });
   }
