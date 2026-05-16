@@ -19,7 +19,8 @@ export function setAuthCookies(res: Response, tokens: CookieOptions): void {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    maxAge: 15 * 60 * 1000,
+    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
@@ -28,5 +29,6 @@ export function setAuthCookies(res: Response, tokens: CookieOptions): void {
     sameSite: isProduction ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/api/v1/auth/refresh-token',
+    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
   });
 }
