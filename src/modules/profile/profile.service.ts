@@ -91,11 +91,27 @@ export class ProfileService {
       isPublished: createProfileDto.isPublished ?? true,
     });
 
-    const savedProfile = await this.profileRepo.save(profile);
-    await this.userRepo.update(user.sub, {
-      onboardingComplete: true,
+    // Step 5 - persist profile + flip onboarding flag atomically.
+    // If either write fails the transaction rolls back, leaving the user
+    // in a clean state where they can retry without hitting a conflict.
+    const savedProfile = await this.dataSource.transaction(async (manager) => {
+      const txProfileRepo = manager.getRepository(Profile);
+      const txUserRepo = manager.getRepository(User);
+
+      const saved = await txProfileRepo.save(profile);
+
+      const updateResult = await txUserRepo.update(
+        { id: user.sub },
+        { onboardingComplete: true },
+      );
+
+      if (updateResult.affected !== 1) {
+        throw new NotFoundException('User not found');
+      }
+
+      return saved;
     });
-    // Step 4 - return saved profile
+
     return savedProfile;
   }
 
