@@ -50,7 +50,14 @@ async function bootstrap() {
 
   const uploadsDir = join(process.cwd(), 'uploads', 'profiles');
   fs.mkdirSync(uploadsDir, { recursive: true });
-  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
+  app.use(
+    '/uploads',
+    (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      next();
+    },
+    express.static(join(process.cwd(), 'uploads')),
+  );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
   app.useLogger(app.get(PinoLogger));
