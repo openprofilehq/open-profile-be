@@ -19,16 +19,14 @@ export function setAuthCookies(res: Response, tokens: CookieOptions): void {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 15 * 60 * 1000,
-    domain: isProduction ? 'staging.open-profile.hng14.com' : undefined,
+    maxAge: 15 * 60 * 1000, // 15 minutes
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: '/api/v1/auth/refresh-token',
-    domain: isProduction ? 'staging.open-profile.hng14.com' : undefined,
   });
 }
