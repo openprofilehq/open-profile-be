@@ -105,7 +105,7 @@ export class TokenService {
     if (deleteResult.affected === 0) {
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
-        message: 'Session already refreshed. Please try again.',
+        message: 'Session has expired. Please try again.',
       });
     }
 
