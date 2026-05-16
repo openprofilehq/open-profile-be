@@ -15,16 +15,12 @@ export interface CookieOptions {
 export function setAuthCookies(res: Response, tokens: CookieOptions): void {
   const isProduction = env.NODE_ENV === 'production';
 
-  const domain = isProduction
-    ? 'open-profile.hng14.com'
-    : 'staging.open-profile.hng14.com';
-
   res.cookie('accessToken', tokens.accessToken, {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict',
-    domain,
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 15 * 60 * 1000,
+    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
@@ -33,5 +29,7 @@ export function setAuthCookies(res: Response, tokens: CookieOptions): void {
     sameSite: 'strict',
     domain,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: '/api/v1/auth/refresh-token',
+    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
   });
 }

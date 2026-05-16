@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -54,4 +55,14 @@ export class CreateProfileDto {
   @IsOptional()
   @IsUrl()
   photoUrl: string;
+
+  @ApiProperty({
+    description: 'Whether the profile is published',
+    example: true,
+    default: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isPublished?: boolean;
 }
