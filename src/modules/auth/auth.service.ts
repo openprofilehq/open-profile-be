@@ -434,6 +434,8 @@ export class AuthService {
     const user = await this.usersService.findOne(payload.sub);
     await this.usersService.updatePassword(user.id, dto.newPassword);
 
+    await this.tokenService.invalidateAllRefreshTokens(user.id);
+
     await this.queueService.addJob<PasswordChangedEmailData>(
       QUEUE_NAMES.EMAIL,
       QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,

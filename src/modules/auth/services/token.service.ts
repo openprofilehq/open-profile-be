@@ -70,18 +70,12 @@ export class TokenService {
   async rotateTokens(
     rawRefreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const records = await this.refreshTokenRepo.find({
+    const hashedToken = await argon2.hash(rawRefreshToken);
+
+    const matchedRecord = await this.refreshTokenRepo.findOne({
+      where: { tokenHash: hashedToken },
       relations: ['user'],
     });
-
-    let matchedRecord: RefreshToken | null = null;
-    for (const record of records) {
-      const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-      if (isValid) {
-        matchedRecord = record;
-        break;
-      }
-    }
 
     if (!matchedRecord) {
       throw new UnauthorizedException({
@@ -167,25 +161,27 @@ export class TokenService {
       return;
     }
 
-    const where = userId ? { userId } : {};
-    const records = await this.refreshTokenRepo.find({ where });
+    const hashedToken = await argon2.hash(rawRefreshToken);
 
-    for (const record of records) {
-      try {
-        const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-        if (isValid) {
-          await this.refreshTokenRepo.delete({ id: record.id });
-          this.logger.log(`Refresh token invalidated: userId=${record.userId}`);
-          return;
-        }
-      } catch {
-        this.logger.debug(
-          `Argon2 verification failed for a token of user ${userId}`,
-        );
-      }
+    await this.refreshTokenRepo.delete({
+      ...(userId ? { userId } : {}),
+      tokenHash: hashedToken,
+    });
+  }
+
+  async invalidateAllRefreshTokens(userId: string): Promise<void> {
+    if (!userId) {
+      this.logger.warn('invalidateAllRefreshTokens called with invalid userId');
+      return;
     }
 
-    this.logger.debug(`No matching refresh token found for userId=${userId}`);
+    const deleteResult = await this.refreshTokenRepo.delete({
+      userId,
+    });
+
+    this.logger.log(
+      `All refresh tokens invalidated for userId=${userId}, count=${deleteResult.affected ?? 0}`,
+    );
   }
   // ─── Verify ──────────────────────────────────────────────────────────────────
 
