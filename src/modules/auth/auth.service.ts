@@ -283,25 +283,35 @@ export class AuthService {
   }
 
   async logout(req: Request, res: Response): Promise<{ message: string }> {
-    const cookies = req.cookies as Record<string, string> | undefined;
-    const accessToken = cookies?.['accessToken'];
-    const rawRefreshToken = cookies?.['refreshToken'];
+    const accessToken = req.cookies?.accessToken as string | undefined;
+    const rawRefreshToken = req.cookies?.refreshToken as string | undefined;
 
-    if (accessToken && rawRefreshToken) {
+    // Try to invalidate the refresh token if we have a valid access token
+    if (accessToken) {
       try {
-        await this.jwtService.verifyAsync<JwtPayload>(accessToken, {
-          secret: env.JWT_ACCESS_SECRET,
-          ignoreExpiration: true,
-        });
+        const payload = await this.jwtService.verifyAsync<JwtPayload>(
+          accessToken,
+          {
+            secret: env.JWT_ACCESS_SECRET,
+          },
+        );
 
-        await this.tokenService.invalidateRefreshToken(rawRefreshToken);
-      } catch {
-        this.logger.warn('Logout called with unverifiable access token');
+        if (rawRefreshToken) {
+          await this.tokenService.invalidateRefreshToken(
+            payload.sub,
+            rawRefreshToken,
+          );
+        }
+      } catch (error) {
+        this.logger.debug('Access token invalid during logout', { error });
       }
     }
 
-    this.tokenService.clearTokenCookies(res);
-    return { message: 'You have been logged out successfully.' };
+    // Always clear cookies
+    res.clearCookie('accessToken', { httpOnly: true });
+    res.clearCookie('refreshToken', { httpOnly: true });
+
+    return { message: 'Logged out successfully' };
   }
 
   async forgotPassword(

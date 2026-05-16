@@ -168,19 +168,37 @@ export class TokenService {
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
+  async invalidateRefreshToken(
+    userId: string,
+    rawRefreshToken: string,
+  ): Promise<void> {
+    if (!userId || !rawRefreshToken) {
+      this.logger.warn('invalidateRefreshToken called with invalid parameters');
+      return;
+    }
 
-  async invalidateRefreshToken(rawRefreshToken: string): Promise<void> {
-    const records = await this.refreshTokenRepo.find();
+    const records = await this.refreshTokenRepo.find({
+      where: { userId },
+    });
+
     for (const record of records) {
-      const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-      if (isValid) {
-        await this.refreshTokenRepo.delete({ id: record.id });
-        this.logger.log(`Refresh token invalidated: userId=${record.userId}`);
-        return;
+      try {
+        const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
+        if (isValid) {
+          await this.refreshTokenRepo.delete({ id: record.id });
+          this.logger.log(`Refresh token invalidated: userId=${record.userId}`);
+          return;
+        }
+      } catch {
+        // Argon2 verification failed (invalid hash format or corrupted record) - continue
+        this.logger.debug(
+          `Argon2 verification failed for a token of user ${userId}`,
+        );
       }
     }
-  }
 
+    this.logger.debug(`No matching refresh token found for userId=${userId}`);
+  }
   // ─── Verify ──────────────────────────────────────────────────────────────────
 
   async verifyAccessToken(
