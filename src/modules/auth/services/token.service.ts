@@ -181,11 +181,6 @@ export class TokenService {
     }
   }
 
-  async invalidateAllRefreshTokens(userId: string): Promise<void> {
-    await this.refreshTokenRepo.delete({ userId });
-    this.logger.log(`All refresh tokens invalidated: userId=${userId}`);
-  }
-
   // ─── Verify ──────────────────────────────────────────────────────────────────
 
   async verifyAccessToken(

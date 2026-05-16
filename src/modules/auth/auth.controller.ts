@@ -29,6 +29,7 @@ import { TokenService } from './services/token.service';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { GoogleAuthRequest } from './interfaces/google.interface';
 import { ResendOtpDto } from './dto/resend-otp.dto';
+import { UsersService } from '../users/users.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -36,6 +37,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly tokenService: TokenService,
+    private readonly usersService: UsersService,
   ) {}
 
   @Public()
@@ -97,7 +99,7 @@ export class AuthController {
   @Get('me')
   @ApiOperation({ summary: 'Return the current authenticated user' })
   me(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.getProfile(user.sub);
+    return this.usersService.findOne(user.sub);
   }
 
   @Public()

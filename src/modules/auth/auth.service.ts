@@ -293,6 +293,7 @@ export class AuthService {
           secret: env.JWT_ACCESS_SECRET,
           ignoreExpiration: true,
         });
+
         await this.tokenService.invalidateRefreshToken(rawRefreshToken);
       } catch {
         this.logger.warn('Logout called with unverifiable access token');
@@ -301,9 +302,6 @@ export class AuthService {
 
     this.tokenService.clearTokenCookies(res);
     return { message: 'You have been logged out successfully.' };
-  }
-  async getProfile(userId: string): Promise<User> {
-    return this.usersService.findOne(userId);
   }
 
   async forgotPassword(
@@ -427,7 +425,6 @@ export class AuthService {
 
     const user = await this.usersService.findOne(payload.sub);
     await this.usersService.updatePassword(user.id, dto.newPassword);
-    await this.tokenService.invalidateAllRefreshTokens(user.id);
 
     await this.queueService.addJob<PasswordChangedEmailData>(
       QUEUE_NAMES.EMAIL,
