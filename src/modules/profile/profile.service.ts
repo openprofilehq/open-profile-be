@@ -88,6 +88,7 @@ export class ProfileService {
       fullName: createProfileDto.fullName,
       bio: createProfileDto.bio,
       photoUrl: createProfileDto.photoUrl,
+      isPublished: createProfileDto.isPublished ?? true,
     });
 
     const savedProfile = await this.profileRepo.save(profile);
