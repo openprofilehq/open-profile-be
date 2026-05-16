@@ -134,18 +134,20 @@ export class TokenService {
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'strict',
+      sameSite: isProd ? 'strict' : 'lax',
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
 
     res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'strict',
+      sameSite: isProd ? 'strict' : 'lax',
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+      path: '/',
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
   }
-
   clearTokenCookies(res: Response): void {
     res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
     res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
