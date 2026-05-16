@@ -28,7 +28,6 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { SearchModule } from './modules/search/search.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { PortfolioModule } from './modules/portfolio/portfolio.module';
-import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -39,9 +38,10 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-        transport: process.env.NODE_ENV !== 'production'
-          ? { target: 'pino-pretty' }
-          : undefined,
+        transport:
+          process.env.NODE_ENV !== 'production'
+            ? { target: 'pino-pretty' }
+            : undefined,
         autoLogging: true, // logs every HTTP request automatically
       },
     }),
@@ -66,7 +66,6 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     UsernamesModule,
     ContactModule,
     PortfolioModule,
-    AnalyticsModule,
   ],
   providers: [
     {
