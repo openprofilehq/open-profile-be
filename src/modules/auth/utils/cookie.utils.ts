@@ -18,14 +18,17 @@ export function setAuthCookies(res: Response, tokens: CookieOptions): void {
   res.cookie('accessToken', tokens.accessToken, {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict',
-    maxAge: 15 * 60 * 1000, // 15 minutes
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 15 * 60 * 1000,
+    domain: isProduction ? '.open-profile.hng14.com' : undefined,
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/api/v1/auth/refresh-token',
+    domain: isProduction ? '.open-profile.hng14.com' : undefined,
   });
 }
