@@ -19,7 +19,9 @@ export class ProfileView {
 
   @BeforeInsert()
   generateId() {
-    this.id = uuidv7();
+    if (!this.id) {
+      this.id = uuidv7();
+    }
   }
 
   @Column({ name: 'profile_id', type: 'uuid' })

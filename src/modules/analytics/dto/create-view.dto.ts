@@ -7,8 +7,4 @@ export class CreateViewDto {
   @IsOptional()
   @IsString()
   userAgent?: string;
-
-  @IsOptional()
-  @IsString()
-  viewerIp?: string;
 }
