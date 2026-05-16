@@ -144,7 +144,7 @@ export class TokenService {
       secure: isProd,
       sameSite: isProd ? 'strict' : 'lax',
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
-      path: '/api/v1/auth/refresh-token',
+      path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
   }
