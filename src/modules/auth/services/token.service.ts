@@ -10,7 +10,6 @@ import { env } from '../../../config/env';
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../../users/entities/user.entity';
 import { JwtPayload } from '../strategies/jwt.strategy';
-import { DataSource } from 'typeorm';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
@@ -27,7 +26,6 @@ export class TokenService {
     private readonly jwtService: JwtService,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
-    private readonly dataSource: DataSource,
   ) {}
 
   // ─── Access Token ────────────────────────────────────────────────────────────
@@ -48,18 +46,23 @@ export class TokenService {
   // ─── Refresh Token ───────────────────────────────────────────────────────────
 
   async generateRefreshToken(userId: string): Promise<string> {
+    const { record, rawToken } = await this.createRefreshTokenRecord(userId);
+    await this.refreshTokenRepo.save(record);
+    return rawToken;
+  }
+
+  private async createRefreshTokenRecord(
+    userId: string,
+  ): Promise<{ record: RefreshToken; rawToken: string }> {
     const rawToken = uuidv4();
     const tokenHash = await argon2.hash(rawToken);
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
-
     const record = this.refreshTokenRepo.create({
       userId,
       tokenHash,
       expiresAt,
     });
-    await this.refreshTokenRepo.save(record);
-
-    return rawToken;
+    return { record, rawToken };
   }
 
   // ─── Token Rotation ──────────────────────────────────────────────────────────
@@ -67,65 +70,52 @@ export class TokenService {
   async rotateTokens(
     rawRefreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    return this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(RefreshToken);
-
-      // Load all records — userId unknown at this point
-      const records = await repo.find({
-        relations: ['user'],
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      let matchedRecord: RefreshToken | null = null;
-      for (const record of records) {
-        const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-        if (isValid) {
-          matchedRecord = record;
-          break;
-        }
-      }
-
-      if (!matchedRecord) {
-        throw new UnauthorizedException({
-          error: 'SESSION_EXPIRED',
-          message: 'Your session has expired. Please log in again.',
-        });
-      }
-
-      if (new Date() > matchedRecord.expiresAt) {
-        await repo.delete({ id: matchedRecord.id });
-        throw new UnauthorizedException({
-          error: 'SESSION_EXPIRED',
-          message: 'Your session has expired. Please log in again.',
-        });
-      }
-
-      // Delete old record atomically before issuing new tokens
-      const deleteResult = await repo.delete({
-        id: matchedRecord.id,
-        tokenHash: matchedRecord.tokenHash,
-      });
-
-      if (deleteResult.affected === 0) {
-        throw new UnauthorizedException({
-          error: 'SESSION_EXPIRED',
-          message: 'Session already refreshed. Please try again.',
-        });
-      }
-
-      const user = matchedRecord.user;
-
-      // Generate new refresh token within the same transaction
-      const rawToken = uuidv4();
-      const tokenHash = await argon2.hash(rawToken);
-      const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
-      const newRecord = repo.create({ userId: user.id, tokenHash, expiresAt });
-      await repo.save(newRecord);
-
-      const accessToken = await this.generateAccessToken(user);
-
-      return { accessToken, refreshToken: rawToken };
+    const records = await this.refreshTokenRepo.find({
+      relations: ['user'],
     });
+
+    let matchedRecord: RefreshToken | null = null;
+    for (const record of records) {
+      const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
+      if (isValid) {
+        matchedRecord = record;
+        break;
+      }
+    }
+
+    if (!matchedRecord) {
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.',
+      });
+    }
+
+    if (new Date() > matchedRecord.expiresAt) {
+      await this.refreshTokenRepo.delete({ id: matchedRecord.id });
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.',
+      });
+    }
+
+    const deleteResult = await this.refreshTokenRepo.delete({
+      id: matchedRecord.id,
+    });
+
+    if (deleteResult.affected === 0) {
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Session already refreshed. Please try again.',
+      });
+    }
+
+    const user = matchedRecord.user;
+    const { record: newRecord, rawToken: newRawRefreshToken } =
+      await this.createRefreshTokenRecord(user.id);
+    await this.refreshTokenRepo.save(newRecord);
+    const accessToken = await this.generateAccessToken(user);
+
+    return { accessToken, refreshToken: newRawRefreshToken };
   }
 
   // ─── Silent Refresh Check ────────────────────────────────────────────────────
@@ -169,17 +159,16 @@ export class TokenService {
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
   async invalidateRefreshToken(
-    userId: string,
+    userId: string | null,
     rawRefreshToken: string,
   ): Promise<void> {
-    if (!userId || !rawRefreshToken) {
+    if (!rawRefreshToken) {
       this.logger.warn('invalidateRefreshToken called with invalid parameters');
       return;
     }
 
-    const records = await this.refreshTokenRepo.find({
-      where: { userId },
-    });
+    const where = userId ? { userId } : {};
+    const records = await this.refreshTokenRepo.find({ where });
 
     for (const record of records) {
       try {
@@ -190,7 +179,6 @@ export class TokenService {
           return;
         }
       } catch {
-        // Argon2 verification failed (invalid hash format or corrupted record) - continue
         this.logger.debug(
           `Argon2 verification failed for a token of user ${userId}`,
         );
