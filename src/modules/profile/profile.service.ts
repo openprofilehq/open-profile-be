@@ -92,7 +92,9 @@ export class ProfileService {
     });
 
     const savedProfile = await this.profileRepo.save(profile);
-
+    await this.userRepo.update(user.sub, {
+      onboardingComplete: true,
+    });
     // Step 4 - return saved profile
     return savedProfile;
   }
