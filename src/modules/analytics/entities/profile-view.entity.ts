@@ -11,14 +11,8 @@ import { v7 as uuidv7 } from 'uuid';
 import { Profile } from '../../profile/entities/profile.entity';
 
 @Entity('profile_views')
-@Index('idx_profile_views_profile_viewed_at', [
-  'profileId',
-  'viewedAt',
-])
-@Index('idx_profile_views_profile_ip', [
-  'profileId',
-  'viewerIp',
-])
+@Index('idx_profile_views_profile_viewed_at', ['profileId', 'viewedAt'])
+@Index('idx_profile_views_profile_ip', ['profileId', 'viewerIp', 'viewedAt'])
 export class ProfileView {
   @PrimaryColumn('uuid')
   id: string;
@@ -40,7 +34,7 @@ export class ProfileView {
   @Column({ name: 'viewer_ip', type: 'varchar', length: 45 })
   viewerIp: string;
 
-  @Column({ name: 'user_agent', type: 'text', default: 'unknown' })
+  @Column({ name: 'user_agent', type: 'text', nullable: true })
   userAgent: string;
 
   @Column({
