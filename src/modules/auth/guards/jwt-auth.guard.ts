@@ -79,7 +79,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const isSilent = options?.isSilent ?? false;
 
     if (!rawRefreshToken) {
-      if (isSilent) return true; // Silent refresh is best-effort — don't block request
+      if (isSilent) return true;
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
@@ -92,7 +92,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         options.userId,
       );
       if (!lockAcquired) {
-        // Another request is already refreshing — continue with current token
         this.logger.log(
           `Silent refresh skipped (lock busy): userId=${options.userId}`,
         );
@@ -101,11 +100,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
 
     try {
-      const deviceId = this.tokenService.extractDeviceId(req);
-      const tokens = await this.tokenService.rotateTokens(
-        rawRefreshToken,
-        deviceId,
-      );
+      const tokens = await this.tokenService.rotateTokens(rawRefreshToken);
       this.tokenService.setTokenCookies(res, tokens);
 
       const newPayload = await this.tokenService.verifyAccessToken(
@@ -113,17 +108,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       );
       req['user'] = newPayload;
 
-      this.logger.log(
-        `Token refresh succeeded [${reason}]: deviceId=${deviceId}`,
-      );
+      this.logger.log(`Token refresh succeeded [${reason}]`);
       return true;
     } catch (err) {
       if (isSilent) {
-        // Silent refresh is best-effort — log and continue with existing token
         this.logger.warn(`Silent refresh failed [${reason}]`, err);
         return true;
       }
-      // Hard failure — clear cookies and reject
       this.logger.warn(`Refresh failed [${reason}]`, err);
       this.tokenService.clearTokenCookies(res);
       throw new UnauthorizedException({

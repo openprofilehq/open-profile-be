@@ -241,14 +241,9 @@ export class AuthService {
     await this.usersService.updateLastLoginIp(user.id, ip);
 
     // Issue tokens using TokenService — stores in refresh_tokens table per device
-    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
-    const refreshToken = await this.tokenService.generateRefreshToken(
-      user.id,
-      deviceId,
-    );
+    const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
-
     return {
       status: 'success',
       user: {
@@ -274,14 +269,8 @@ export class AuthService {
         message: 'Your session has expired. Please log in again.',
       });
     }
-
-    const deviceId = this.tokenService.extractDeviceId(req);
-
     try {
-      const tokens = await this.tokenService.rotateTokens(
-        rawRefreshToken,
-        deviceId,
-      );
+      const tokens = await this.tokenService.rotateTokens(rawRefreshToken);
       this.tokenService.setTokenCookies(res, tokens);
       return { status: 'success' };
     } catch {
@@ -296,9 +285,10 @@ export class AuthService {
   async logout(req: Request, res: Response): Promise<{ message: string }> {
     const cookies = req.cookies as Record<string, string> | undefined;
     const accessToken = cookies?.['accessToken'];
-    const deviceId = this.tokenService.extractDeviceId(req);
+    const rawRefreshToken = cookies?.['refreshToken'];
 
-    // Try to get userId from the access token — even if expired
+    let userId: string | null = null;
+
     if (accessToken) {
       try {
         const payload = await this.jwtService.verifyAsync<JwtPayload>(
@@ -308,19 +298,18 @@ export class AuthService {
             ignoreExpiration: true,
           },
         );
-        await this.tokenService.invalidateRefreshToken(payload.sub, deviceId);
+        userId = payload.sub;
       } catch {
-        // Token is tampered — still clear cookies and return 200
         this.logger.warn('Logout called with unverifiable access token');
       }
     }
 
+    if (rawRefreshToken) {
+      await this.tokenService.invalidateRefreshToken(userId, rawRefreshToken);
+    }
+
     this.tokenService.clearTokenCookies(res);
     return { message: 'You have been logged out successfully.' };
-  }
-
-  async getProfile(userId: string): Promise<User> {
-    return this.usersService.findOne(userId);
   }
 
   async forgotPassword(
@@ -444,6 +433,7 @@ export class AuthService {
 
     const user = await this.usersService.findOne(payload.sub);
     await this.usersService.updatePassword(user.id, dto.newPassword);
+
     await this.tokenService.invalidateAllRefreshTokens(user.id);
 
     await this.queueService.addJob<PasswordChangedEmailData>(
@@ -512,12 +502,8 @@ export class AuthService {
     await this.usersService.clearOtp(user.id);
 
     // Issue tokens via TokenService — per-device refresh token
-    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
-    const refreshToken = await this.tokenService.generateRefreshToken(
-      user.id,
-      deviceId,
-    );
+    const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
 
     return {
@@ -564,16 +550,12 @@ export class AuthService {
   async loginGoogle(
     user: User,
     ipAddress: string,
-    req: Request,
+    _req: Request,
   ): Promise<GoogleAuthResponse> {
     this.usersService.logOAuthLogin(user.id, ipAddress, 'google');
 
-    const deviceId = this.tokenService.extractDeviceId(req);
     const accessToken = await this.tokenService.generateAccessToken(user);
-    const refreshToken = await this.tokenService.generateRefreshToken(
-      user.id,
-      deviceId,
-    );
+    const refreshToken = await this.tokenService.generateRefreshToken(user.id);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, deletedAt, ...safeUser } = user;
