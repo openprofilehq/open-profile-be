@@ -126,28 +126,28 @@ export class TokenService {
   // ─── Cookies ─────────────────────────────────────────────────────────────────
 
   setTokenCookies(
-    res: Response,
-    tokens: { accessToken: string; refreshToken: string },
-  ): void {
-    const isProd = env.NODE_ENV === 'production';
+    res: Response,
+    tokens: { accessToken: string; refreshToken: string },
+  ): void {
+    const isProd = env.NODE_ENV === 'production';
 
-    res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
-      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
-      domain: isProd ? env.COOKIE_DOMAIN : undefined,
-    });
+    res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+    });
 
-    res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
-      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
-      path: '/api/v1/auth/refresh-token',
-      domain: isProd ? env.COOKIE_DOMAIN : undefined,
-    });
-  }
+    res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+      path: '/api/v1/auth/refresh-token',
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+    });
+  }
   clearTokenCookies(res: Response): void {
     res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
     res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
