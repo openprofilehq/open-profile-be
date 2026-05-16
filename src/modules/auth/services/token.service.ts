@@ -129,23 +129,25 @@ export class TokenService {
     res: Response,
     tokens: { accessToken: string; refreshToken: string },
   ): void {
-    const isProd = env.NODE_ENV === 'production';
+    const isProduction = env.NODE_ENV === 'production';
 
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: ACCESS_TOKEN_MAX_AGE_MS,
-    });
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: ACCESS_TOKEN_MAX_AGE_MS,
+    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
+  });
 
-    res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
-    });
-  }
-
+  res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: REFRESH_TOKEN_MAX_AGE_MS, // 7 days
+    path: '/api/v1/auth/refresh-token',
+    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
+  });
+  
   clearTokenCookies(res: Response): void {
     res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
     res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
