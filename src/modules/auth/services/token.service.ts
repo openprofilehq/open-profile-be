@@ -45,74 +45,69 @@ export class TokenService {
 
   // ─── Refresh Token ───────────────────────────────────────────────────────────
 
-  async generateRefreshToken(
+  async generateRefreshToken(userId: string): Promise<string> {
+    const { record, rawToken } = await this.createRefreshTokenRecord(userId);
+    await this.refreshTokenRepo.save(record);
+    return rawToken;
+  }
+
+  private async createRefreshTokenRecord(
     userId: string,
-    deviceId: string,
-  ): Promise<string> {
+  ): Promise<{ record: RefreshToken; rawToken: string }> {
     const rawToken = uuidv4();
     const tokenHash = await argon2.hash(rawToken);
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
-
-    // Delete any existing token for this device before inserting a new one
-    await this.refreshTokenRepo.delete({ userId, deviceId });
-
     const record = this.refreshTokenRepo.create({
       userId,
-      deviceId,
       tokenHash,
       expiresAt,
     });
-    await this.refreshTokenRepo.save(record);
-
-    return rawToken;
+    return { record, rawToken };
   }
 
   // ─── Token Rotation ──────────────────────────────────────────────────────────
 
   async rotateTokens(
     rawRefreshToken: string,
-    deviceId: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    // Find the record for this device
-    const record = await this.refreshTokenRepo.findOne({
-      where: { deviceId },
+    const hashedToken = await argon2.hash(rawRefreshToken);
+
+    const matchedRecord = await this.refreshTokenRepo.findOne({
+      where: { tokenHash: hashedToken },
       relations: ['user'],
     });
 
-    if (!record) {
+    if (!matchedRecord) {
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     }
 
-    // Check expiry
-    if (new Date() > record.expiresAt) {
-      await this.refreshTokenRepo.delete({ deviceId });
+    if (new Date() > matchedRecord.expiresAt) {
+      await this.refreshTokenRepo.delete({ id: matchedRecord.id });
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     }
 
-    // Validate hash
-    const isValid = await argon2.verify(record.tokenHash, rawRefreshToken);
-    if (!isValid) {
-      // Possible token reuse attack — invalidate all tokens for this device
-      await this.refreshTokenRepo.delete({ deviceId });
+    const deleteResult = await this.refreshTokenRepo.delete({
+      id: matchedRecord.id,
+    });
+
+    if (deleteResult.affected === 0) {
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
-        message: 'Your session has expired. Please log in again.',
+        message: 'Session has expired. Please try again.',
       });
     }
 
-    const user = record.user;
-
-    // Issue new tokens
-    const [accessToken, newRawRefreshToken] = await Promise.all([
-      this.generateAccessToken(user),
-      this.generateRefreshToken(user.id, deviceId),
-    ]);
+    const user = matchedRecord.user;
+    const { record: newRecord, rawToken: newRawRefreshToken } =
+      await this.createRefreshTokenRecord(user.id);
+    await this.refreshTokenRepo.save(newRecord);
+    const accessToken = await this.generateAccessToken(user);
 
     return { accessToken, refreshToken: newRawRefreshToken };
   }
@@ -157,36 +152,38 @@ export class TokenService {
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
-
   async invalidateRefreshToken(
-    userId: string,
-    deviceId: string,
+    userId: string | null,
+    rawRefreshToken: string,
   ): Promise<void> {
-    await this.refreshTokenRepo.delete({ userId, deviceId });
-    this.logger.log(
-      `Refresh token invalidated: userId=${userId} deviceId=${deviceId}`,
-    );
+    if (!rawRefreshToken) {
+      this.logger.warn('invalidateRefreshToken called with invalid parameters');
+      return;
+    }
+
+    const hashedToken = await argon2.hash(rawRefreshToken);
+
+    await this.refreshTokenRepo.delete({
+      ...(userId ? { userId } : {}),
+      tokenHash: hashedToken,
+    });
   }
 
   async invalidateAllRefreshTokens(userId: string): Promise<void> {
-    await this.refreshTokenRepo.delete({ userId });
-    this.logger.log(`All refresh tokens invalidated: userId=${userId}`);
+    if (!userId) {
+      this.logger.warn('invalidateAllRefreshTokens called with invalid userId');
+      return;
+    }
+
+    const deleteResult = await this.refreshTokenRepo.delete({
+      userId,
+    });
+
+    this.logger.log(
+      `All refresh tokens invalidated for userId=${userId}, count=${deleteResult.affected ?? 0}`,
+    );
   }
-
-  // ─── Device ID ───────────────────────────────────────────────────────────────
-
-  extractDeviceId(req: {
-    cookies?: Record<string, string>;
-    headers?: Record<string, string | string[] | undefined>;
-  }): string {
-    // Use a device cookie if present, otherwise fall back to user-agent hash
-    const cookies = req.cookies ?? {};
-    if (cookies['deviceId']) return cookies['deviceId'];
-
-    const ua = (req.headers?.['user-agent'] as string) ?? 'unknown';
-    // Simple deterministic device fingerprint — not cryptographically sensitive
-    return Buffer.from(ua).toString('base64').slice(0, 36);
-  }
+  // ─── Verify ──────────────────────────────────────────────────────────────────
 
   async verifyAccessToken(
     token: string,
