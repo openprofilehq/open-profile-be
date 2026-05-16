@@ -11,7 +11,7 @@ export class RemoveDeviceIdFromRefreshTokensTable1778939927791 implements Migrat
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "refresh_tokens" ADD "device_id" character varying(36) NOT NULL`,
+      `ALTER TABLE "refresh_tokens" ADD "device_id" character varying(36) NOT NULL DEFAULT ''`,
     );
   }
 }
