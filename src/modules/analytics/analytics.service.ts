@@ -41,18 +41,19 @@ export class AnalyticsService {
     // Redis cache check (safe)
     const cacheKey = `analytics:stats:${profile.id}`;
 
+    let cached: string | null = null;
     try {
-      const cached = await this.redis.get(cacheKey);
+      cached = await this.redis.get(cacheKey);
+    } catch {
+      // ignore cache read errors and continue with DB computation
+    }
 
-      if (cached) {
-        try {
-          return JSON.parse(cached) as AnalyticsStatsDto;
-        } catch (err) {
-          console.error('Redis cache parse failed:', err);
-        }
+    if (cached) {
+      try {
+        return JSON.parse(cached) as AnalyticsStatsDto;
+      } catch {
+        // ignore malformed cache payload and recompute
       }
-    } catch (err) {
-      console.error('Redis cache read failed:', err);
     }
 
     // UTC DATE BOUNDARIES (FIXED)
@@ -63,7 +64,7 @@ export class AnalyticsService {
     startOfToday.setUTCHours(0, 0, 0, 0);
 
     const startOfWeek = new Date(startOfToday);
-    startOfWeek.setUTCDate(startOfToday.getUTCDate() - 7);
+    startOfWeek.setUTCDate(startOfToday.getUTCDate() - 6);
 
     const startOf30Days = new Date(startOfToday);
     startOf30Days.setUTCDate(startOfToday.getUTCDate() - 29);
