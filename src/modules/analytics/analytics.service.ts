@@ -57,11 +57,9 @@ export class AnalyticsService {
       throw new NotFoundException(`Profile not found`);
     }
 
-    // 2. Extract request metadata
     const viewerIp = this.extractIp(req);
     const userAgent = req.headers['user-agent'] ?? null;
 
-    // 3. Dedup check
     const duplicate = await this.isDuplicate(profileId, viewerIp);
 
     if (duplicate) {
