@@ -1,7 +1,6 @@
 import {
   Injectable,
   ForbiddenException,
-  Inject,
 } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,8 +11,6 @@ import { ProfileView } from './entities/profile-view.entity';
 import { Profile } from '../profile/entities/profile.entity';
 
 import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
-
-import Redis from 'ioredis';
 import { RedisService } from '../../common/redis/redis.service';
 
 @Injectable()

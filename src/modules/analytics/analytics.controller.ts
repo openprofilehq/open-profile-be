@@ -20,6 +20,7 @@ import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
 // import your actual JWT guard
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+
 @ApiTags('analytics')
 @Controller('analytics')
 export class AnalyticsController {
