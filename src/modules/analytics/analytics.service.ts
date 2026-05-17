@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 
 import { InjectRepository } from '@nestjs/typeorm';
 
@@ -13,6 +10,14 @@ import { Profile } from '../profile/entities/profile.entity';
 import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
 import { RedisService } from '../../common/redis/redis.service';
 
+type UniqueViewersRaw = {
+  count: string;
+};
+
+type DailyRow = {
+  date: string;
+  views: string;
+};
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -26,9 +31,8 @@ export class AnalyticsService {
   ) {}
 
   async getStats(userId: string): Promise<AnalyticsStatsDto> {
-    
-      // Find user's profile
-     
+    // Find user's profile
+
     const profile = await this.profileRepo.findOne({
       where: {
         userId,
@@ -39,28 +43,22 @@ export class AnalyticsService {
       throw new ForbiddenException('Profile not found');
     }
 
-    
     //  Redis cache check
-     
+
     const cacheKey = `analytics:stats:${profile.id}`;
 
     const cached = await this.redis.get(cacheKey);
 
     if (cached) {
-      return JSON.parse(cached);
+      return JSON.parse(cached) as AnalyticsStatsDto;
     }
 
-    
     // Time boundaries (UTC)
-     
+
     const now = new Date();
 
     const startOfToday = new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate(),
-      ),
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
 
     const startOfWeek = new Date(now);
@@ -71,18 +69,16 @@ export class AnalyticsService {
 
     startOf30Days.setUTCDate(now.getUTCDate() - 29);
 
-    
     //  Total views
-     
+
     const total = await this.viewRepo.count({
       where: {
         profileId: profile.id,
       },
     });
 
-    
-      //  Today's views
-     
+    //  Today's views
+
     const today = await this.viewRepo
       .createQueryBuilder('view')
       .where('view.profile_id = :profileId', {
@@ -93,9 +89,8 @@ export class AnalyticsService {
       })
       .getCount();
 
-    
-      // This week's views
-     
+    // This week's views
+
     const thisWeek = await this.viewRepo
       .createQueryBuilder('view')
       .where('view.profile_id = :profileId', {
@@ -106,22 +101,20 @@ export class AnalyticsService {
       })
       .getCount();
 
-    
     // Unique viewers
-     
-    const uniqueViewersRaw = await this.viewRepo
+
+    const uniqueViewersRaw = (await this.viewRepo
       .createQueryBuilder('view')
       .select('COUNT(DISTINCT view.viewer_ip)', 'count')
       .where('view.profile_id = :profileId', {
         profileId: profile.id,
       })
-      .getRawOne();
+      .getRawOne()) as UniqueViewersRaw;
 
     const unique_viewers = Number(uniqueViewersRaw?.count ?? 0);
 
-    
     // Daily breakdown (last 30 days)
-     
+
     const rows = await this.viewRepo
       .createQueryBuilder('view')
       .select(`DATE(view.viewed_at)`, 'date')
@@ -134,20 +127,18 @@ export class AnalyticsService {
       })
       .groupBy('date')
       .orderBy('date', 'ASC')
-      .getRawMany();
+      .getRawMany<DailyRow>();
 
-    
     // Convert DB rows into map
-     
+
     const map = new Map<string, number>();
 
     for (const row of rows) {
       map.set(row.date, Number(row.views));
     }
 
-    
     // Fill missing zero-view days
-     
+
     const daily_breakdown: {
       date: string;
       views: number;
@@ -166,9 +157,8 @@ export class AnalyticsService {
       });
     }
 
-    
     // Final response
-     
+
     const result: AnalyticsStatsDto = {
       total,
       today,
@@ -177,14 +167,9 @@ export class AnalyticsService {
       daily_breakdown,
     };
 
-    
     // Cache for 60 seconds
-     
-    await this.redis.set(
-      cacheKey,
-      JSON.stringify(result),
-      60,
-    );
+
+    await this.redis.set(cacheKey, JSON.stringify(result), 60);
 
     return result;
   }
