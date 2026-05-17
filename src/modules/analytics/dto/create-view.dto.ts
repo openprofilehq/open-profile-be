@@ -1,5 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsUUID, IsOptional, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsUUID } from 'class-validator';
 
 export class CreateViewDto {
   @ApiProperty({
@@ -8,12 +8,4 @@ export class CreateViewDto {
   })
   @IsUUID()
   profileId: string;
-
-  @ApiPropertyOptional({
-    example: 'Mozilla/5.0',
-    description: 'Optional user agent string',
-  })
-  @IsOptional()
-  @IsString()
-  userAgent?: string;
 }

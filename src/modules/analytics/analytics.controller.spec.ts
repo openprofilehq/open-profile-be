@@ -104,7 +104,8 @@ describe('AnalyticsController (integration)', () => {
   it('POST /view 31 times in 1 min → 429 on 31st', async () => {
     mockAnalyticsService.recordView.mockResolvedValue(undefined);
 
-    for (let i = 0; i < 30; i++) {
+    const remaining = 30;
+    for (let i = 0; i < remaining; i++) {
       await request(app.getHttpServer())
         .post('/analytics/view')
         .send({ profileId: VALID_UUID })
