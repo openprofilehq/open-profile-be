@@ -35,7 +35,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const res = context.switchToHttp().getResponse<Response>();
     const cookies = req.cookies as Record<string, string> | undefined;
 
-    const accessToken = cookies?.['accessToken'];
+    // Support both cookie-based (web app) and Authorization header (API clients / Swagger)
+    const accessToken =
+      cookies?.['accessToken'] ??
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : undefined);
+
     const rawRefreshToken = cookies?.['refreshToken'];
 
     // No access token — attempt refresh before rejecting
