@@ -19,7 +19,7 @@ import { UsersService } from './users.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('users')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT')
 @Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -55,7 +55,7 @@ export class UsersController {
     return this.usersService.remove(id);
   }
 
-  @ApiBearerAuth()
+@ApiBearerAuth('JWT')
   @Post('onboarding-complete')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Mark a user onboarding complete' })

@@ -1,5 +1,6 @@
 import { Logger, RequestMethod, VersioningType } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { ClassSerializerInterceptor } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -13,9 +14,11 @@ import * as fs from 'fs';
 import * as express from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
+
+  app.set('trust proxy', 1);
 
   app.use(helmet());
   app.use(compression());
@@ -50,7 +53,14 @@ async function bootstrap() {
 
   const uploadsDir = join(process.cwd(), 'uploads', 'profiles');
   fs.mkdirSync(uploadsDir, { recursive: true });
-  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
+  app.use(
+    '/uploads',
+    (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      next();
+    },
+    express.static(join(process.cwd(), 'uploads')),
+  );
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
   app.useLogger(app.get(PinoLogger));
