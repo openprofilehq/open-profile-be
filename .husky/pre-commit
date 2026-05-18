@@ -1,32 +1,27 @@
 #!/usr/bin/env sh
+set -e
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
-protected_branches="main dev staging production prod"
 
-for protected in $protected_branches; do
-  if [ "$branch" = "$protected" ]; then
-    echo "❌ Direct commits to '$protected' are not allowed."
+case "$branch" in
+  main|dev|staging|production|prod)
+    echo "❌ Direct commits to '$branch' are not allowed."
     echo " Please create a feature/fix/chore branch."
     exit 1
-  fi
-done
+    ;;
+esac
 
-# lint-staged runs Prettier + ESLint --fix on staged files only and re-stages fixes
-# so the commit includes formatting/lint autofix output (plain pnpm format/lint does not)
 echo '📝 Lint-staged (format + lint fixes on staged files)...'
-pnpm lint-staged ||
-(
-    echo '❌ Lint-staged failed!'
-    exit 1
-)
+if ! pnpm lint-staged; then
+  echo '❌ Lint-staged failed!'
+  exit 1
+fi
 
 echo '📝 Checking TypeScript types...'
-pnpm typecheck ||
-(
-    echo '❌ TypeScript check failed!'
-    echo '   Fix the type errors above'
-    echo ''
-    exit 1
-)
+if ! pnpm typecheck; then
+  echo '❌ TypeScript check failed!'
+  echo '   Fix the type errors above'
+  exit 1
+fi
 
 echo '✅ All pre-commit checks passed!'

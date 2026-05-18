@@ -1,10 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { getQueueToken } from '@nestjs/bullmq';
 import { AnalyticsService } from './analytics.service';
 import { ProfileView } from './entities/profile-view.entity';
 import { Profile } from '../profile/entities/profile.entity';
+import { ProfileEvent } from './entities/profile-event.entity';
+import { LinkClick } from './entities/link-click.entity';
+import { MetricSnapshot } from './entities/metric-snapshot.entity';
 import { NotFoundException } from '@nestjs/common';
 import { RedisService } from '../../common/redis/redis.service';
+import { FingerprintService } from '../../common/fingerprint/fingerprint.service';
+import { ANALYTICS_QUEUE } from './dto/profile-event-job.dto';
 
 jest.mock('@t3-oss/env-core', () => ({
   createEnv: () => ({}) as never,
@@ -39,9 +45,30 @@ const mockProfileRepo = {
   findOne: jest.fn(),
 };
 
+const mockProfileEventRepo = {
+  create: jest.fn(),
+  save: jest.fn(),
+};
+
+const mockLinkClickRepo = {
+  findOne: jest.fn(),
+};
+
+const mockMetricSnapshotRepo = {
+  find: jest.fn(),
+};
+
 const mockRedisService = {
   get: jest.fn(),
   set: jest.fn(),
+};
+
+const mockFingerprintService = {
+  generate: jest.fn().mockReturnValue('mock-fingerprint-hash'),
+};
+
+const mockAnalyticsQueue = {
+  add: jest.fn(),
 };
 
 describe('AnalyticsService', () => {
@@ -60,8 +87,28 @@ describe('AnalyticsService', () => {
           useValue: mockProfileRepo,
         },
         {
+          provide: getRepositoryToken(ProfileEvent),
+          useValue: mockProfileEventRepo,
+        },
+        {
+          provide: getRepositoryToken(LinkClick),
+          useValue: mockLinkClickRepo,
+        },
+        {
+          provide: getRepositoryToken(MetricSnapshot),
+          useValue: mockMetricSnapshotRepo,
+        },
+        {
           provide: RedisService,
           useValue: mockRedisService,
+        },
+        {
+          provide: FingerprintService,
+          useValue: mockFingerprintService,
+        },
+        {
+          provide: getQueueToken(ANALYTICS_QUEUE),
+          useValue: mockAnalyticsQueue,
         },
       ],
     }).compile();
@@ -116,16 +163,47 @@ describe('AnalyticsService', () => {
   describe('extractIp', () => {
     it('returns req.ip when available', () => {
       const req = { ip: '203.0.113.1' } as any;
-
       const ip = (service as any).extractIp(req);
       expect(ip).toBe('203.0.113.1');
     });
 
     it('returns fallback when req.ip is undefined', () => {
       const req = {} as any;
-
       const ip = (service as any).extractIp(req);
       expect(ip).toBe('0.0.0.0');
+    });
+  });
+
+  describe('enqueueEvent', () => {
+    it('throws NotFoundException when profile not found', async () => {
+      mockProfileRepo.findOne.mockResolvedValue(null);
+      const req = { ip: '1.2.3.4', headers: {} } as any;
+
+      await expect(
+        service.enqueueEvent(
+          { profileId: 'profile-id', eventType: 'profile_view' as any },
+          req,
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('saves event row and enqueues job', async () => {
+      mockProfileRepo.findOne.mockResolvedValue({ id: 'profile-id' });
+      mockProfileEventRepo.create.mockReturnValue({ id: 'event-id' });
+      mockProfileEventRepo.save.mockResolvedValue({
+        id: 'event-id',
+        occurredAt: new Date('2026-01-01'),
+      });
+      mockAnalyticsQueue.add.mockResolvedValue({});
+
+      const req = { ip: '1.2.3.4', headers: {} } as any;
+      await service.enqueueEvent(
+        { profileId: 'profile-id', eventType: 'profile_view' as any },
+        req,
+      );
+
+      expect(mockProfileEventRepo.save).toHaveBeenCalled();
+      expect(mockAnalyticsQueue.add).toHaveBeenCalled();
     });
   });
 });

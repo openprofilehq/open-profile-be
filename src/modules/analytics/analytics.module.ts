@@ -10,6 +10,9 @@ import { ProfileEvent } from './entities/profile-event.entity';
 import { LinkClick } from './entities/link-click.entity';
 import { SearchImpression } from './entities/search-impression.entity';
 import { MetricSnapshot } from './entities/metric-snapshot.entity';
+import { FingerprintModule } from '../../common/fingerprint/fingerprint.module';
+import { BullModule } from '@nestjs/bullmq';
+import { ANALYTICS_QUEUE } from './dto/profile-event-job.dto';
 
 @Module({
   imports: [
@@ -21,10 +24,14 @@ import { MetricSnapshot } from './entities/metric-snapshot.entity';
       SearchImpression,
       MetricSnapshot,
     ]),
+    BullModule.registerQueue({
+      name: ANALYTICS_QUEUE,
+    }),
     RedisModule,
     AuthModule,
+    FingerprintModule,
   ],
   controllers: [AnalyticsController],
   providers: [AnalyticsService],
 })
-export class AnalyticsModule { }
+export class AnalyticsModule {}
