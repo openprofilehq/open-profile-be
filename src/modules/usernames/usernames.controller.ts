@@ -64,7 +64,7 @@ export class UsernamesController {
 
   @Get('check/internal')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({
     summary:
       'Internal username check — bypasses public rate limit, requires auth',

@@ -1,7 +1,13 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-
+import { Request } from 'express';
+import { hash as argon2Hash } from 'argon2';
 import { ProfileView } from './entities/profile-view.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
@@ -18,15 +24,83 @@ type DailyRow = {
 
 @Injectable()
 export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
+
   constructor(
     @InjectRepository(ProfileView)
-    private readonly viewRepo: Repository<ProfileView>,
+    private readonly profileViewRepo: Repository<ProfileView>,
 
     @InjectRepository(Profile)
     private readonly profileRepo: Repository<Profile>,
 
     private readonly redis: RedisService,
   ) {}
+
+  private extractIp(req: Request): string {
+    return req.ip ?? '0.0.0.0';
+  }
+
+  private async hashSensitive(value: string): Promise<string> {
+    const salt = Buffer.from('open-profile-log-salt-2024', 'utf8');
+    return argon2Hash(value, { salt, type: 2 });
+  }
+
+  async recordView(profileId: string, req: Request): Promise<void> {
+    const viewerIp = this.extractIp(req);
+    const userAgent = req.headers['user-agent'] ?? null;
+
+    const profile = await this.profileRepo.findOne({
+      where: { id: profileId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException('Profile not found');
+    }
+
+    const dedupKey = `view:${profileId}:${viewerIp}`;
+    const isDuplicate = !(await this.redis.set(dedupKey, '1', 5 * 60, true));
+
+    if (isDuplicate) {
+      this.logger.log({
+        event: 'profile_view_deduplicated',
+        profileId,
+        viewerIp: await this.hashSensitive(viewerIp),
+      });
+      return;
+    }
+
+    const dbDedupKey = `${profileId}:${viewerIp}:${Math.floor(Date.now() / (5 * 60 * 1000))}`;
+    const result = await this.profileViewRepo
+      .createQueryBuilder()
+      .insert()
+      .into(ProfileView)
+      .values({
+        profileId,
+        viewerIp,
+        userAgent: userAgent || undefined,
+        dedupKey: dbDedupKey,
+      })
+      .orIgnore()
+      .execute();
+
+    if (result.identifiers.length === 0) {
+      this.logger.log({
+        event: 'profile_view_deduplicated',
+        profileId,
+        viewerIp: await this.hashSensitive(viewerIp),
+      });
+      return;
+    }
+
+    this.logger.log({
+      event: 'profile_view_recorded',
+      profileId,
+      viewerIp: await this.hashSensitive(viewerIp),
+      userAgent: userAgent
+        ? await this.hashSensitive(userAgent)
+        : 'not_provided',
+    });
+  }
 
   async getStats(userId: string): Promise<AnalyticsStatsDto> {
     // Find user's profile
@@ -71,13 +145,13 @@ export class AnalyticsService {
 
     // TOTAL VIEWS
 
-    const total = await this.viewRepo.count({
+    const total = await this.profileViewRepo.count({
       where: { profileId: profile.id },
     });
 
     // TODAY
 
-    const today = await this.viewRepo
+    const today = await this.profileViewRepo
       .createQueryBuilder('view')
       .where('view.profile_id = :profileId', { profileId: profile.id })
       .andWhere('view.viewed_at >= :today', { today: startOfToday })
@@ -85,7 +159,7 @@ export class AnalyticsService {
 
     // WEEK
 
-    const thisWeek = await this.viewRepo
+    const thisWeek = await this.profileViewRepo
       .createQueryBuilder('view')
       .where('view.profile_id = :profileId', { profileId: profile.id })
       .andWhere('view.viewed_at >= :week', { week: startOfWeek })
@@ -93,7 +167,7 @@ export class AnalyticsService {
 
     // UNIQUE VIEWERS
 
-    const uniqueViewersRaw = (await this.viewRepo
+    const uniqueViewersRaw = (await this.profileViewRepo
       .createQueryBuilder('view')
       .select('COUNT(DISTINCT view.viewer_ip)', 'count')
       .where('view.profile_id = :profileId', { profileId: profile.id })
@@ -103,7 +177,7 @@ export class AnalyticsService {
 
     // DAILY BREAKDOWN
 
-    const rows = await this.viewRepo
+    const rows = await this.profileViewRepo
       .createQueryBuilder('view')
       .select(`DATE(view.viewed_at)`, 'date')
       .addSelect('COUNT(*)', 'views')

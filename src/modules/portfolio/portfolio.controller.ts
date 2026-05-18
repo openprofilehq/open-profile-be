@@ -22,7 +22,7 @@ import { UpdatePortfolioItemDto } from './dto/update-portfolio-item.dto.js';
 import { PortfolioService } from './portfolio.service.js';
 
 @ApiTags('portfolio')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT')
 @Controller({ path: 'profiles/me/portfolio', version: '1' })
 export class PortfolioController {
   constructor(private readonly portfolioService: PortfolioService) {}

@@ -1,18 +1,25 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
-
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Req,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-
 import type { Request } from 'express';
-
 import { AnalyticsService } from './analytics.service';
+import { CreateViewDto } from './dto/create-view.dto';
 import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
-
-// import your actual JWT guard
+import { Throttle } from '@nestjs/throttler';
+import { Public } from '../../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 interface AuthRequest extends Request {
@@ -21,14 +28,31 @@ interface AuthRequest extends Request {
   };
 }
 
-@ApiTags('analytics')
+@ApiTags('Analytics')
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({ summary: 'Record a profile view' })
+  @ApiResponse({ status: 201, description: 'View recorded successfully' })
+  @ApiResponse({
+    status: 422,
+    description: 'Invalid profile ID or request body',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded (30 req/min)' })
+  @Post('view')
+  @HttpCode(HttpStatus.CREATED)
+  async recordView(@Body() dto: CreateViewDto, @Req() req: Request) {
+    await this.analyticsService.recordView(dto.profileId, req);
+    return { message: 'View recorded' };
+  }
+
   @Get('stats')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({
     summary: 'Get profile analytics stats',
     description:

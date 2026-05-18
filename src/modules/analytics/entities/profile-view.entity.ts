@@ -12,7 +12,7 @@ import { Profile } from '../../profile/entities/profile.entity';
 
 @Entity('profile_views')
 @Index('idx_profile_views_profile_viewed_at', ['profileId', 'viewedAt'])
-@Index('idx_profile_views_profile_ip', ['profileId', 'viewerIp', 'viewedAt'])
+@Index('idx_profile_views_dedup', ['dedupKey'], { unique: true })
 export class ProfileView {
   @PrimaryColumn('uuid')
   id: string;
@@ -45,4 +45,7 @@ export class ProfileView {
     default: () => 'CURRENT_TIMESTAMP',
   })
   viewedAt: Date;
+
+  @Column({ name: 'dedup_key', type: 'varchar', length: 128 })
+  dedupKey: string;
 }

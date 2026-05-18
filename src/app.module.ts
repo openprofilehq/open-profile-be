@@ -65,9 +65,9 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     ProfileModule,
     SearchModule,
     UsernamesModule,
+    AnalyticsModule,
     ContactModule,
     PortfolioModule,
-    AnalyticsModule,
   ],
   providers: [
     {
