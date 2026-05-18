@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { join } from 'path';
 import * as fs from 'fs';
 import sharp from 'sharp';
 
 @Injectable()
 export class ImageUploadService {
+  private readonly logger = new Logger(ImageUploadService.name);
+
   async upload(
     file: Express.Multer.File,
     subdirectory: string,
@@ -34,8 +36,13 @@ export class ImageUploadService {
     const absolutePath = join(process.cwd(), relativePath);
     try {
       await fs.promises.unlink(absolutePath);
-    } catch {
-      // File may not exist — skip
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error as any).code === 'ENOENT') {
+        this.logger.warn(`File not found for deletion: ${absolutePath}`);
+        return;
+      }
+      this.logger.error(`Failed to delete file: ${absolutePath}`, error instanceof Error ? error.stack : undefined);
+      throw error;
     }
   }
 }
