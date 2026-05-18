@@ -95,7 +95,7 @@ export class AuthController {
     return this.authService.logout(req, res);
   }
 
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @Get('me')
   @ApiOperation({ summary: 'Return the current authenticated user' })
   me(@CurrentUser() user: AuthenticatedUser) {

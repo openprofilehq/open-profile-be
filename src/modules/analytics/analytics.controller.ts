@@ -38,9 +38,10 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'Record a profile view' })
   @ApiResponse({ status: 201, description: 'View recorded successfully' })
   @ApiResponse({
-    status: 400,
+    status: 422,
     description: 'Invalid profile ID or request body',
   })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   @ApiResponse({ status: 429, description: 'Rate limit exceeded (30 req/min)' })
   @Post('view')
   @HttpCode(HttpStatus.CREATED)
@@ -51,7 +52,7 @@ export class AnalyticsController {
 
   @Get('stats')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({
     summary: 'Get profile analytics stats',
     description:

@@ -50,7 +50,7 @@ export class ProfileController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Complete onboarding with profile details' })
   @ApiResponse({ status: 201, description: 'Profile created successfully' })
   @ApiResponse({
@@ -68,7 +68,7 @@ export class ProfileController {
 
   @Post('publish')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({
     summary: 'Publish or unpublish authenticated user profile',
   })
@@ -101,7 +101,7 @@ export class ProfileController {
 
   @Patch(':username')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Update profile fields for the authenticated user' })
   @ApiParam({ name: 'username', description: 'The profile username' })
@@ -141,7 +141,7 @@ export class ProfileController {
 
   @Get('dashboard')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({
     summary: 'Get full current profile data for the authenticated user',
   })
@@ -217,7 +217,7 @@ export class ProfileController {
    */
   @Patch('me/components/:componentId')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({
     summary: 'Toggle or edit a component on the authenticated profile',
   })
@@ -239,7 +239,7 @@ export class ProfileController {
    */
   @Put('me/components/order')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
+  @ApiBearerAuth('JWT')
   @ApiOperation({
     summary: 'Reorder all components on the authenticated profile',
   })
