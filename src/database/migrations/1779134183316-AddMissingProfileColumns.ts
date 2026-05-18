@@ -19,11 +19,15 @@ export class AddMissingProfileColumns1779134183316 implements MigrationInterface
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      ALTER TABLE profiles
-      DROP COLUMN IF EXISTS is_searchable,
-      DROP COLUMN IF EXISTS is_verified,
-      DROP COLUMN IF EXISTS is_published,
-      DROP COLUMN IF EXISTS deleted_at;
-    `);
+    DROP EXTENSION IF EXISTS pg_trgm;
+  `);
+
+    await queryRunner.query(`
+    ALTER TABLE profiles
+    DROP COLUMN IF EXISTS is_searchable,
+    DROP COLUMN IF EXISTS is_verified,
+    DROP COLUMN IF EXISTS is_published,
+    DROP COLUMN IF EXISTS deleted_at;
+  `);
   }
 }
