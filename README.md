@@ -21,7 +21,7 @@ Records a view for a given profile. Public endpoint, rate-limited to 30 requests
 | Status | Description         |
 | ------ | ------------------- |
 | 201    | View recorded       |
-| 400    | Invalid profile ID  |
+| 422    | Invalid profile ID  |
 | 404    | Profile not found   |
 | 429    | Rate limit exceeded |
 
@@ -37,12 +37,12 @@ Records a view for a given profile. Public endpoint, rate-limited to 30 requests
 
 Relies on the existing `profile_views` table:
 
-| Column    | Type     | Description                   |
-| --------- | -------- | ----------------------------- |
-| id        | UUID     | Primary key                   |
-| profileId | UUID     | FK to profiles                |
-| viewerIp  | varchar  | Viewer's IP address           |
-| userAgent | text     | Browser user-agent (nullable) |
+| Column    | Type        | Description                   |
+| --------- | ----------- | ----------------------------- |
+| id        | UUID        | Primary key                   |
+| profileId | UUID        | FK to profiles                |
+| viewerIp  | varchar     | Viewer's IP address           |
+| userAgent | text        | Browser user-agent (nullable) |
 | viewedAt  | timestamptz | Timestamp of the view         |
 
 ## Rate limiting

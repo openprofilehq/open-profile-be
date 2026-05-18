@@ -68,7 +68,6 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     AnalyticsModule,
     ContactModule,
     PortfolioModule,
-    AnalyticsModule,
   ],
   providers: [
     {

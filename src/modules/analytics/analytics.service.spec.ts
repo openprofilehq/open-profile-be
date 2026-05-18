@@ -81,19 +81,20 @@ describe('AnalyticsService', () => {
       expect(mockInsertQB.execute).not.toHaveBeenCalled();
     });
 
-    it('no insert when duplicate (unique key ignored)', async () => {
+    it('returns early when Redis dedup marks as duplicate', async () => {
       mockProfileRepo.findOne.mockResolvedValue({ id: 'profile-id' });
-      mockInsertQB.execute.mockResolvedValue({ identifiers: [] });
+      mockRedisService.set.mockResolvedValue(false);
       const req = { ip: '1.2.3.4', headers: {} } as any;
 
       await service.recordView('profile-id', req);
 
-      expect(mockInsertQB.values).toHaveBeenCalled();
-      expect(mockInsertQB.execute).toHaveBeenCalled();
+      expect(mockInsertQB.values).not.toHaveBeenCalled();
+      expect(mockInsertQB.execute).not.toHaveBeenCalled();
     });
 
     it('inserts row for a new view', async () => {
       mockProfileRepo.findOne.mockResolvedValue({ id: 'profile-id' });
+      mockRedisService.set.mockResolvedValue(true);
       mockInsertQB.execute.mockResolvedValue({ identifiers: ['new-id'] });
       const req = {
         ip: '1.2.3.4',

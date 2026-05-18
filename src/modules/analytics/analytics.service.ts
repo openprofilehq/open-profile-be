@@ -34,7 +34,7 @@ export class AnalyticsService {
     private readonly profileRepo: Repository<Profile>,
 
     private readonly redis: RedisService,
-  ) { }
+  ) {}
 
   private extractIp(req: Request): string {
     return req.ip ?? '0.0.0.0';
@@ -57,9 +57,19 @@ export class AnalyticsService {
       throw new NotFoundException('Profile not found');
     }
 
-    const dedupBucket = Math.floor(Date.now() / (5 * 60 * 1000));
-    const dedupKey = `${profileId}:${viewerIp}:${dedupBucket}`;
+    const dedupKey = `view:${profileId}:${viewerIp}`;
+    const isDuplicate = !(await this.redis.set(dedupKey, '1', 5 * 60, true));
 
+    if (isDuplicate) {
+      this.logger.log({
+        event: 'profile_view_deduplicated',
+        profileId,
+        viewerIp: await this.hashSensitive(viewerIp),
+      });
+      return;
+    }
+
+    const dbDedupKey = `${profileId}:${viewerIp}:${Math.floor(Date.now() / (5 * 60 * 1000))}`;
     const result = await this.profileViewRepo
       .createQueryBuilder()
       .insert()
@@ -68,7 +78,7 @@ export class AnalyticsService {
         profileId,
         viewerIp,
         userAgent: userAgent || undefined,
-        dedupKey,
+        dedupKey: dbDedupKey,
       })
       .orIgnore()
       .execute();
@@ -86,7 +96,9 @@ export class AnalyticsService {
       event: 'profile_view_recorded',
       profileId,
       viewerIp: await this.hashSensitive(viewerIp),
-      userAgent: userAgent ? await this.hashSensitive(userAgent) : 'not_provided',
+      userAgent: userAgent
+        ? await this.hashSensitive(userAgent)
+        : 'not_provided',
     });
   }
 
