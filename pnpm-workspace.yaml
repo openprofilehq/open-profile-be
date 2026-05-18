@@ -7,4 +7,5 @@ allowBuilds:
   argon2: true
   bcrypt: true
   msgpackr-extract: true
+  sharp: true
   unrs-resolver: true
