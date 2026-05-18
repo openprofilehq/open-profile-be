@@ -37,11 +37,18 @@ export class ImageUploadService {
     try {
       await fs.promises.unlink(absolutePath);
     } catch (error) {
-      if (error instanceof Error && 'code' in error && (error as any).code === 'ENOENT') {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ) {
         this.logger.warn(`File not found for deletion: ${absolutePath}`);
         return;
       }
-      this.logger.error(`Failed to delete file: ${absolutePath}`, error instanceof Error ? error.stack : undefined);
+      this.logger.error(
+        `Failed to delete file: ${absolutePath}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw error;
     }
   }
