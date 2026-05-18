@@ -2,6 +2,7 @@ import {
   INestApplication,
   ValidationPipe,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -27,7 +28,7 @@ describe('AnalyticsController (integration)', () => {
   let app: INestApplication<App>;
   let mockAnalyticsService: { recordView: jest.Mock };
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     mockAnalyticsService = {
       recordView: jest.fn(),
     };
@@ -42,6 +43,15 @@ describe('AnalyticsController (integration)', () => {
           useValue: new ValidationPipe({
             whitelist: true,
             transform: true,
+            forbidNonWhitelisted: true,
+            transformOptions: { enableImplicitConversion: false },
+            exceptionFactory: (errors) => {
+              const formatted = errors.map((e) => ({
+                field: e.property,
+                error: Object.values(e.constraints ?? {}).join(', '),
+              }));
+              return new UnprocessableEntityException(formatted);
+            },
           }),
         },
       ],
@@ -55,11 +65,7 @@ describe('AnalyticsController (integration)', () => {
     await app.init();
   });
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  afterAll(async () => {
+  afterEach(async () => {
     await app.close();
   });
 
@@ -81,7 +87,7 @@ describe('AnalyticsController (integration)', () => {
       .post('/analytics/view')
       .set('X-Forwarded-For', '10.0.0.2')
       .send({ profileId: 'not-a-uuid' })
-      .expect(400);
+      .expect(422);
   });
 
   it('POST /view with non-existent profileId → 404', async () => {
@@ -117,9 +123,7 @@ describe('AnalyticsController (integration)', () => {
   it('POST /view 31 times in 1 min → 429 on 31st', async () => {
     mockAnalyticsService.recordView.mockResolvedValue(undefined);
 
-    // ThrottlerGuard tracks by req.ip (not X-Forwarded-For), so previous
-    // tests (5 requests total) consume the shared counter.
-    const limit = 25;
+    const limit = 30;
     for (let i = 0; i < limit; i++) {
       await request(app.getHttpServer())
         .post('/analytics/view')

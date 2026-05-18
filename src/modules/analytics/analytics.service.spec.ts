@@ -10,9 +10,21 @@ jest.mock('@t3-oss/env-core', () => ({
   createEnv: () => ({}) as never,
 }));
 
+jest.mock('argon2', () => ({
+  hash: jest.fn((val: string) => Promise.resolve(`hashed:${val}`)),
+}));
+
 jest.mock('uuid', () => ({
   v7: jest.fn(() => '00000000-0000-4000-8000-000000000000'),
 }));
+
+const mockInsertQB = {
+  insert: jest.fn().mockReturnThis(),
+  into: jest.fn().mockReturnThis(),
+  values: jest.fn().mockReturnThis(),
+  orIgnore: jest.fn().mockReturnThis(),
+  execute: jest.fn(),
+};
 
 const mockProfileViewRepo = {
   findOne: jest.fn(),
@@ -20,7 +32,7 @@ const mockProfileViewRepo = {
   save: jest.fn(),
   count: jest.fn(),
   query: jest.fn(),
-  createQueryBuilder: jest.fn(),
+  createQueryBuilder: jest.fn().mockReturnValue(mockInsertQB),
 };
 
 const mockProfileRepo = {
@@ -61,72 +73,58 @@ describe('AnalyticsService', () => {
   describe('recordView', () => {
     it('throws NotFoundException when profile not found', async () => {
       mockProfileRepo.findOne.mockResolvedValue(null);
-      const req = {
-        headers: {},
-        socket: { remoteAddress: '1.2.3.4' },
-      } as any;
+      const req = { ip: '1.2.3.4', headers: {} } as any;
 
       await expect(service.recordView('profile-id', req)).rejects.toThrow(
         NotFoundException,
       );
-      expect(mockProfileViewRepo.findOne).not.toHaveBeenCalled();
-      expect(mockProfileViewRepo.save).not.toHaveBeenCalled();
+      expect(mockInsertQB.execute).not.toHaveBeenCalled();
     });
 
-    it('no insert when duplicate view within 5 minutes', async () => {
+    it('no insert when duplicate (unique key ignored)', async () => {
       mockProfileRepo.findOne.mockResolvedValue({ id: 'profile-id' });
-      mockProfileViewRepo.findOne.mockResolvedValue({ id: 'existing-view' });
-      const req = {
-        headers: {},
-        socket: { remoteAddress: '1.2.3.4' },
-      } as any;
+      mockInsertQB.execute.mockResolvedValue({ identifiers: [] });
+      const req = { ip: '1.2.3.4', headers: {} } as any;
 
       await service.recordView('profile-id', req);
 
-      expect(mockProfileViewRepo.create).not.toHaveBeenCalled();
-      expect(mockProfileViewRepo.save).not.toHaveBeenCalled();
+      expect(mockInsertQB.values).toHaveBeenCalled();
+      expect(mockInsertQB.execute).toHaveBeenCalled();
     });
 
     it('inserts row for a new view', async () => {
       mockProfileRepo.findOne.mockResolvedValue({ id: 'profile-id' });
-      mockProfileViewRepo.findOne.mockResolvedValue(null);
-      mockProfileViewRepo.create.mockReturnValue({});
-      mockProfileViewRepo.save.mockResolvedValue({});
+      mockInsertQB.execute.mockResolvedValue({ identifiers: ['new-id'] });
       const req = {
+        ip: '1.2.3.4',
         headers: { 'user-agent': 'TestAgent' },
-        socket: { remoteAddress: '1.2.3.4' },
       } as any;
 
       await service.recordView('profile-id', req);
 
-      expect(mockProfileViewRepo.create).toHaveBeenCalledWith({
-        profile: { id: 'profile-id' },
+      expect(mockInsertQB.values).toHaveBeenCalledWith({
+        profileId: 'profile-id',
         viewerIp: '1.2.3.4',
         userAgent: 'TestAgent',
+        dedupKey: expect.stringMatching(/^profile-id:1\.2\.3\.4:\d+$/),
       });
-      expect(mockProfileViewRepo.save).toHaveBeenCalled();
+      expect(mockInsertQB.execute).toHaveBeenCalled();
     });
   });
 
   describe('extractIp', () => {
-    it('returns first IP from x-forwarded-for header', () => {
-      const req = {
-        headers: { 'x-forwarded-for': '203.0.113.1, 198.51.100.2' },
-        socket: { remoteAddress: '1.2.3.4' },
-      } as any;
+    it('returns req.ip when available', () => {
+      const req = { ip: '203.0.113.1' } as any;
 
       const ip = (service as any).extractIp(req);
       expect(ip).toBe('203.0.113.1');
     });
 
-    it('returns socket remoteAddress when no x-forwarded-for header', () => {
-      const req = {
-        headers: {},
-        socket: { remoteAddress: '1.2.3.4' },
-      } as any;
+    it('returns fallback when req.ip is undefined', () => {
+      const req = {} as any;
 
       const ip = (service as any).extractIp(req);
-      expect(ip).toBe('1.2.3.4');
+      expect(ip).toBe('0.0.0.0');
     });
   });
 });

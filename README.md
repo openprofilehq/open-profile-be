@@ -43,7 +43,7 @@ Relies on the existing `profile_views` table:
 | profileId | UUID     | FK to profiles                |
 | viewerIp  | varchar  | Viewer's IP address           |
 | userAgent | text     | Browser user-agent (nullable) |
-| viewedAt  | datetime | Timestamp of the view         |
+| viewedAt  | timestamptz | Timestamp of the view         |
 
 ## Rate limiting
 
