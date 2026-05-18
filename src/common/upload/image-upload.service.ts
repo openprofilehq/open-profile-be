@@ -39,8 +39,8 @@ export class ImageUploadService {
     } catch (error) {
       if (
         error instanceof Error &&
-        'code' in error &&
-        (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ((error as NodeJS.ErrnoException).code === 'ENOENT' ||
+          error.message === 'ENOENT')
       ) {
         this.logger.warn(`File not found for deletion: ${absolutePath}`);
         return;
