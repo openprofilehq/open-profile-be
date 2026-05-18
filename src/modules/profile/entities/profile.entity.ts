@@ -62,6 +62,9 @@ export class Profile {
   @Column({ type: 'boolean', name: 'has_unpublished_changes', default: false })
   hasUnpublishedChanges: boolean;
 
+  @Column({ type: 'jsonb', nullable: true, default: null })
+  content: Record<string, unknown> | null;
+
   @OneToMany(() => ProfileComponent, (component) => component.profile)
   components: ProfileComponent[];
 

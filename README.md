@@ -1,61 +1,29 @@
-# Analytics Module — Profile View Tracking
+## Analytics v2 + Profile Content — Dev B
 
-Adds a `POST /analytics/view` endpoint that records profile views with IP-based deduplication.
+### New endpoints
 
-## Endpoint
+| Method | Path                      | Auth   | Description                                              |
+| ------ | ------------------------- | ------ | -------------------------------------------------------- |
+| POST   | `/api/analytics/events`   | Public | Fire-and-forget event ingestion, returns 202             |
+| GET    | `/api/analytics/insights` | JWT    | Pre-rolled metric snapshots (`?period=day\|week\|month`) |
+| PATCH  | `/api/profiles/content`   | JWT    | Save full profile content in one call                    |
 
-### `POST /analytics/view`
+### Deprecated (still working)
 
-Records a view for a given profile. Public endpoint, rate-limited to 30 requests per minute.
+- `POST /api/analytics/view` → use `/api/analytics/events`
+- `GET /api/analytics/stats` → use `/api/analytics/insights`
 
-**Request body:**
+### New files
 
-```json
-{
-  "profileId": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
+- `src/common/fingerprint/` — SHA-256 visitor fingerprint service
+- `src/modules/analytics/dto/create-event.dto.ts`
+- `src/modules/analytics/dto/insights-query.dto.ts`
+- `src/modules/profile/dto/save-profile-content.dto.ts`
+- `src/database/migrations/1779100000000-AddContentToProfile.ts`
 
-**Responses:**
+### Notes
 
-| Status | Description         |
-| ------ | ------------------- |
-| 201    | View recorded       |
-| 422    | Invalid profile ID  |
-| 404    | Profile not found   |
-| 429    | Rate limit exceeded |
-
-## How it works
-
-1. Validates the profile exists in the database (returns 404 if not).
-2. Extracts the viewer's IP from the `x-forwarded-for` header (falls back to `req.socket.remoteAddress`).
-3. Extracts the `user-agent` from the request headers.
-4. Checks for a duplicate view from the same IP to the same profile within the last 5 minutes — if found, skips recording (deduplication).
-5. Inserts a row in `profile_views` with `profileId`, `viewerIp`, `userAgent`, and `viewedAt`.
-
-## Schema
-
-Relies on the existing `profile_views` table:
-
-| Column    | Type        | Description                   |
-| --------- | ----------- | ----------------------------- |
-| id        | UUID        | Primary key                   |
-| profileId | UUID        | FK to profiles                |
-| viewerIp  | varchar     | Viewer's IP address           |
-| userAgent | text        | Browser user-agent (nullable) |
-| viewedAt  | timestamptz | Timestamp of the view         |
-
-## Rate limiting
-
-- **30 requests per 60 seconds** per IP (configurable via `@Throttle` decorator)
-- Uses the global `ThrottlerGuard` from `@nestjs/throttler`
-
-## Tests
-
-```bash
-# unit & integration
-npm test
-
-# specific file
-npx jest src/modules/analytics
-```
+- Fingerprint = SHA-256(`ip|user-agent|x-visitor-tz`). Frontend should send `X-Visitor-Tz` header.
+- Profile content is a full replace, not a merge. Previous content is overwritten on every save.
+- Saved content is not visible to visitors until `POST /api/profiles/publish` is called.
+- Bull queue (`analytics`) inherits Redis config from `QueueModule`.
