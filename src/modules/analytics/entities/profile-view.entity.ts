@@ -48,4 +48,10 @@ export class ProfileView {
 
   @Column({ name: 'dedup_key', type: 'varchar', length: 128 })
   dedupKey: string;
+
+  @Column({ name: 'viewer_id', type: 'uuid', nullable: true, default: null })
+  viewerId: string | null;
+
+  @Column({ name: 'is_unique', type: 'boolean', default: false })
+  isUnique: boolean;
 }
