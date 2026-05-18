@@ -13,7 +13,6 @@ import { Queue } from 'bullmq';
 import { ProfileView } from './entities/profile-view.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { ProfileEvent } from './entities/profile-event.entity';
-import { LinkClick } from './entities/link-click.entity';
 import { MetricSnapshot } from './entities/metric-snapshot.entity';
 import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -24,7 +23,7 @@ import {
   ProfileEventJobPayload,
 } from './dto/profile-event-job.dto';
 import { InsightsPeriod } from './dto/insights-query.dto';
-import { EventType, SnapshotBucket } from '../../common/types/analytics.types';
+import { SnapshotBucket } from '../../common/types/analytics.types';
 
 interface AuthRequest extends Request {
   user?: { id: string };
@@ -46,9 +45,6 @@ export class AnalyticsService {
 
     @InjectRepository(ProfileEvent)
     private readonly profileEventRepo: Repository<ProfileEvent>,
-
-    @InjectRepository(LinkClick)
-    private readonly linkClickRepo: Repository<LinkClick>,
 
     @InjectRepository(MetricSnapshot)
     private readonly metricSnapshotRepo: Repository<MetricSnapshot>,
@@ -108,32 +104,6 @@ export class AnalyticsService {
       eventId: saved.id,
       eventType: dto.eventType,
     });
-  }
-
-  async resolveAndLogLinkClick(
-    linkId: string,
-    req: Request,
-  ): Promise<{ url: string }> {
-    const link = await this.linkClickRepo.findOne({
-      where: { id: linkId },
-    });
-    if (!link) throw new NotFoundException('Link not found');
-
-    // Enqueue the click event
-    await this.analyticsQueue.add(EventType.LINK_CLICK, {
-      eventId: linkId,
-      profileId: link.profileId,
-      eventType: EventType.LINK_CLICK,
-      visitorFp: this.fingerprint.generate(req),
-      viewerId: null,
-      userAgent: (req.headers['user-agent'] as string) ?? null,
-      referrer: (req.headers['referer'] as string) ?? null,
-      occurredAt: new Date().toISOString(),
-    } satisfies ProfileEventJobPayload);
-
-    // Return the target URL from metadata
-    const url = '/';
-    return { url };
   }
 
   async getInsights(

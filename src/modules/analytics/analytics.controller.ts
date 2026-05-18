@@ -4,8 +4,6 @@ import {
   Get,
   Body,
   Req,
-  Res,
-  Param,
   Query,
   HttpCode,
   HttpStatus,
@@ -17,7 +15,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import { AnalyticsService } from './analytics.service';
 import { CreateViewDto } from './dto/create-view.dto';
 import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
@@ -51,23 +49,6 @@ export class AnalyticsController {
   async recordEvent(@Body() dto: CreateEventDto, @Req() req: AuthRequest) {
     await this.analyticsService.enqueueEvent(dto, req);
     return { accepted: true };
-  }
-
-  @Public()
-  @Get('r/:linkId')
-  @ApiOperation({ summary: 'Redirect proxy — logs link click then redirects' })
-  @ApiResponse({ status: 302, description: 'Redirecting to target URL' })
-  @ApiResponse({ status: 404, description: 'Link not found' })
-  async redirectLink(
-    @Param('linkId') linkId: string,
-    @Req() req: Request,
-    @Res() res: Response,
-  ) {
-    const target = await this.analyticsService.resolveAndLogLinkClick(
-      linkId,
-      req,
-    );
-    res.redirect(302, target.url);
   }
 
   @Get('insights')
