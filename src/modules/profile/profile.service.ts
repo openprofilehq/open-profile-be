@@ -22,6 +22,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UsernamesService } from '../usernames/usernames.service';
 import { PublishProfileDto } from './dto/publish-profile.dto';
+import { SaveProfileContentDto } from './dto/save-profile-content.dto';
 
 const CACHE_TTL_SECONDS = 60;
 const MAX_COMPONENTS = 50;
@@ -222,6 +223,58 @@ export class ProfileService {
         isEnabled: c.isEnabled,
         metadata: c.metadata,
       })),
+    };
+  }
+
+  async saveProfileContent(
+    userId: string,
+    dto: SaveProfileContentDto,
+  ): Promise<{
+    status: string;
+    message: string;
+    has_unpublished_changes: boolean;
+  }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    // CTA visible guard — class-validator handles most validation but
+    // the conditional requirement needs a cross-field check here
+    if (dto.cta?.visible === true && (!dto.cta.label || !dto.cta.url)) {
+      throw new UnprocessableEntityException(
+        'CTA requires both a label and a URL when visible.',
+      );
+    }
+
+    // Full replace — no merge
+    profile.content = {
+      sectionOrder: dto.sectionOrder,
+      bio: dto.bio ?? null,
+      links: dto.links ?? null,
+      projects: dto.projects ?? null,
+      cta: dto.cta ?? null,
+    };
+
+    profile.hasUnpublishedChanges = true;
+
+    await this.profileRepo.save(profile);
+    await this.invalidateCache(profile.username);
+
+    this.logger.log({
+      event: 'profile_content_saved',
+      profileId: profile.id,
+    });
+
+    return {
+      status: 'success',
+      message: 'Your profile content has been saved.',
+      has_unpublished_changes: true,
     };
   }
 

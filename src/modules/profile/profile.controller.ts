@@ -37,6 +37,7 @@ import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { SaveProfileContentDto } from './dto/save-profile-content.dto';
 import {
   profilePhotoFilter,
   profilePhotoLimits,
@@ -64,6 +65,24 @@ export class ProfileController {
     user: currentUserDecorator.AuthenticatedUser,
   ) {
     return this.profileService.createProfile(createProfileDto, user);
+  }
+
+  @Patch('content')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Save full profile content in one call' })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile content saved successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'Validation error' })
+  async saveProfileContent(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: SaveProfileContentDto,
+  ) {
+    return this.profileService.saveProfileContent(userId, dto);
   }
 
   @Post('publish')
