@@ -29,6 +29,7 @@ import { SearchModule } from './modules/search/search.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { PortfolioModule } from './modules/portfolio/portfolio.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { UploadModule } from './modules/upload/upload.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     AnalyticsModule,
     ContactModule,
     PortfolioModule,
+    UploadModule,
   ],
   providers: [
     {
