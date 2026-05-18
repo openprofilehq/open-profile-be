@@ -31,6 +31,10 @@ export class PortfolioItem {
   @Column({ type: 'varchar', length: 500, name: 'project_url', nullable: true })
   projectUrl: string | null;
 
+  @ApiProperty({ nullable: true })
+  @Column({ type: 'varchar', name: 'image_url', nullable: true })
+  imageUrl: string | null;
+
   @ApiProperty()
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt: Date;

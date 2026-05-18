@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsNotEmpty,
   IsOptional,
@@ -40,4 +40,12 @@ export class CreatePortfolioItemDto {
     { message: 'projectUrl must be a valid URL.' },
   )
   projectUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Project image URL (obtained from POST /uploads/project-image-url)',
+    example: '/uploads/projects/uuid.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }
