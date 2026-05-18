@@ -5,7 +5,10 @@ import { v7 as uuidv7 } from 'uuid';
 @Index('idx_si_profile_occurred', ['profileId', 'occurredAt'])
 export class SearchImpression {
     @PrimaryColumn('uuid') id: string;
-    @BeforeInsert() generateId() { if (!this.id) this.id = uuidv7(); }
+    @BeforeInsert()
+    generateId() {
+        if (!this.id) this.id = uuidv7();
+    }
 
     @Column({ name: 'profile_id', type: 'uuid' }) profileId: string;
     @Column({ type: 'varchar', length: 255 }) keyword: string;
