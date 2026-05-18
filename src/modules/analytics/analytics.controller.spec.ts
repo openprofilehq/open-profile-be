@@ -40,7 +40,7 @@ describe('AnalyticsController (integration)', () => {
           }),
         },
       ],
-      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])],
+      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }])],
     }).compile();
 
     app = module.createNestApplication();
@@ -60,6 +60,7 @@ describe('AnalyticsController (integration)', () => {
 
     await request(app.getHttpServer())
       .post('/analytics/view')
+      .set('X-Forwarded-For', '10.0.0.1')
       .send({ profileId: VALID_UUID })
       .expect(201)
       .expect((res) => {
@@ -70,6 +71,7 @@ describe('AnalyticsController (integration)', () => {
   it('POST /view with invalid UUID → 400', async () => {
     await request(app.getHttpServer())
       .post('/analytics/view')
+      .set('X-Forwarded-For', '10.0.0.2')
       .send({ profileId: 'not-a-uuid' })
       .expect(400);
   });
@@ -81,6 +83,7 @@ describe('AnalyticsController (integration)', () => {
 
     await request(app.getHttpServer())
       .post('/analytics/view')
+      .set('X-Forwarded-For', '10.0.0.3')
       .send({ profileId: NONEXISTENT_UUID })
       .expect(404);
   });
@@ -90,11 +93,13 @@ describe('AnalyticsController (integration)', () => {
 
     await request(app.getHttpServer())
       .post('/analytics/view')
+      .set('X-Forwarded-For', '10.0.0.4')
       .send({ profileId: VALID_UUID })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/analytics/view')
+      .set('X-Forwarded-For', '10.0.0.4')
       .send({ profileId: VALID_UUID })
       .expect(201);
 
@@ -104,17 +109,19 @@ describe('AnalyticsController (integration)', () => {
   it('POST /view 31 times in 1 min → 429 on 31st', async () => {
     mockAnalyticsService.recordView.mockResolvedValue(undefined);
 
-    const remaining = 30;
-    for (let i = 0; i < remaining; i++) {
+    const limit = 30;
+    for (let i = 0; i < limit; i++) {
       await request(app.getHttpServer())
         .post('/analytics/view')
+        .set('X-Forwarded-For', '10.0.0.5')
         .send({ profileId: VALID_UUID })
         .expect(201);
     }
 
     await request(app.getHttpServer())
       .post('/analytics/view')
+      .set('X-Forwarded-For', '10.0.0.5')
       .send({ profileId: VALID_UUID })
       .expect(429);
-  }, 60_000);
+  }, 30_000);
 });
