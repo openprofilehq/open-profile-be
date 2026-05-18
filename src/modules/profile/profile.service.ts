@@ -22,6 +22,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UsernamesService } from '../usernames/usernames.service';
 import { PublishProfileDto } from './dto/publish-profile.dto';
+import { ProfileContentDto } from './dto/profile-content.dto';
 
 const CACHE_TTL_SECONDS = 60;
 const MAX_COMPONENTS = 50;
@@ -511,6 +512,53 @@ export class ProfileService {
       status: 'success',
       message:
         'Your profile has been unpublished. It is no longer visible to the public.',
+    };
+  }
+
+  async getProfileContent(userId: string): Promise<ProfileContentDto> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    const components = await this.componentRepo.find({
+      where: { profileId: profile.id },
+      order: { displayOrder: 'ASC' },
+    });
+
+    const links = components.filter((c) => c.sectionType === 'links');
+    const projects = components.filter((c) => c.sectionType === 'projects');
+
+    return {
+      sectionOrder: ['bio', 'links', 'projects', 'cta'],
+
+      bio: {
+        visible: true,
+        content: profile.bio ?? '',
+      },
+
+      links: {
+        visible: true,
+        sectionTitle: 'Links',
+        items: links.map((l) => l.metadata ?? {}),
+      },
+
+      projects: {
+        visible: true,
+        sectionTitle: 'Projects',
+        items: projects.map((p) => p.metadata ?? {}),
+      },
+
+      cta: {
+        visible: true,
+        label: profile.ctaLabel ?? '',
+        url: profile.ctaUrl ?? '',
+      },
     };
   }
 }
