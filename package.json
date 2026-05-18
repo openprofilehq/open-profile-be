@@ -121,6 +121,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!@t3-oss/env-core)"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

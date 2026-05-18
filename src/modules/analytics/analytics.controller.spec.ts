@@ -10,6 +10,11 @@ import { App } from 'supertest/types';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+jest.mock('@t3-oss/env-core', () => ({
+  createEnv: () => ({}) as never,
+}));
 
 jest.mock('uuid', () => ({
   v7: jest.fn(() => '00000000-0000-4000-8000-000000000000'),
@@ -41,7 +46,10 @@ describe('AnalyticsController (integration)', () => {
         },
       ],
       imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }])],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn(() => true) })
+      .compile();
 
     app = module.createNestApplication();
     await app.init();
@@ -109,7 +117,9 @@ describe('AnalyticsController (integration)', () => {
   it('POST /view 31 times in 1 min → 429 on 31st', async () => {
     mockAnalyticsService.recordView.mockResolvedValue(undefined);
 
-    const limit = 30;
+    // ThrottlerGuard tracks by req.ip (not X-Forwarded-For), so previous
+    // tests (5 requests total) consume the shared counter.
+    const limit = 25;
     for (let i = 0; i < limit; i++) {
       await request(app.getHttpServer())
         .post('/analytics/view')

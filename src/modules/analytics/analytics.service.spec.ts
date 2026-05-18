@@ -4,6 +4,11 @@ import { AnalyticsService } from './analytics.service';
 import { ProfileView } from './entities/profile-view.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { NotFoundException } from '@nestjs/common';
+import { RedisService } from '../../common/redis/redis.service';
+
+jest.mock('@t3-oss/env-core', () => ({
+  createEnv: () => ({}) as never,
+}));
 
 jest.mock('uuid', () => ({
   v7: jest.fn(() => '00000000-0000-4000-8000-000000000000'),
@@ -15,10 +20,16 @@ const mockProfileViewRepo = {
   save: jest.fn(),
   count: jest.fn(),
   query: jest.fn(),
+  createQueryBuilder: jest.fn(),
 };
 
 const mockProfileRepo = {
   findOne: jest.fn(),
+};
+
+const mockRedisService = {
+  get: jest.fn(),
+  set: jest.fn(),
 };
 
 describe('AnalyticsService', () => {
@@ -35,6 +46,10 @@ describe('AnalyticsService', () => {
         {
           provide: getRepositoryToken(Profile),
           useValue: mockProfileRepo,
+        },
+        {
+          provide: RedisService,
+          useValue: mockRedisService,
         },
       ],
     }).compile();
