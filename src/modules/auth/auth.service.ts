@@ -54,12 +54,6 @@ export interface RegisterSuccessResponse {
   message: string;
 }
 
-export interface RegisterDegradedResponse {
-  status: 'pending';
-  message: string;
-  httpStatus: typeof HttpStatus.ACCEPTED;
-}
-
 const OTP_TTL_MS = 5 * 60 * 1000;
 const BRUTE_MAX_ATTEMPTS = 5;
 const BRUTE_LOCKOUT_SECONDS = 30 * 60;
@@ -85,9 +79,7 @@ export class AuthService {
     private readonly tokenService: TokenService,
   ) {}
 
-  async register(
-    dto: RegisterDto,
-  ): Promise<RegisterSuccessResponse | RegisterDegradedResponse> {
+  async register(dto: RegisterDto): Promise<RegisterSuccessResponse> {
     const user = await this.usersService.createEmailUser({
       email: dto.email,
       password: dto.password,
@@ -100,24 +92,11 @@ export class AuthService {
 
     await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
 
-    try {
-      await this.mailService.sendVerificationOtp(
-        user.email,
-        user.fullName,
-        otp,
-      );
-    } catch (err) {
-      this.logger.error(
-        `Resend failure for user ${user.id} (${user.email})`,
-        err instanceof Error ? err.stack : err,
-      );
-      return {
-        status: 'pending',
-        message:
-          'Account created but we could not send your verification email. Please use the resend option.',
-        httpStatus: HttpStatus.ACCEPTED,
-      };
-    }
+    await this.queueService.addJob(
+      QUEUE_NAMES.EMAIL,
+      QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+      { to: user.email, otp, fullName: user.fullName },
+    );
 
     return {
       status: 'success',
@@ -182,7 +161,8 @@ export class AuthService {
       throw new ForbiddenException({
         error: 'EMAIL_NOT_VERIFIED',
         email: user.email,
-        message: 'Please verify your email address before logging in.',
+        message:
+          'Please verify your email address before logging in. Need a new code? Use the resend option.',
       });
     }
 
