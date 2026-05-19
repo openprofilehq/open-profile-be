@@ -582,7 +582,7 @@ export class ProfileService {
       cta: {
         visible: true,
         label: profile.ctaLabel ?? '',
-        url: profile.ctaUrl ?? '',
+        url: profile.ctaUrl ?? null,
       },
     };
   }

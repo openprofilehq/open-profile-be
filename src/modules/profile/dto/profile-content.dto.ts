@@ -5,6 +5,7 @@ import {
   IsString,
   IsUrl,
   ValidateNested,
+  IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -56,8 +57,9 @@ class CtaDto {
   label: string;
 
   @ApiProperty({ example: 'https://example.com' })
+  @IsOptional()
   @IsUrl()
-  url: string;
+  url: string | null;
 }
 
 export class ProfileContentDto {

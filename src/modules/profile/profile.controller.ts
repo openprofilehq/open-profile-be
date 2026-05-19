@@ -57,6 +57,31 @@ export class ProfileController {
     return this.profileService.createProfile(createProfileDto, user);
   }
 
+  @Get('content')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Get full editable canvas content for authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile canvas content returned successfully',
+    type: ProfileContentDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Profile not found. Please complete onboarding first.',
+  })
+  async getProfileContent(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ): Promise<ProfileContentDto> {
+    return this.profileService.getProfileContent(userId);
+  }
+
   @Post('publish')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
@@ -221,30 +246,5 @@ export class ProfileController {
   ): Promise<{ components: ProfileComponent[] }> {
     const components = await this.profileService.reorderComponents(userId, dto);
     return { components };
-  }
-
-  @Get('content')
-  @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('JWT')
-  @ApiOperation({
-    summary: 'Get full editable canvas content for authenticated user',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Profile canvas content returned successfully',
-    type: ProfileContentDto,
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Profile not found. Please complete onboarding first.',
-  })
-  async getProfileContent(
-    @currentUserDecorator.CurrentUser('sub') userId: string,
-  ): Promise<ProfileContentDto> {
-    return this.profileService.getProfileContent(userId);
   }
 }
