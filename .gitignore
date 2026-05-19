@@ -65,7 +65,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .vscodecookies.txt
 
 #personal
-analytics.md
-implm.md
-comments.md
-stage-6.md
+notes.md

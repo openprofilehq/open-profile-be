@@ -398,7 +398,6 @@ export class ProfileService {
     username: string,
     dto: UpdateProfileDto,
     userId: string,
-    file?: Express.Multer.File,
   ): Promise<Record<string, unknown>> {
     const profile = await this.profileRepo.findOne({
       where: { username: username.toLowerCase(), deletedAt: IsNull() },
@@ -418,7 +417,7 @@ export class ProfileService {
 
     if (dto.fullName !== undefined) profile.fullName = dto.fullName;
     if (dto.bio !== undefined) profile.bio = dto.bio;
-    if (file) profile.photoUrl = `/${file.path.replace(/\\/g, '/')}`;
+    if (dto.photoUrl !== undefined) profile.photoUrl = dto.photoUrl;
 
     profile.hasUnpublishedChanges = true;
 

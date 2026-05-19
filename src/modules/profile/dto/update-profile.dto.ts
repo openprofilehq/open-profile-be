@@ -23,4 +23,13 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(200, { message: 'Bio cannot exceed 200 characters.' })
   bio?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Profile photo URL (obtained from POST /uploads/profiles/image-url)',
+    example: '/uploads/profiles/uuid.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
 }

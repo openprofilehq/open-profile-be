@@ -1,10 +1,9 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 
 export class UpdatePortfolioItemDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     maxLength: 150,
-    required: false,
     description: 'Portfolio item title',
     example: 'My LinkedIn Clone',
   })
@@ -13,9 +12,8 @@ export class UpdatePortfolioItemDto {
   @MaxLength(150)
   title?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     maxLength: 500,
-    required: false,
     description: 'Portfolio item description (max 500 characters)',
     example: 'A full-stack LinkedIn clone built with NestJS and React.',
   })
@@ -24,8 +22,7 @@ export class UpdatePortfolioItemDto {
   @MaxLength(500, { message: 'Description cannot exceed 500 characters.' })
   description?: string;
 
-  @ApiProperty({
-    required: false,
+  @ApiPropertyOptional({
     description: 'URL to the project (must include https://)',
     example: 'https://github.com/yourname/',
   })
@@ -35,4 +32,13 @@ export class UpdatePortfolioItemDto {
     { message: 'projectUrl must be a valid URL.' },
   )
   projectUrl?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Project image URL (obtained from POST /uploads/projects/image-url). Send null to remove.',
+    example: '/uploads/projects/uuid.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  imageUrl?: string | null;
 }
