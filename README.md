@@ -78,7 +78,7 @@ Key variables (see `.env.example` for all):
 
 ## Architecture
 
-```
+```text
 src/
 ├── main.ts                  # Entry point
 ├── app.module.ts            # Root module

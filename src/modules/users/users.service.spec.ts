@@ -99,33 +99,23 @@ describe('UsersService', () => {
       expect(action.update).not.toHaveBeenCalled();
     });
 
-    it('updates existing user in-place when unverified with valid OTP', async () => {
+    it('throws ConflictException when unverified user has a valid OTP', async () => {
       const futureDate = new Date(Date.now() + 60_000);
       const unverifiedWithOTP = {
         ...baseUser,
         otpExpiresAt: futureDate,
       };
       action.findByEmail.mockResolvedValue(unverifiedWithOTP);
-      action.update.mockResolvedValue({
-        ...unverifiedWithOTP,
-        fullName: dto.fullName,
+
+      await expect(service.createEmailUser(dto)).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.createEmailUser(dto)).rejects.toMatchObject({
+        response: { error: EMAIL_ALREADY_EXISTS },
       });
 
-      const result = await service.createEmailUser(dto);
-
-      expect(action.findByEmail).toHaveBeenCalledWith(lowercasedEmail);
-      expect(action.update).toHaveBeenCalledWith({
-        identifierOptions: { id: unverifiedWithOTP.id },
-        updatePayload: {
-          password: 'mocked-password-hash',
-          fullName: dto.fullName,
-          otpHash: null,
-          otpExpiresAt: null,
-        },
-        transactionOptions: { useTransaction: false as const },
-      });
       expect(action.create).not.toHaveBeenCalled();
-      expect(result.fullName).toBe(dto.fullName);
+      expect(action.update).not.toHaveBeenCalled();
     });
 
     it('updates existing user when unverified and OTP has expired', async () => {

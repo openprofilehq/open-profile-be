@@ -177,11 +177,22 @@ export class AuthService {
       const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
       await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
 
-      await this.queueService.addJob(
-        QUEUE_NAMES.EMAIL,
-        QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
-        { to: user.email, otp, fullName: user.fullName },
-      );
+      try {
+        await this.queueService.addJob(
+          QUEUE_NAMES.EMAIL,
+          QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+          { to: user.email, otp, fullName: user.fullName },
+        );
+      } catch (err) {
+        await this.usersService.clearOtpOnly(user.id);
+        this.logger.error(
+          `Failed to enqueue verification email for user ${user.id}`,
+          err instanceof Error ? err.stack : err,
+        );
+        throw new InternalServerErrorException(
+          'Failed to send verification email. Please try again.',
+        );
+      }
 
       throw new ForbiddenException({
         error: 'EMAIL_NOT_VERIFIED',
