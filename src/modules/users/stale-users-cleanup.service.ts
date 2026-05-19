@@ -16,7 +16,7 @@ export class StaleUsersCleanupService {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async cleanStaleUnverifiedUsers(): Promise<void> {
     try {
-      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
       const result = await this.userRepository
         .createQueryBuilder()

@@ -170,11 +170,24 @@ export class AuthService {
     }
 
     if (!user.isVerified) {
+      await this.usersService.clearOtp(user.id);
+
+      const otp = this.generateOtp();
+      const otpHash = await argon2.hash(otp);
+      const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
+      await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
+
+      await this.queueService.addJob(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+        { to: user.email, otp, fullName: user.fullName },
+      );
+
       throw new ForbiddenException({
         error: 'EMAIL_NOT_VERIFIED',
         email: user.email,
         message:
-          'Please verify your email address before logging in. Need a new code? Use the resend option.',
+          "Account already exists but is not verified. We've sent another verification email",
       });
     }
 
