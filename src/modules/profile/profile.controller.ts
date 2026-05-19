@@ -32,12 +32,6 @@ import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  profilePhotoFilter,
-  profilePhotoLimits,
-  profilePhotoStorage,
-} from '../../common/upload/profile-photo';
 import { ProfileContentDto } from './dto/profile-content.dto';
 
 @ApiTags('profiles')
