@@ -102,7 +102,7 @@ export class AuthService {
     } catch (err) {
       await this.usersService.clearOtpOnly(user.id);
       this.logger.error(
-        `Failed to enqueue verification email for user ${user.id} (${user.email})`,
+        `Failed to enqueue verification email for user ${user.id}`,
         err instanceof Error ? err.stack : err,
       );
       throw new InternalServerErrorException(
