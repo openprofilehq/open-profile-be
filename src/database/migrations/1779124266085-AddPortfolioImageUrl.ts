@@ -5,7 +5,7 @@ export class AddPortfolioImageUrl1779124266085 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "portfolio_items" ADD "image_url" character varying`,
+      `ALTER TABLE "portfolio_items" ADD COLUMN IF NOT EXISTS "image_url" character varying`,
     );
   }
 

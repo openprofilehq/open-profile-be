@@ -3,15 +3,26 @@ import { ImageUploadService } from './image-upload.service';
 import { join } from 'path';
 import * as fs from 'fs';
 
+jest.mock('crypto', () => ({
+  ...jest.requireActual('crypto'),
+  randomBytes: jest.fn().mockReturnValue(Buffer.from('a1b2c3', 'hex')),
+}));
+
+jest.mock('../../config/env', () => ({
+  env: { APP_URL: process.env.APP_URL || 'http://localhost:3000' },
+}));
+
 const mockToFile = jest.fn().mockResolvedValue(undefined);
 const mockJpeg = jest.fn().mockReturnValue({ toFile: mockToFile });
 const mockResize = jest.fn().mockReturnValue({ jpeg: mockJpeg });
 
-jest.mock('sharp', () => jest.fn(() => ({
-  resize: mockResize,
-  jpeg: mockJpeg,
-  toFile: mockToFile,
-})));
+jest.mock('sharp', () =>
+  jest.fn(() => ({
+    resize: mockResize,
+    jpeg: mockJpeg,
+    toFile: mockToFile,
+  })),
+);
 
 jest.mock('fs', () => ({
   ...jest.requireActual('fs'),
@@ -69,15 +80,20 @@ describe('ImageUploadService', () => {
       expect(mockToFile).toHaveBeenCalled();
     });
 
-    it('returns the correct URL path', async () => {
+    it('returns the correct url and path', async () => {
       const result = await service.upload(mockFile, 'profiles');
 
-      expect(result).toBe('/uploads/profiles/test-uuid.jpg');
+      expect(result.path).toBe('/uploads/profiles/test-image_a1b2c3.jpg');
+      expect(result.url).toContain('/uploads/profiles/test-image_a1b2c3.jpg');
     });
 
     it('reads from disk path when buffer is undefined and file.path exists', async () => {
       const { buffer, ...rest } = mockFile;
-      const diskFile = { ...rest, buffer: undefined as unknown as Buffer, path: '/tmp/raw-file' };
+      const diskFile = {
+        ...rest,
+        buffer: undefined as unknown as Buffer,
+        path: '/tmp/raw-file',
+      };
       await service.upload(diskFile, 'projects');
 
       expect(fs.readFileSync).toHaveBeenCalledWith('/tmp/raw-file');

@@ -34,7 +34,8 @@ export class UpdatePortfolioItemDto {
   projectUrl?: string;
 
   @ApiPropertyOptional({
-    description: 'Project image URL (obtained from POST /uploads/project-image-url). Send null to remove.',
+    description:
+      'Project image URL (obtained from POST /uploads/projects/image-url). Send null to remove.',
     example: '/uploads/projects/uuid.jpg',
   })
   @IsOptional()

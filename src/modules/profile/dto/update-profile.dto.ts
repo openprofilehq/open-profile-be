@@ -25,7 +25,8 @@ export class UpdateProfileDto {
   bio?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Profile photo URL (obtained from POST /uploads/profile-photo-url)',
+    description:
+      'Profile photo URL (obtained from POST /uploads/profiles/image-url)',
     example: '/uploads/profiles/uuid.jpg',
   })
   @IsOptional()

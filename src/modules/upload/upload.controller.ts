@@ -3,6 +3,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -14,11 +15,18 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { imageFileFilter, imageLimits } from '../../common/upload/multer.config';
-import { ImageUploadService } from '../../common/upload/image-upload.service';
+import {
+  imageFileFilter,
+  imageLimits,
+} from '../../common/upload/multer.config';
+import {
+  ImageUploadService,
+  UploadCategory,
+} from '../../common/upload/image-upload.service';
 
 @ApiTags('uploads')
 @ApiBearerAuth('JWT')
@@ -26,59 +34,49 @@ import { ImageUploadService } from '../../common/upload/image-upload.service';
 export class UploadController {
   constructor(private readonly imageUploadService: ImageUploadService) {}
 
-  @Post('profile-photo-url')
+  @Post(':category/image-url')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Upload a profile photo and get its URL' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        photo: { type: 'string', format: 'binary' },
-      },
-    },
+  @ApiOperation({ summary: 'Upload an image and get its URL' })
+  @ApiParam({
+    name: 'category',
+    required: true,
+    description: 'Upload category (profiles, projects, portfolio)',
+    schema: { type: 'string', enum: ['profiles', 'projects', 'portfolio'] },
   })
-  @ApiResponse({ status: 200, description: 'Photo uploaded successfully' })
-  @ApiResponse({ status: 400, description: 'No file or invalid file type' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @UseInterceptors(
-    FileInterceptor('photo', {
-      storage: memoryStorage(),
-      fileFilter: imageFileFilter,
-      limits: imageLimits,
-    }),
-  )
-  async uploadProfilePhoto(@UploadedFile() file?: Express.Multer.File) {
-    if (!file) throw new BadRequestException('No file provided');
-    const photoUrl = await this.imageUploadService.upload(file, 'profiles');
-    return { photoUrl };
-  }
-
-  @Post('project-image-url')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Upload a project image and get its URL' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        image: { type: 'string', format: 'binary' },
+        file: { type: 'string', format: 'binary' },
       },
     },
   })
   @ApiResponse({ status: 200, description: 'Image uploaded successfully' })
-  @ApiResponse({ status: 400, description: 'No file or invalid file type' })
+  @ApiResponse({
+    status: 400,
+    description: 'No file, invalid file type, or invalid category',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @UseInterceptors(
-    FileInterceptor('image', {
+    FileInterceptor('file', {
       storage: memoryStorage(),
       fileFilter: imageFileFilter,
       limits: imageLimits,
     }),
   )
-  async uploadProjectImage(@UploadedFile() file?: Express.Multer.File) {
+  async uploadImage(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Param('category') category: string,
+  ) {
     if (!file) throw new BadRequestException('No file provided');
-    const imageUrl = await this.imageUploadService.upload(file, 'projects');
-    return { imageUrl };
+    if (!['profiles', 'projects', 'portfolio'].includes(category)) {
+      throw new BadRequestException(`Invalid category: ${category}`);
+    }
+    const { url, path } = await this.imageUploadService.upload(
+      file,
+      category as UploadCategory,
+    );
+    return { url, path };
   }
 }

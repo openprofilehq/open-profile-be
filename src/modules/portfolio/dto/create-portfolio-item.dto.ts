@@ -42,7 +42,8 @@ export class CreatePortfolioItemDto {
   projectUrl?: string;
 
   @ApiPropertyOptional({
-    description: 'Project image URL (obtained from POST /uploads/project-image-url)',
+    description:
+      'Project image URL (obtained from POST /uploads/projects/image-url)',
     example: '/uploads/projects/uuid.jpg',
   })
   @IsOptional()

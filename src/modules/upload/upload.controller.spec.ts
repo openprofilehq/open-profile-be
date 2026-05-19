@@ -5,6 +5,12 @@ import { App } from 'supertest/types';
 import { UploadController } from './upload.controller';
 import { ImageUploadService } from '../../common/upload/image-upload.service';
 
+jest.mock('../../config/env', () => {
+  const path = require('path');
+  require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+  return { env: { APP_URL: process.env.APP_URL } };
+});
+
 describe('UploadController (integration)', () => {
   let app: INestApplication<App>;
   let mockImageUploadService: {
@@ -33,56 +39,45 @@ describe('UploadController (integration)', () => {
     await app.close();
   });
 
-  describe('POST /uploads/profile-photo-url', () => {
-    it('returns 200 with photoUrl when a valid image is uploaded', async () => {
-      mockImageUploadService.upload.mockResolvedValue(
-        '/uploads/profiles/uuid-profile.jpg',
+  describe('POST /uploads/:category/image-url', () => {
+    it('returns 200 with url and path when a valid image is uploaded', async () => {
+      const baseUrl = (process.env.APP_URL || 'http://localhost:3000').replace(
+        /\/+$/,
+        '',
       );
+      mockImageUploadService.upload.mockResolvedValue({
+        url: `${baseUrl}/uploads/profiles/my-image.jpg`,
+        path: '/uploads/profiles/my-image.jpg',
+      });
 
       await request(app.getHttpServer())
-        .post('/uploads/profile-photo-url')
-        .attach('photo', Buffer.from('fake-image'), {
+        .post('/uploads/profiles/image-url')
+        .attach('file', Buffer.from('fake-image'), {
           filename: 'photo.jpg',
           contentType: 'image/jpeg',
         })
         .expect(200)
         .expect((res) => {
           expect(res.body).toEqual({
-            photoUrl: '/uploads/profiles/uuid-profile.jpg',
+            url: `${baseUrl}/uploads/profiles/my-image.jpg`,
+            path: '/uploads/profiles/my-image.jpg',
           });
         });
     });
 
     it('returns 400 when no file is attached', async () => {
       await request(app.getHttpServer())
-        .post('/uploads/profile-photo-url')
+        .post('/uploads/profiles/image-url')
         .expect(400);
     });
-  });
 
-  describe('POST /uploads/project-image-url', () => {
-    it('returns 200 with imageUrl when a valid image is uploaded', async () => {
-      mockImageUploadService.upload.mockResolvedValue(
-        '/uploads/projects/uuid-project.jpg',
-      );
-
+    it('returns 400 for an invalid category', async () => {
       await request(app.getHttpServer())
-        .post('/uploads/project-image-url')
-        .attach('image', Buffer.from('fake-image'), {
-          filename: 'project.png',
-          contentType: 'image/png',
+        .post('/uploads/invalid/image-url')
+        .attach('file', Buffer.from('fake-image'), {
+          filename: 'photo.jpg',
+          contentType: 'image/jpeg',
         })
-        .expect(200)
-        .expect((res) => {
-          expect(res.body).toEqual({
-            imageUrl: '/uploads/projects/uuid-project.jpg',
-          });
-        });
-    });
-
-    it('returns 400 when no file is attached', async () => {
-      await request(app.getHttpServer())
-        .post('/uploads/project-image-url')
         .expect(400);
     });
   });

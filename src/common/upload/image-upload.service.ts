@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { join } from 'path';
+import { join, extname } from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import sharp from 'sharp';
+import { env } from '../../config/env';
+
+export const UPLOAD_CATEGORIES = ['profiles', 'projects', 'portfolio'] as const;
+export type UploadCategory = (typeof UPLOAD_CATEGORIES)[number];
 
 @Injectable()
 export class ImageUploadService {
@@ -9,12 +14,15 @@ export class ImageUploadService {
 
   async upload(
     file: Express.Multer.File,
-    subdirectory: string,
-  ): Promise<string> {
+    subdirectory: UploadCategory,
+  ): Promise<{ url: string; path: string }> {
     const dir = join(process.cwd(), 'uploads', subdirectory);
     fs.mkdirSync(dir, { recursive: true });
 
-    const filename = file.filename ?? file.originalname;
+    const ext = extname(file.originalname);
+    const baseName = file.originalname.replace(ext, '');
+    const suffix = crypto.randomBytes(3).toString('hex');
+    const filename = `${baseName}_${suffix}${ext}`;
     const outputPath = join(dir, filename);
 
     const buffer = file.buffer ?? fs.readFileSync(file.path);
@@ -28,7 +36,16 @@ export class ImageUploadService {
       fs.unlinkSync(file.path);
     }
 
-    return `/uploads/${subdirectory}/${filename}`;
+    const relativePath = `/uploads/${subdirectory}/${filename}`;
+    return { url: this.resolveUrl(relativePath), path: relativePath };
+  }
+
+  resolveUrl(relativePath: string): string {
+    const base = env.APP_URL.replace(/\/+$/, '');
+    const path = relativePath.startsWith('/')
+      ? relativePath
+      : `/${relativePath}`;
+    return `${base}${path}`;
   }
 
   async delete(relativePath: string): Promise<void> {
