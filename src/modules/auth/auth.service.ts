@@ -137,6 +137,7 @@ export class AuthService {
       email: string;
       role: string;
       onboardingComplete: boolean;
+      isVerified: boolean;
     };
   }> {
     const ipKey = `ip_rate:${ip}`;
@@ -251,6 +252,7 @@ export class AuthService {
         email: user.email,
         role: user.role ?? UserRole.USER,
         onboardingComplete: user.onboardingComplete,
+        isVerified: user.isVerified,
       },
     };
   }
