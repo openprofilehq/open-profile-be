@@ -517,7 +517,10 @@ export class ProfileService {
 
   async getProfileContent(userId: string): Promise<ProfileContentDto> {
     const profile = await this.profileRepo.findOne({
-      where: { userId, deletedAt: IsNull() },
+      where: {
+        userId,
+        deletedAt: IsNull(),
+      },
     });
 
     if (!profile) {
@@ -526,16 +529,39 @@ export class ProfileService {
       );
     }
 
+    if (profile.content) {
+      return profile.content;
+    }
+
+    /**
+     * Temporary fallback hydration logic.
+     *
+     * NOTE:
+     * This reconstructs the editable canvas document from
+     * legacy profile/component fields until PATCH
+     * /profiles/content is fully implemented.
+     */
     const components = await this.componentRepo.find({
-      where: { profileId: profile.id },
-      order: { displayOrder: 'ASC' },
+      where: {
+        profileId: profile.id,
+      },
+      order: {
+        displayOrder: 'ASC',
+      },
     });
 
-    const links = components.filter((c) => c.sectionType === 'links');
-    const projects = components.filter((c) => c.sectionType === 'projects');
+    const links = components.filter(
+      (component) => component.sectionType === 'links',
+    );
+
+    const projects = components.filter(
+      (component) => component.sectionType === 'projects',
+    );
+
+    const defaultSectionOrder: string[] = ['bio', 'links', 'projects', 'cta'];
 
     return {
-      sectionOrder: ['bio', 'links', 'projects', 'cta'],
+      sectionOrder: defaultSectionOrder,
 
       bio: {
         visible: true,
@@ -545,13 +571,13 @@ export class ProfileService {
       links: {
         visible: true,
         sectionTitle: 'Links',
-        items: links.map((l) => l.metadata ?? {}),
+        items: links.map((link) => link.metadata ?? {}),
       },
 
       projects: {
         visible: true,
         sectionTitle: 'Projects',
-        items: projects.map((p) => p.metadata ?? {}),
+        items: projects.map((project) => project.metadata ?? {}),
       },
 
       cta: {
