@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -92,11 +93,22 @@ export class AuthService {
 
     await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
 
-    await this.queueService.addJob(
-      QUEUE_NAMES.EMAIL,
-      QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
-      { to: user.email, otp, fullName: user.fullName },
-    );
+    try {
+      await this.queueService.addJob(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+        { to: user.email, otp, fullName: user.fullName },
+      );
+    } catch (err) {
+      await this.usersService.clearOtpOnly(user.id);
+      this.logger.error(
+        `Failed to enqueue verification email for user ${user.id} (${user.email})`,
+        err instanceof Error ? err.stack : err,
+      );
+      throw new InternalServerErrorException(
+        'Failed to send verification email. Please try again.',
+      );
+    }
 
     return {
       status: 'success',
