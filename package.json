@@ -70,6 +70,7 @@
     "reflect-metadata": "^0.2.2",
     "resend": "^6.12.3",
     "rxjs": "^7.8.2",
+    "sharp": "^0.34.5",
     "typeorm": "^0.3.29",
     "uuid": "^14.0.0",
     "zod": "^4.4.3"
@@ -124,6 +125,9 @@
     "transformIgnorePatterns": [
       "node_modules/(?!@t3-oss/env-core)"
     ],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

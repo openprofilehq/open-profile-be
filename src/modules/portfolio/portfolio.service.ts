@@ -34,6 +34,7 @@ export class PortfolioService {
       title: dto.title,
       description: dto.description ?? null,
       projectUrl: dto.projectUrl ?? null,
+      imageUrl: dto.imageUrl ?? null,
     });
 
     return withCharCount(item);
@@ -44,6 +45,7 @@ export class PortfolioService {
       ...(dto.title !== undefined && { title: dto.title }),
       ...(dto.description !== undefined && { description: dto.description }),
       ...(dto.projectUrl !== undefined && { projectUrl: dto.projectUrl }),
+      ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
     });
 
     if (!item) {

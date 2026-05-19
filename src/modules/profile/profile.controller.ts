@@ -11,16 +11,12 @@ import {
   Post,
   Put,
   Res,
-  UploadedFile,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { PublishProfileDto } from './dto/publish-profile.dto';
 import {
   ApiBearerAuth,
-  ApiBody,
-  ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiHeader,
@@ -36,12 +32,6 @@ import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  profilePhotoFilter,
-  profilePhotoLimits,
-  profilePhotoStorage,
-} from '../../common/upload/profile-photo';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -102,19 +92,8 @@ export class ProfileController {
   @Patch(':username')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
-  @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Update profile fields for the authenticated user' })
   @ApiParam({ name: 'username', description: 'The profile username' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        fullName: { type: 'string', maxLength: 100 },
-        bio: { type: 'string', maxLength: 200, nullable: true },
-        photo: { type: 'string', format: 'binary' },
-      },
-    },
-  })
   @ApiResponse({ status: 200, description: 'Profile updated successfully' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({
@@ -123,20 +102,12 @@ export class ProfileController {
   })
   @ApiResponse({ status: 404, description: 'Profile not found' })
   @ApiResponse({ status: 422, description: 'Validation error' })
-  @UseInterceptors(
-    FileInterceptor('photo', {
-      storage: profilePhotoStorage,
-      fileFilter: profilePhotoFilter,
-      limits: profilePhotoLimits,
-    }),
-  )
   async updateProfile(
     @Param('username') username: string,
     @Body() dto: UpdateProfileDto,
     @currentUserDecorator.CurrentUser('sub') userId: string,
-    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.profileService.updateProfile(username, dto, userId, file);
+    return this.profileService.updateProfile(username, dto, userId);
   }
 
   @Get('dashboard')
