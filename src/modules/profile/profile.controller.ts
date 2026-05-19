@@ -32,6 +32,7 @@ import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ProfileContentDto } from './dto/profile-content.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -54,6 +55,31 @@ export class ProfileController {
     user: currentUserDecorator.AuthenticatedUser,
   ) {
     return this.profileService.createProfile(createProfileDto, user);
+  }
+
+  @Get('content')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Get full editable canvas content for authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile canvas content returned successfully',
+    type: ProfileContentDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Profile not found. Please complete onboarding first.',
+  })
+  async getProfileContent(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ): Promise<ProfileContentDto> {
+    return this.profileService.getProfileContent(userId);
   }
 
   @Post('publish')
