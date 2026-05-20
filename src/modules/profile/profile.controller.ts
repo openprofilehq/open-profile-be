@@ -14,7 +14,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { PublishProfileDto } from './dto/publish-profile.dto';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -33,6 +32,8 @@ import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ProfileContentDto } from './dto/profile-content.dto';
+import { UpsertDraftDto } from './dto/upsert-draft.dto';
+import { DraftResponse } from './types/profile-draft.types';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -55,6 +56,32 @@ export class ProfileController {
     user: currentUserDecorator.AuthenticatedUser,
   ) {
     return this.profileService.createProfile(createProfileDto, user);
+  }
+
+  @Put('content')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Create or update a profile draft (upsert)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Draft saved successfully',
+    type: Object,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Profile not found',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Concurrent update conflict',
+  })
+  async upsertDraft(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: UpsertDraftDto,
+  ): Promise<DraftResponse> {
+    return this.profileService.upsertDraft(userId, dto);
   }
 
   @Get('content/state')
@@ -99,33 +126,24 @@ export class ProfileController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
   @ApiOperation({
-    summary: 'Publish or unpublish authenticated user profile',
+    summary: 'Publish authenticated user profile draft',
   })
   @ApiResponse({
     status: 200,
-    description: 'Profile publish state updated successfully',
+    description: 'Profile published successfully',
   })
   @ApiResponse({
-    status: 400,
-    description: 'Publish requirements not met',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized',
+    status: 409,
+    description: 'No draft exists to publish',
   })
   @ApiResponse({
     status: 404,
     description: 'Profile not found',
   })
-  @ApiResponse({
-    status: 422,
-    description: 'Invalid action',
-  })
   async publishProfile(
     @currentUserDecorator.CurrentUser('sub') userId: string,
-    @Body() dto: PublishProfileDto,
   ) {
-    return this.profileService.publishProfile(userId, dto);
+    return this.profileService.publishProfile(userId);
   }
 
   @Patch(':username')
