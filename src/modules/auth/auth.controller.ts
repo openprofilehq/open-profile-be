@@ -44,20 +44,8 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new user with email and password' })
-  async register(
-    @Body() dto: RegisterDto,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const result = await this.authService.register(dto);
-
-    if ('httpStatus' in result) {
-      const { httpStatus, ...body } = result;
-      res.status(httpStatus);
-      return body;
-    }
-
-    res.status(HttpStatus.CREATED);
-    return result;
+  async register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
   }
 
   @Public()

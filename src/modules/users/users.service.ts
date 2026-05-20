@@ -175,12 +175,33 @@ export class UsersService {
   }): Promise<User> {
     const lowercasedEmail = dto.email.toLowerCase();
     const existing = await this.userModelAction.findByEmail(lowercasedEmail);
+
     if (existing) {
-      throw new ConflictException({
-        error: EMAIL_ALREADY_EXISTS,
-        message: 'An account with this email already exists.',
+      if (existing.isVerified) {
+        throw new ConflictException({
+          error: EMAIL_ALREADY_EXISTS,
+          message: 'An account with this email already exists.',
+        });
+      }
+
+      // Unverified — re-register by updating in place (idempotent)
+      const passwordHash = await argon2.hash(dto.password);
+      const updated = await this.userModelAction.update({
+        ...NO_TRANSACTION,
+        identifierOptions: { id: existing.id },
+        updatePayload: {
+          password: passwordHash,
+          fullName: dto.fullName,
+          otpHash: null,
+          otpExpiresAt: null,
+        },
       });
+      if (!updated) {
+        throw new InternalServerErrorException('Failed to update user');
+      }
+      return updated;
     }
+
     const passwordHash = await argon2.hash(dto.password);
     return this.userModelAction.create({
       ...NO_TRANSACTION,
