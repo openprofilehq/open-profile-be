@@ -9,6 +9,7 @@ import {
   IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { WithSource } from '../../../common/types';
 
 class BioDto {
   @ApiProperty({ example: true })
@@ -62,6 +63,11 @@ class CtaDto {
   @IsUrl()
   url: string | null;
 }
+
+export type ProfileContentResponse = WithSource<
+  ProfileContentDto,
+  'draft' | 'published'
+>;
 
 export class ProfileContentDto {
   @ApiProperty({ enum: ['draft', 'published'] })

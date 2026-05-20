@@ -1,11 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   GoneException,
   HttpException,
   HttpStatus,
   Injectable,
+  InternalServerErrorException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -54,12 +54,6 @@ export interface RegisterSuccessResponse {
   message: string;
 }
 
-export interface RegisterDegradedResponse {
-  status: 'pending';
-  message: string;
-  httpStatus: typeof HttpStatus.ACCEPTED;
-}
-
 const OTP_TTL_MS = 5 * 60 * 1000;
 const BRUTE_MAX_ATTEMPTS = 5;
 const BRUTE_LOCKOUT_SECONDS = 30 * 60;
@@ -85,9 +79,7 @@ export class AuthService {
     private readonly tokenService: TokenService,
   ) {}
 
-  async register(
-    dto: RegisterDto,
-  ): Promise<RegisterSuccessResponse | RegisterDegradedResponse> {
+  async register(dto: RegisterDto): Promise<RegisterSuccessResponse> {
     const user = await this.usersService.createEmailUser({
       email: dto.email,
       password: dto.password,
@@ -101,22 +93,20 @@ export class AuthService {
     await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
 
     try {
-      await this.mailService.sendVerificationOtp(
-        user.email,
-        user.fullName,
-        otp,
+      await this.queueService.addJob(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+        { to: user.email, otp, fullName: user.fullName },
       );
     } catch (err) {
+      await this.usersService.clearOtpOnly(user.id);
       this.logger.error(
-        `Resend failure for user ${user.id} (${user.email})`,
+        `Failed to enqueue verification email for user ${user.id}`,
         err instanceof Error ? err.stack : err,
       );
-      return {
-        status: 'pending',
-        message:
-          'Account created but we could not send your verification email. Please use the resend option.',
-        httpStatus: HttpStatus.ACCEPTED,
-      };
+      throw new InternalServerErrorException(
+        'Failed to send verification email. Please try again.',
+      );
     }
 
     return {
@@ -130,15 +120,21 @@ export class AuthService {
     ip: string,
     req: Request,
     res: Response,
-  ): Promise<{
-    status: string;
-    user: {
-      id: string;
-      email: string;
-      role: string;
-      onboardingComplete: boolean;
-    };
-  }> {
+  ): Promise<
+    | {
+        status: string;
+        user: {
+          id: string;
+          email: string;
+          role: string;
+          onboardingComplete: boolean;
+        };
+      }
+    | {
+        status: string;
+        message: string;
+      }
+  > {
     const ipKey = `ip_rate:${ip}`;
     const ipCount = await this.redisService.increment(
       ipKey,
@@ -179,11 +175,34 @@ export class AuthService {
     }
 
     if (!user.isVerified) {
-      throw new ForbiddenException({
-        error: 'EMAIL_NOT_VERIFIED',
-        email: user.email,
-        message: 'Please verify your email address before logging in.',
-      });
+      await this.usersService.clearOtp(user.id);
+
+      const otp = this.generateOtp();
+      const otpHash = await argon2.hash(otp);
+      const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
+      await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
+
+      try {
+        await this.queueService.addJob(
+          QUEUE_NAMES.EMAIL,
+          QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+          { to: user.email, otp, fullName: user.fullName },
+        );
+      } catch (err) {
+        await this.usersService.clearOtpOnly(user.id);
+        this.logger.error(
+          `Failed to enqueue verification email for user ${user.id}`,
+          err instanceof Error ? err.stack : err,
+        );
+        throw new InternalServerErrorException(
+          'Failed to send verification email. Please try again.',
+        );
+      }
+
+      return {
+        status: 'success',
+        message: 'A verification code has been sent to your email address.',
+      };
     }
 
     const lockKey = `lock:${user.email}`;
