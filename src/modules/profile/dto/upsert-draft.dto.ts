@@ -8,6 +8,7 @@ import {
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ProfileContentDto } from './profile-content.dto';
+import { ProfileContentWriteDto } from './profile-content-write.dto';
 
 export class UpsertDraftDto {
   @ApiPropertyOptional({
@@ -31,8 +32,10 @@ export class UpsertDraftDto {
   })
   @IsOptional()
   @ValidateNested()
-  @Type(() => ProfileContentDto)
-  content?: ProfileContentDto;
+  @Type(() => ProfileContentWriteDto)
+  @ValidateNested()
+  @IsOptional()
+  content?: ProfileContentWriteDto;
 
   @ApiPropertyOptional({
     description: 'Optimistic concurrency token from last GET /profiles/content',

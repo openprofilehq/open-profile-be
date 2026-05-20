@@ -597,6 +597,12 @@ export class ProfileService {
       select: ['updatedAt'],
     });
 
+    if (existingDraft && !dto.updatedAt) {
+      throw new ConflictException(
+        'updatedAt is required. Draft was modified. Please refresh and try again.',
+      );
+    }
+
     if (dto.updatedAt && existingDraft) {
       const clientTime = new Date(dto.updatedAt).getTime();
       const serverTime = existingDraft.updatedAt.getTime();

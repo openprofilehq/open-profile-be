@@ -34,6 +34,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ProfileContentDto } from './dto/profile-content.dto';
 import { UpsertDraftDto } from './dto/upsert-draft.dto';
 import { DraftResponse } from './types/profile-draft.types';
+import { DraftResponseDto } from './dto/draft-response.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -67,7 +68,7 @@ export class ProfileController {
   @ApiResponse({
     status: 200,
     description: 'Draft saved successfully',
-    type: Object,
+    type: DraftResponseDto,
   })
   @ApiResponse({
     status: 404,
