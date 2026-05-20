@@ -184,16 +184,7 @@ export class UsersService {
         });
       }
 
-      // OTP still valid — guide user to check inbox or resend
-      if (existing.otpExpiresAt && existing.otpExpiresAt > new Date()) {
-        throw new ConflictException({
-          error: EMAIL_ALREADY_EXISTS,
-          message:
-            'A verification email was already sent. Please check your inbox or request a new code.',
-        });
-      }
-
-      // Unverified + OTP expired or never set — re-register by updating in place
+      // Unverified — re-register by updating in place (idempotent)
       const passwordHash = await argon2.hash(dto.password);
       const updated = await this.userModelAction.update({
         ...NO_TRANSACTION,
