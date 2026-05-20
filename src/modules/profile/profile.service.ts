@@ -17,12 +17,13 @@ import * as crypto from 'crypto';
 import { RedisService } from '../../common/redis/redis.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
+import { ProfileDraft } from './entities/profile-draft.entity';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UsernamesService } from '../usernames/usernames.service';
 import { PublishProfileDto } from './dto/publish-profile.dto';
-import { ProfileContentDto } from './dto/profile-content.dto';
+import { ProfileContentResponse } from './dto/profile-content.dto';
 
 const CACHE_TTL_SECONDS = 60;
 const MAX_COMPONENTS = 50;
@@ -37,6 +38,8 @@ export class ProfileService {
     private readonly profileRepo: Repository<Profile>,
     @InjectRepository(ProfileComponent)
     private readonly componentRepo: Repository<ProfileComponent>,
+    @InjectRepository(ProfileDraft)
+    private readonly profileDraftRepo: Repository<ProfileDraft>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly redisService: RedisService,
@@ -514,7 +517,7 @@ export class ProfileService {
     };
   }
 
-  async getProfileContent(userId: string): Promise<ProfileContentDto> {
+  async getProfileContent(userId: string): Promise<ProfileContentResponse> {
     const profile = await this.profileRepo.findOne({
       where: {
         userId,
@@ -528,62 +531,62 @@ export class ProfileService {
       );
     }
 
-    if (profile.content) {
-      return profile.content;
-    }
-
-    /**
-     * Temporary fallback hydration logic.
-     *
-     * NOTE:
-     * This reconstructs the editable canvas document from
-     * legacy profile/component fields until PATCH
-     * /profiles/content is fully implemented.
-     */
-    const components = await this.componentRepo.find({
-      where: {
-        profileId: profile.id,
-      },
-      order: {
-        displayOrder: 'ASC',
-      },
+    const draft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
     });
 
-    const links = components.filter(
-      (component) => component.sectionType === 'links',
-    );
+    if (draft?.content) {
+      return { ...draft.content, source: 'draft' };
+    }
 
-    const projects = components.filter(
-      (component) => component.sectionType === 'projects',
-    );
-
-    const defaultSectionOrder: string[] = ['bio', 'links', 'projects', 'cta'];
+    if (profile.content) {
+      return { ...profile.content, source: 'published' };
+    }
 
     return {
-      sectionOrder: defaultSectionOrder,
-
-      bio: {
-        visible: true,
-        content: profile.bio ?? '',
-      },
-
-      links: {
-        visible: true,
-        sectionTitle: 'Links',
-        items: links.map((link) => link.metadata ?? {}),
-      },
-
-      projects: {
-        visible: true,
-        sectionTitle: 'Projects',
-        items: projects.map((project) => project.metadata ?? {}),
-      },
-
+      source: 'published',
+      sectionOrder: ['bio', 'links', 'projects', 'cta'],
+      bio: { visible: true, content: profile.bio ?? '' },
+      links: { visible: true, sectionTitle: 'Links', items: [] },
+      projects: { visible: true, sectionTitle: 'Projects', items: [] },
       cta: {
         visible: true,
         label: profile.ctaLabel ?? '',
         url: profile.ctaUrl ?? null,
       },
+    };
+  }
+
+  async getDraftState(userId: string): Promise<{
+    status: string;
+    hasDraft: boolean;
+    draftId?: string;
+    updatedAt?: Date;
+  }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+      select: ['id'],
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    const draft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+      select: ['id', 'updatedAt'],
+    });
+
+    if (!draft) {
+      return { status: 'success', hasDraft: false };
+    }
+
+    return {
+      status: 'success',
+      hasDraft: true,
+      draftId: draft.id,
+      updatedAt: draft.updatedAt,
     };
   }
 }

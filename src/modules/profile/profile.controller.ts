@@ -32,7 +32,10 @@ import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { ProfileContentDto } from './dto/profile-content.dto';
+import {
+  ProfileContentDto,
+  ProfileContentResponse,
+} from './dto/profile-content.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -57,6 +60,19 @@ export class ProfileController {
     return this.profileService.createProfile(createProfileDto, user);
   }
 
+  @Get('content/state')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Check whether the authenticated user has an unpublished draft',
+  })
+  @ApiResponse({ status: 200, description: 'Draft state returned' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async getDraftState(@currentUserDecorator.CurrentUser('sub') userId: string) {
+    return this.profileService.getDraftState(userId);
+  }
+
   @Get('content')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
@@ -78,7 +94,7 @@ export class ProfileController {
   })
   async getProfileContent(
     @currentUserDecorator.CurrentUser('sub') userId: string,
-  ): Promise<ProfileContentDto> {
+  ): Promise<ProfileContentResponse> {
     return this.profileService.getProfileContent(userId);
   }
 
