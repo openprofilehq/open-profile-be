@@ -32,7 +32,10 @@ import { ProfileComponent } from './entities/profile-component.entity';
 import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { ProfileContentDto } from './dto/profile-content.dto';
+import {
+  ProfileContentDto,
+  ProfileContentResponse,
+} from './dto/profile-content.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -91,7 +94,7 @@ export class ProfileController {
   })
   async getProfileContent(
     @currentUserDecorator.CurrentUser('sub') userId: string,
-  ): Promise<ProfileContentDto & { source: 'draft' | 'published' }> {
+  ): Promise<ProfileContentResponse> {
     return this.profileService.getProfileContent(userId);
   }
 
