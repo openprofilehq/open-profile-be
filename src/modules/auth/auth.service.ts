@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   GoneException,
   HttpException,
   HttpStatus,
@@ -121,15 +120,22 @@ export class AuthService {
     ip: string,
     req: Request,
     res: Response,
-  ): Promise<{
-    status: string;
-    user: {
-      id: string;
-      email: string;
-      role: string;
-      onboardingComplete: boolean;
-    };
-  }> {
+  ): Promise<
+    | {
+        status: string;
+        user: {
+          id: string;
+          email: string;
+          role: string;
+          onboardingComplete: boolean;
+        };
+      }
+    | {
+        error: string;
+        email: string;
+        message: string;
+      }
+  > {
     const ipKey = `ip_rate:${ip}`;
     const ipCount = await this.redisService.increment(
       ipKey,
@@ -194,12 +200,12 @@ export class AuthService {
         );
       }
 
-      throw new ForbiddenException({
+      return {
         error: 'EMAIL_NOT_VERIFIED',
         email: user.email,
         message:
           "Account already exists but is not verified. We've sent another verification email",
-      });
+      };
     }
 
     const lockKey = `lock:${user.email}`;
