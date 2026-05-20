@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsString,
   IsUrl,
   ValidateNested,
@@ -63,6 +64,10 @@ class CtaDto {
 }
 
 export class ProfileContentDto {
+  @ApiProperty({ enum: ['draft', 'published'] })
+  @IsIn(['draft', 'published'])
+  source: 'draft' | 'published';
+
   @ApiProperty({
     example: ['bio', 'links', 'projects', 'cta'],
   })

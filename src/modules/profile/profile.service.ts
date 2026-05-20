@@ -17,6 +17,7 @@ import * as crypto from 'crypto';
 import { RedisService } from '../../common/redis/redis.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
+import { ProfileDraft } from './entities/profile-draft.entity';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -37,6 +38,8 @@ export class ProfileService {
     private readonly profileRepo: Repository<Profile>,
     @InjectRepository(ProfileComponent)
     private readonly componentRepo: Repository<ProfileComponent>,
+    @InjectRepository(ProfileDraft)
+    private readonly profileDraftRepo: Repository<ProfileDraft>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly redisService: RedisService,
@@ -514,7 +517,9 @@ export class ProfileService {
     };
   }
 
-  async getProfileContent(userId: string): Promise<ProfileContentDto> {
+  async getProfileContent(
+    userId: string,
+  ): Promise<ProfileContentDto & { source: 'draft' | 'published' }> {
     const profile = await this.profileRepo.findOne({
       where: {
         userId,
@@ -528,8 +533,16 @@ export class ProfileService {
       );
     }
 
+    const draft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+    });
+
+    if (draft?.content) {
+      return { ...draft.content, source: 'draft' };
+    }
+
     if (profile.content) {
-      return profile.content;
+      return { ...profile.content, source: 'published' };
     }
 
     /**
@@ -560,6 +573,7 @@ export class ProfileService {
     const defaultSectionOrder: string[] = ['bio', 'links', 'projects', 'cta'];
 
     return {
+      source: 'published',
       sectionOrder: defaultSectionOrder,
 
       bio: {
@@ -584,6 +598,39 @@ export class ProfileService {
         label: profile.ctaLabel ?? '',
         url: profile.ctaUrl ?? null,
       },
+    };
+  }
+
+  async getDraftState(userId: string): Promise<{
+    status: string;
+    hasDraft: boolean;
+    draftId?: string;
+    updatedAt?: Date;
+  }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+      select: ['id'],
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    const draft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+      select: ['id', 'updatedAt'],
+    });
+
+    if (!draft) {
+      return { status: 'success', hasDraft: false };
+    }
+
+    return {
+      status: 'success',
+      hasDraft: true,
+      draftId: draft.id,
+      updatedAt: draft.updatedAt,
     };
   }
 }
