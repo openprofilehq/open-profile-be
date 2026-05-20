@@ -7,7 +7,6 @@ import {
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ProfileContentDto } from './profile-content.dto';
 import { ProfileContentWriteDto } from './profile-content-write.dto';
 
 export class UpsertDraftDto {
@@ -27,14 +26,12 @@ export class UpsertDraftDto {
   photoUrl?: string | null;
 
   @ApiPropertyOptional({
-    type: ProfileContentDto,
+    type: ProfileContentWriteDto,
     description: 'Full profile structured content',
   })
   @IsOptional()
   @ValidateNested()
   @Type(() => ProfileContentWriteDto)
-  @ValidateNested()
-  @IsOptional()
   content?: ProfileContentWriteDto;
 
   @ApiPropertyOptional({
