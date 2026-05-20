@@ -6,11 +6,17 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { ResetPasswordModelAction } from './actions/reset-password.action';
 import { ResetPassword } from '../auth/entities/reset-password.entity';
+import { StaleUsersCleanupService } from './stale-users-cleanup.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User, ResetPassword])],
   controllers: [UsersController],
-  providers: [UserModelAction, ResetPasswordModelAction, UsersService],
+  providers: [
+    UserModelAction,
+    ResetPasswordModelAction,
+    UsersService,
+    StaleUsersCleanupService,
+  ],
   exports: [UsersService, UserModelAction, ResetPasswordModelAction],
 })
 export class UsersModule {}

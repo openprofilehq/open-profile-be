@@ -3,6 +3,7 @@ import {
   UnprocessableEntityException,
   ValidationPipe,
 } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -29,6 +30,7 @@ import { SearchModule } from './modules/search/search.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { PortfolioModule } from './modules/portfolio/portfolio.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { UploadModule } from './modules/upload/upload.module';
 
 @Module({
   imports: [
@@ -46,6 +48,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
         autoLogging: true, // logs every HTTP request automatically
       },
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
@@ -68,6 +71,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     AnalyticsModule,
     ContactModule,
     PortfolioModule,
+    UploadModule,
   ],
   providers: [
     {

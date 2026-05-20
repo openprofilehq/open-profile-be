@@ -8,7 +8,6 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
-  BadRequestException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,11 +16,14 @@ import * as crypto from 'crypto';
 import { RedisService } from '../../common/redis/redis.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
+import { ProfileDraft } from './entities/profile-draft.entity';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UsernamesService } from '../usernames/usernames.service';
-import { PublishProfileDto } from './dto/publish-profile.dto';
+import { UpsertDraftDto } from './dto/upsert-draft.dto';
+import { DraftResponse } from './types/profile-draft.types';
+import { ProfileContentResponse } from './dto/profile-content.dto';
 
 const CACHE_TTL_SECONDS = 60;
 const MAX_COMPONENTS = 50;
@@ -36,6 +38,8 @@ export class ProfileService {
     private readonly profileRepo: Repository<Profile>,
     @InjectRepository(ProfileComponent)
     private readonly componentRepo: Repository<ProfileComponent>,
+    @InjectRepository(ProfileDraft)
+    private readonly profileDraftRepo: Repository<ProfileDraft>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly redisService: RedisService,
@@ -397,7 +401,6 @@ export class ProfileService {
     username: string,
     dto: UpdateProfileDto,
     userId: string,
-    file?: Express.Multer.File,
   ): Promise<Record<string, unknown>> {
     const profile = await this.profileRepo.findOne({
       where: { username: username.toLowerCase(), deletedAt: IsNull() },
@@ -417,7 +420,7 @@ export class ProfileService {
 
     if (dto.fullName !== undefined) profile.fullName = dto.fullName;
     if (dto.bio !== undefined) profile.bio = dto.bio;
-    if (file) profile.photoUrl = `/${file.path.replace(/\\/g, '/')}`;
+    if (dto.photoUrl !== undefined) profile.photoUrl = dto.photoUrl;
 
     profile.hasUnpublishedChanges = true;
 
@@ -433,24 +436,63 @@ export class ProfileService {
     };
   }
 
-  async publishProfile(
-    userId: string,
-    dto: PublishProfileDto,
-  ): Promise<Record<string, string>> {
-    const { action } = dto;
+  async publishProfile(userId: string) {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
 
-    if (!action) {
-      throw new UnprocessableEntityException({
-        message: 'Please specify an action: publish or unpublish.',
-      });
+    if (!profile) {
+      throw new NotFoundException('Complete onboarding before publishing.');
     }
 
-    if (action !== 'publish' && action !== 'unpublish') {
-      throw new UnprocessableEntityException({
-        message: 'Action must be either publish or unpublish.',
-      });
-    }
+    const result = await this.dataSource.transaction(async (tx) => {
+      const draftRepo = tx.getRepository(ProfileDraft);
+      const profileRepo = tx.getRepository(Profile);
 
+      const draft = await draftRepo.findOne({
+        where: { profileId: profile.id },
+      });
+
+      if (!draft) {
+        throw new ConflictException({
+          error: 'NO_DRAFT_TO_PUBLISH',
+          message: 'No draft exists to publish.',
+        });
+      }
+
+      const updatedProfile = profileRepo.create({
+        ...profile,
+        bio: draft.bio ?? profile.bio,
+        photoUrl: draft.photoUrl ?? profile.photoUrl,
+        content: draft.content ?? profile.content,
+        fullName: draft.fullName ?? profile.fullName,
+        isPublished: true,
+        updatedAt: new Date(),
+      });
+
+      await profileRepo.save(updatedProfile);
+
+      await draftRepo.delete({
+        profileId: profile.id,
+      });
+
+      return {
+        status: 'success',
+        message: 'Profile published successfully',
+        data: {
+          profileId: profile.id,
+          username: profile.username,
+          publishedAt: new Date().toISOString(),
+        },
+      };
+    });
+
+    await this.invalidateCache(profile.username);
+
+    return result;
+  }
+
+  async getProfileContent(userId: string): Promise<ProfileContentResponse> {
     const profile = await this.profileRepo.findOne({
       where: {
         userId,
@@ -459,58 +501,129 @@ export class ProfileService {
     });
 
     if (!profile) {
-      throw new NotFoundException({
-        message: 'Complete your profile setup before publishing.',
-      });
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
     }
 
-    /**
-     * PUBLISH
-     */
-    if (action === 'publish') {
-      const missingRequirements = !profile.fullName || !profile.username;
+    const draft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+    });
 
-      if (missingRequirements) {
-        throw new BadRequestException({
-          error: 'PUBLISH_REQUIREMENTS_NOT_MET',
-          message:
-            'Your profile needs a fullName and username before it can be published.',
-        });
+    if (draft?.content) {
+      return { ...draft.content, source: 'draft' };
+    }
+
+    if (profile.content) {
+      return { ...profile.content, source: 'published' };
+    }
+
+    return {
+      source: 'published',
+      sectionOrder: ['bio', 'links', 'projects', 'cta'],
+      bio: { visible: true, content: profile.bio ?? '' },
+      links: { visible: true, sectionTitle: 'Links', items: [] },
+      projects: { visible: true, sectionTitle: 'Projects', items: [] },
+      cta: {
+        visible: true,
+        label: profile.ctaLabel ?? '',
+        url: profile.ctaUrl ?? null,
+      },
+    };
+  }
+
+  async upsertDraft(
+    userId: string,
+    dto: UpsertDraftDto,
+  ): Promise<DraftResponse> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+      select: ['id'],
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    // Step 1: check existing draft for concurrency control
+    const existingDraft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+      select: ['updatedAt'],
+    });
+
+    if (existingDraft && !dto.updatedAt) {
+      throw new ConflictException(
+        'updatedAt is required. Draft was modified. Please refresh and try again.',
+      );
+    }
+
+    if (dto.updatedAt && existingDraft) {
+      const clientTime = new Date(dto.updatedAt).getTime();
+      const serverTime = existingDraft.updatedAt.getTime();
+
+      if (clientTime !== serverTime) {
+        throw new ConflictException(
+          'Draft was modified. Please refresh and try again.',
+        );
       }
-
-      /**
-       * Idempotent behavior:
-       * already published => still return success
-       */
-      if (!profile.isPublished) {
-        profile.isPublished = true;
-      }
-      profile.hasUnpublishedChanges = false;
-      await this.profileRepo.save(profile);
-
-      await this.invalidateCache(profile.username);
-
-      return {
-        status: 'success',
-        message: 'Your profile is now live.',
-        profileUrl: `openprofile.com/${profile.username}`,
-      };
     }
 
-    /**
-     * UNPUBLISH
-     */
-    if (profile.isPublished) {
-      profile.isPublished = false;
-      await this.profileRepo.save(profile);
+    // Step 2: SAFE TYPEORM UPSERT (NO RAW SQL, NO any)
+    const draft = this.profileDraftRepo.create({
+      profileId: profile.id,
+      bio: dto.bio ?? null,
+      photoUrl: dto.photoUrl ?? null,
+      content: dto.content ?? null,
+    });
+
+    const saved = await this.profileDraftRepo.save(draft);
+
+    // Step 3: response
+    return {
+      status: 'success',
+      message: 'Draft saved successfully',
+      data: {
+        profileId: profile.id,
+        bio: saved.bio,
+        photoUrl: saved.photoUrl,
+        content: saved.content,
+        updatedAt: saved.updatedAt,
+      },
+    };
+  }
+
+  async getDraftState(userId: string): Promise<{
+    status: string;
+    hasDraft: boolean;
+    draftId?: string;
+    updatedAt?: Date;
+  }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+      select: ['id'],
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
     }
 
-    await this.invalidateCache(profile.username);
+    const draft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+      select: ['id', 'updatedAt'],
+    });
+
+    if (!draft) {
+      return { status: 'success', hasDraft: false };
+    }
 
     return {
       status: 'success',
-      message:
-        'Your profile has been unpublished. It is no longer visible to the public.',
+      hasDraft: true,
+      draftId: draft.id,
+      updatedAt: draft.updatedAt,
     };
   }
 }
