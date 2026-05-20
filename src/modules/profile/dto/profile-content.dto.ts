@@ -11,7 +11,7 @@ import {
 import { Type } from 'class-transformer';
 import { WithSource } from '../../../common/types';
 
-class BioDto {
+export class BioDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
@@ -21,7 +21,7 @@ class BioDto {
   content: string;
 }
 
-class LinksDto {
+export class LinksDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
@@ -35,7 +35,7 @@ class LinksDto {
   items: Record<string, unknown>[];
 }
 
-class ProjectsDto {
+export class ProjectsDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
@@ -49,7 +49,7 @@ class ProjectsDto {
   items: Record<string, unknown>[];
 }
 
-class CtaDto {
+export class CtaDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
