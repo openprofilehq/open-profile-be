@@ -1,3 +1,4 @@
+import { ValidationError } from 'class-validator';
 import {
   Module,
   UnprocessableEntityException,
@@ -82,10 +83,26 @@ import { UploadModule } from './modules/upload/upload.module';
         forbidNonWhitelisted: true,
         transformOptions: { enableImplicitConversion: false },
         exceptionFactory: (errors) => {
-          const formatted = errors.map((e) => ({
-            field: e.property,
-            error: Object.values(e.constraints ?? {}).join(', '),
-          }));
+          const flatten = (
+            errs: ValidationError[],
+            parentField = '',
+          ): { field: string; error: string }[] => {
+            const result: { field: string; error: string }[] = [];
+            for (const e of errs) {
+              const field = parentField
+                ? `${parentField}.${e.property}`
+                : e.property;
+              const constraints = Object.values(e.constraints ?? {});
+              if (constraints.length > 0) {
+                result.push({ field, error: constraints.join(', ') });
+              }
+              if (e.children?.length) {
+                result.push(...flatten(e.children, field));
+              }
+            }
+            return result;
+          };
+          const formatted = flatten(errors);
           return new UnprocessableEntityException(formatted);
         },
       }),
