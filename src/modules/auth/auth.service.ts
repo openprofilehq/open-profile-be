@@ -131,8 +131,7 @@ export class AuthService {
         };
       }
     | {
-        error: string;
-        email: string;
+        status: string;
         message: string;
       }
   > {
@@ -201,10 +200,8 @@ export class AuthService {
       }
 
       return {
-        error: 'EMAIL_NOT_VERIFIED',
-        email: user.email,
-        message:
-          "Account already exists but is not verified. We've sent another verification email",
+        status: 'success',
+        message: 'A verification code has been sent to your email address.',
       };
     }
 
