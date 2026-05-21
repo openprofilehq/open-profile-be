@@ -80,3 +80,28 @@ export class DashboardProfileResponseDto extends ProfileResponseDto {
   @ApiProperty({ type: [ComponentItemDto] })
   components: ComponentItemDto[];
 }
+
+import { ProfileContentDto } from './profile-content.dto';
+
+export class PublicProfileResponseDto {
+  @ApiProperty({ example: 'calvin' })
+  username: string;
+
+  @ApiPropertyOptional({ example: 'Calvin Iordye', nullable: true })
+  fullName: string | null;
+
+  @ApiPropertyOptional({
+    example: 'https://cdn.example.com/avatar.jpg',
+    nullable: true,
+  })
+  photoUrl: string | null;
+
+  @ApiPropertyOptional({ example: 'developer', nullable: true })
+  templateType: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  themeSettings: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({ type: () => ProfileContentDto, nullable: true })
+  content: ProfileContentDto | null;
+}
