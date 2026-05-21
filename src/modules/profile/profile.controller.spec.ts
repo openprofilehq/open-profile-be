@@ -1,0 +1,527 @@
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { Test, TestingModule } from '@nestjs/testing';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ProfileController } from './profile.controller';
+import { ProfileService } from './profile.service';
+
+jest.mock('@t3-oss/env-core', () => ({
+  createEnv: () => ({}) as never,
+}));
+
+jest.mock('uuid', () => ({
+  v7: jest.fn(() => '00000000-0000-4000-8000-000000000000'),
+}));
+
+jest.mock('../../config/env', () => ({
+  env: {},
+}));
+
+const UUID_V1 = '11111111-1111-4111-8111-111111111111';
+const USERNAME = 'testuser';
+const NOW = '2026-05-20T12:00:00.000Z';
+
+describe('ProfileController (integration)', () => {
+  let app: INestApplication<App>;
+  let mockProfileService: Record<string, jest.Mock>;
+
+  beforeEach(async () => {
+    mockProfileService = {
+      createProfile: jest.fn(),
+      getPublicProfile: jest.fn(),
+      getDashboardProfile: jest.fn(),
+      updateProfile: jest.fn(),
+      patchComponent: jest.fn(),
+      reorderComponents: jest.fn(),
+      publishProfile: jest.fn(),
+      getProfileContent: jest.fn(),
+      upsertDraft: jest.fn(),
+      getDraftState: jest.fn(),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [ProfileController],
+      providers: [
+        { provide: ProfileService, useValue: mockProfileService },
+        {
+          provide: APP_PIPE,
+          useValue: new ValidationPipe({
+            whitelist: true,
+            transform: true,
+            forbidNonWhitelisted: true,
+            transformOptions: { enableImplicitConversion: false },
+            exceptionFactory: (errors) => {
+              const formatted = errors.map((e) => ({
+                field: e.property,
+                error: Object.values(e.constraints ?? {}).join(', '),
+              }));
+              return new UnprocessableEntityException(formatted);
+            },
+          }),
+        },
+      ],
+      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }])],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn(() => true) })
+      .compile();
+
+    app = module.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/v1/profiles
+  // -----------------------------------------------------------------------
+  describe('POST /api/v1/profiles', () => {
+    it('returns 201 on successful creation', async () => {
+      mockProfileService.createProfile.mockResolvedValue({
+        id: UUID_V1,
+        username: USERNAME,
+        fullName: 'Test User',
+        bio: null,
+        photoUrl: null,
+        templateType: null,
+        themeSettings: null,
+        ctaLabel: null,
+        ctaUrl: null,
+        isPublished: true,
+        hasUnpublishedChanges: false,
+        isVerified: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/profiles')
+        .send({ username: USERNAME, fullName: 'Test User' })
+        .expect(201)
+        .expect((res) => {
+          expect(res.body.username).toBe(USERNAME);
+          expect(res.body.isPublished).toBe(true);
+        });
+    });
+
+    it('returns 422 on validation error (missing fullName)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/profiles')
+        .send({ username: USERNAME })
+        .expect(422);
+    });
+
+    it('returns 409 when username is taken', async () => {
+      mockProfileService.createProfile.mockRejectedValue(
+        new ConflictException('Username already taken'),
+      );
+
+      await request(app.getHttpServer())
+        .post('/api/v1/profiles')
+        .send({ username: USERNAME, fullName: 'Test User' })
+        .expect(409);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // PUT /api/v1/profiles/content
+  // -----------------------------------------------------------------------
+  describe('PUT /api/v1/profiles/content', () => {
+    it('returns 200 when upserting draft', async () => {
+      mockProfileService.upsertDraft.mockResolvedValue({
+        profileId: UUID_V1,
+        bio: 'Updated bio',
+        photoUrl: null,
+        content: null,
+        source: 'draft',
+        updatedAt: NOW,
+      });
+
+      await request(app.getHttpServer())
+        .put('/api/v1/profiles/content')
+        .send({ bio: 'Updated bio' })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.source).toBe('draft');
+          expect(res.body.bio).toBe('Updated bio');
+        });
+    });
+
+    it('returns 409 on concurrency conflict', async () => {
+      mockProfileService.upsertDraft.mockRejectedValue(
+        new ConflictException(
+          'Draft was modified by another session. Re-fetch and retry.',
+        ),
+      );
+
+      await request(app.getHttpServer())
+        .put('/api/v1/profiles/content')
+        .set('x-draft-version', 'old-version')
+        .send({ bio: 'Updated bio' })
+        .expect(409);
+    });
+
+    it('returns 422 on invalid body', async () => {
+      await request(app.getHttpServer())
+        .put('/api/v1/profiles/content')
+        .send({ bio: true })
+        .expect(422);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/profiles/content/state
+  // -----------------------------------------------------------------------
+  describe('GET /api/v1/profiles/content/state', () => {
+    it('returns 200 with draft state', async () => {
+      mockProfileService.getDraftState.mockResolvedValue({
+        status: 'success',
+        hasDraft: true,
+        draftId: UUID_V1,
+        updatedAt: NOW,
+      });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/profiles/content/state')
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.hasDraft).toBe(true);
+        });
+    });
+
+    it('returns 404 when profile not found', async () => {
+      mockProfileService.getDraftState.mockRejectedValue(
+        new NotFoundException('Profile not found'),
+      );
+
+      await request(app.getHttpServer())
+        .get('/api/v1/profiles/content/state')
+        .expect(404);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/profiles/content
+  // -----------------------------------------------------------------------
+  describe('GET /api/v1/profiles/content', () => {
+    it('returns 200 with profile content', async () => {
+      mockProfileService.getProfileContent.mockResolvedValue({
+        profileId: UUID_V1,
+        bio: 'My bio',
+        photoUrl: null,
+        content: null,
+        source: 'published',
+        updatedAt: NOW,
+      });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/profiles/content')
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.profileId).toBe(UUID_V1);
+        });
+    });
+
+    it('returns 404 when profile not found', async () => {
+      mockProfileService.getProfileContent.mockRejectedValue(
+        new NotFoundException('Profile not found'),
+      );
+
+      await request(app.getHttpServer())
+        .get('/api/v1/profiles/content')
+        .expect(404);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/v1/profiles/publish
+  // -----------------------------------------------------------------------
+  describe('POST /api/v1/profiles/publish', () => {
+    it('returns 200 on publish', async () => {
+      mockProfileService.publishProfile.mockResolvedValue({
+        status: 'success',
+        message: 'Profile published successfully',
+        data: { profileId: UUID_V1, username: USERNAME, publishedAt: NOW },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/profiles/publish')
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.status).toBe('success');
+        });
+    });
+
+    it('returns 404 when profile not found', async () => {
+      mockProfileService.publishProfile.mockRejectedValue(
+        new NotFoundException('Complete onboarding before publishing.'),
+      );
+
+      await request(app.getHttpServer())
+        .post('/api/v1/profiles/publish')
+        .expect(404);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // PATCH /api/v1/profiles/:username
+  // -----------------------------------------------------------------------
+  describe('PATCH /api/v1/profiles/:username', () => {
+    it('returns 200 on update', async () => {
+      mockProfileService.updateProfile.mockResolvedValue({
+        id: UUID_V1,
+        username: USERNAME,
+        fullName: 'Updated Name',
+        bio: null,
+        photoUrl: null,
+        templateType: null,
+        themeSettings: null,
+        ctaLabel: null,
+        ctaUrl: null,
+        isPublished: true,
+        hasUnpublishedChanges: true,
+        isVerified: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/profiles/${USERNAME}`)
+        .send({ fullName: 'Updated Name' })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.fullName).toBe('Updated Name');
+        });
+    });
+
+    it('returns 403 when updating someone else profile', async () => {
+      mockProfileService.updateProfile.mockRejectedValue(
+        new ForbiddenException(
+          "You don't have permission to update this profile.",
+        ),
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/profiles/${USERNAME}`)
+        .send({ fullName: 'Hacker' })
+        .expect(403);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/profiles/dashboard
+  // -----------------------------------------------------------------------
+  describe('GET /api/v1/profiles/dashboard', () => {
+    it('returns 200 with profile and components', async () => {
+      mockProfileService.getDashboardProfile.mockResolvedValue({
+        id: UUID_V1,
+        username: USERNAME,
+        fullName: 'Test User',
+        bio: null,
+        photoUrl: null,
+        templateType: null,
+        themeSettings: null,
+        ctaLabel: null,
+        ctaUrl: null,
+        isPublished: true,
+        hasUnpublishedChanges: false,
+        isVerified: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+        components: [],
+      });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/profiles/dashboard')
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.components).toEqual([]);
+        });
+    });
+
+    it('returns 404 when profile not found', async () => {
+      mockProfileService.getDashboardProfile.mockRejectedValue(
+        new NotFoundException('Profile not found'),
+      );
+
+      await request(app.getHttpServer())
+        .get('/api/v1/profiles/dashboard')
+        .expect(404);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/profiles/:username  (public)
+  // -----------------------------------------------------------------------
+  describe('GET /api/v1/profiles/:username (public)', () => {
+    it('returns 200 with profile data, ETag, and cache headers', async () => {
+      const etag = '"mocked-etag"';
+      mockProfileService.getPublicProfile.mockResolvedValue({
+        data: {
+          username: USERNAME,
+          fullName: 'Test User',
+          photoUrl: null,
+          templateType: null,
+          themeSettings: null,
+          content: null,
+        },
+        etag,
+        fromCache: false,
+      });
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/profiles/${USERNAME}`)
+        .expect(200)
+        .expect('ETag', etag)
+        .expect('Cache-Control', 'public, max-age=60')
+        .expect('X-Cache', 'MISS')
+        .expect((res) => {
+          expect(res.body.username).toBe(USERNAME);
+        });
+    });
+
+    it('returns 304 when ETag matches If-None-Match header', async () => {
+      const etag = '"matching-etag"';
+      mockProfileService.getPublicProfile.mockResolvedValue({
+        data: {
+          username: USERNAME,
+          fullName: 'Test User',
+          photoUrl: null,
+          templateType: null,
+          themeSettings: null,
+          content: null,
+        },
+        etag,
+        fromCache: false,
+      });
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/profiles/${USERNAME}`)
+        .set('If-None-Match', etag)
+        .expect(304);
+    });
+
+    it('returns 404 when profile not found', async () => {
+      mockProfileService.getPublicProfile.mockRejectedValue(
+        new NotFoundException({ error: 'not_found' }),
+      );
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/profiles/${USERNAME}`)
+        .expect(404);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // PATCH /api/v1/profiles/me/components/:componentId
+  // -----------------------------------------------------------------------
+  describe('PATCH /api/v1/profiles/me/components/:componentId', () => {
+    it('returns 200 when component is updated', async () => {
+      mockProfileService.patchComponent.mockResolvedValue({
+        id: UUID_V1,
+        profileId: UUID_V1,
+        sectionType: 'bio',
+        title: 'Updated Title',
+        content: 'Hello!',
+        metadata: null,
+        isEnabled: false,
+        displayOrder: 0,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/profiles/me/components/${UUID_V1}`)
+        .send({ isEnabled: false, title: 'Updated Title' })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.isEnabled).toBe(false);
+          expect(res.body.title).toBe('Updated Title');
+        });
+    });
+
+    it('returns 400 when componentId is not a valid UUID', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/components/not-a-uuid')
+        .send({ isEnabled: false })
+        .expect(400);
+    });
+
+    it('returns 404 when component not found', async () => {
+      mockProfileService.patchComponent.mockRejectedValue(
+        new NotFoundException('Component not found'),
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/profiles/me/components/${UUID_V1}`)
+        .send({ isEnabled: false })
+        .expect(404);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // PUT /api/v1/profiles/me/components/order
+  // -----------------------------------------------------------------------
+  describe('PUT /api/v1/profiles/me/components/order', () => {
+    it('returns 200 when components are reordered', async () => {
+      mockProfileService.reorderComponents.mockResolvedValue([
+        {
+          id: UUID_V1,
+          profileId: UUID_V1,
+          sectionType: 'links',
+          title: 'Links',
+          content: null,
+          metadata: null,
+          isEnabled: true,
+          displayOrder: 0,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ]);
+
+      await request(app.getHttpServer())
+        .put('/api/v1/profiles/me/components/order')
+        .send({ componentIds: [UUID_V1] })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.components).toHaveLength(1);
+        });
+    });
+
+    it('returns 422 when componentIds is empty', async () => {
+      await request(app.getHttpServer())
+        .put('/api/v1/profiles/me/components/order')
+        .send({ componentIds: [] })
+        .expect(422);
+    });
+
+    it('returns 422 when componentIds has duplicate', async () => {
+      await request(app.getHttpServer())
+        .put('/api/v1/profiles/me/components/order')
+        .send({ componentIds: [UUID_V1, UUID_V1] })
+        .expect(422);
+    });
+
+    it('returns 422 when componentIds contains non-UUID', async () => {
+      await request(app.getHttpServer())
+        .put('/api/v1/profiles/me/components/order')
+        .send({ componentIds: ['not-a-uuid'] })
+        .expect(422);
+    });
+  });
+});
