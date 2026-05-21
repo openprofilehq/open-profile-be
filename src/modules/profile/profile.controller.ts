@@ -36,6 +36,7 @@ import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
+  PublicProfileResponseDto,
 } from './dto/profile-response.dto';
 
 @ApiTags('profiles')
@@ -172,8 +173,8 @@ export class ProfileController {
   @ApiParam({ name: 'username', description: 'The profile username' })
   @ApiResponse({
     status: 200,
-    type: ProfileResponseDto,
-    description: 'Profile updated successfully',
+    type: PublicProfileResponseDto,
+    description: 'Profile found and returned successfully',
   })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({

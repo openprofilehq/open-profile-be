@@ -5,6 +5,7 @@ import {
   IsUrl,
   MaxLength,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ProfileContentDto } from './profile-content.dto';
@@ -27,6 +28,7 @@ export class UpsertDraftDto {
     nullable: true,
   })
   @IsOptional()
+  @ValidateIf((o: { photoUrl: unknown }) => o.photoUrl !== null)
   @IsUrl()
   photoUrl?: string | null;
 
