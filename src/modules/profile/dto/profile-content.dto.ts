@@ -2,14 +2,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
-  IsIn,
   IsString,
   IsUrl,
   ValidateNested,
   IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { WithSource } from '../../../common/types';
 
 export class BioDto {
   @ApiProperty({ example: true })
@@ -64,16 +62,7 @@ export class CtaDto {
   url: string | null;
 }
 
-export type ProfileContentResponse = WithSource<
-  ProfileContentDto,
-  'draft' | 'published'
->;
-
 export class ProfileContentDto {
-  @ApiProperty({ enum: ['draft', 'published'] })
-  @IsIn(['draft', 'published'])
-  source: 'draft' | 'published';
-
   @ApiProperty({
     example: ['bio', 'links', 'projects', 'cta'],
   })

@@ -22,8 +22,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UsernamesService } from '../usernames/usernames.service';
 import { UpsertDraftDto } from './dto/upsert-draft.dto';
-import { DraftResponse } from './types/profile-draft.types';
-import { ProfileContentResponse } from './dto/profile-content.dto';
+import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
@@ -464,10 +463,15 @@ export class ProfileService {
       });
 
       if (!draft) {
-        throw new ConflictException({
-          error: 'NO_DRAFT_TO_PUBLISH',
-          message: 'No draft exists to publish.',
-        });
+        return {
+          status: 'success',
+          message: 'Profile is already up to date. Nothing to publish.',
+          data: {
+            profileId: profile.id,
+            username: profile.username,
+            publishedAt: profile.updatedAt.toISOString(),
+          },
+        };
       }
 
       const updatedProfile = profileRepo.create({
@@ -502,12 +506,9 @@ export class ProfileService {
     return result;
   }
 
-  async getProfileContent(userId: string): Promise<ProfileContentResponse> {
+  async getProfileContent(userId: string): Promise<ProfileDraftResponseDto> {
     const profile = await this.profileRepo.findOne({
-      where: {
-        userId,
-        deletedAt: IsNull(),
-      },
+      where: { userId, deletedAt: IsNull() },
     });
 
     if (!profile) {
@@ -521,31 +522,52 @@ export class ProfileService {
     });
 
     if (draft?.content) {
-      return { ...draft.content, source: 'draft' };
+      return {
+        profileId: profile.id,
+        bio: draft.bio,
+        photoUrl: draft.photoUrl,
+        content: draft.content,
+        source: 'draft',
+        updatedAt: draft.updatedAt,
+      };
     }
 
     if (profile.content) {
-      return { ...profile.content, source: 'published' };
+      return {
+        profileId: profile.id,
+        bio: profile.bio,
+        photoUrl: profile.photoUrl,
+        content: profile.content,
+        source: 'published',
+        updatedAt: profile.updatedAt,
+      };
     }
 
     return {
-      source: 'published',
-      sectionOrder: ['bio', 'links', 'projects', 'cta'],
-      bio: { visible: true, content: profile.bio ?? '' },
-      links: { visible: true, sectionTitle: 'Links', items: [] },
-      projects: { visible: true, sectionTitle: 'Projects', items: [] },
-      cta: {
-        visible: true,
-        label: profile.ctaLabel ?? '',
-        url: profile.ctaUrl ?? null,
+      profileId: profile.id,
+      bio: profile.bio,
+      photoUrl: profile.photoUrl,
+      content: {
+        sectionOrder: ['bio', 'links', 'projects', 'cta'],
+        bio: { visible: true, content: profile.bio ?? '' },
+        links: { visible: true, sectionTitle: 'Links', items: [] },
+        projects: { visible: true, sectionTitle: 'Projects', items: [] },
+        cta: {
+          visible: true,
+          label: profile.ctaLabel ?? '',
+          url: profile.ctaUrl ?? null,
+        },
       },
+      source: 'published',
+      updatedAt: profile.updatedAt,
     };
   }
 
   async upsertDraft(
     userId: string,
     dto: UpsertDraftDto,
-  ): Promise<DraftResponse> {
+    draftVersion?: string,
+  ): Promise<ProfileDraftResponseDto> {
     const profile = await this.profileRepo.findOne({
       where: { userId, deletedAt: IsNull() },
       select: ['id'],
@@ -557,30 +579,25 @@ export class ProfileService {
       );
     }
 
-    // Step 1: check existing draft for concurrency control
+    if (draftVersion) {
+      const existing = await this.profileDraftRepo.findOne({
+        where: { profileId: profile.id },
+        select: ['updatedAt'],
+      });
+
+      if (existing && existing.updatedAt.toISOString() !== draftVersion) {
+        throw new ConflictException(
+          'Draft was modified by another session. ' +
+            'Re-fetch (GET /profiles/content) and retry.',
+        );
+      }
+    }
+
     const existingDraft = await this.profileDraftRepo.findOne({
       where: { profileId: profile.id },
       select: ['id', 'updatedAt'],
     });
 
-    if (existingDraft && !dto.updatedAt) {
-      throw new ConflictException(
-        'updatedAt is required. Draft was modified. Please refresh and try again.',
-      );
-    }
-
-    if (dto.updatedAt && existingDraft) {
-      const clientTime = new Date(dto.updatedAt).getTime();
-      const serverTime = existingDraft.updatedAt.getTime();
-
-      if (clientTime !== serverTime) {
-        throw new ConflictException(
-          'Draft was modified. Please refresh and try again.',
-        );
-      }
-    }
-
-    // Step 2: SAFE TYPEORM UPSERT (NO RAW SQL, NO any)
     const draft = this.profileDraftRepo.create({
       ...(existingDraft ? { id: existingDraft.id } : {}),
       profileId: profile.id,
@@ -591,17 +608,13 @@ export class ProfileService {
 
     const saved = await this.profileDraftRepo.save(draft);
 
-    // Step 3: response
     return {
-      status: 'success',
-      message: 'Draft saved successfully',
-      data: {
-        profileId: profile.id,
-        bio: saved.bio,
-        photoUrl: saved.photoUrl,
-        content: saved.content,
-        updatedAt: saved.updatedAt,
-      },
+      profileId: profile.id,
+      bio: saved.bio,
+      photoUrl: saved.photoUrl,
+      content: saved.content,
+      source: 'draft',
+      updatedAt: saved.updatedAt,
     };
   }
 
