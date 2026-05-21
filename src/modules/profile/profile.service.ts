@@ -26,10 +26,10 @@ import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
+  PublicProfileResponseDto,
 } from './dto/profile-response.dto';
 
 const CACHE_TTL_SECONDS = 60;
-const MAX_COMPONENTS = 50;
 const CACHE_404_TTL_SECONDS = 30;
 
 @Injectable()
@@ -142,7 +142,7 @@ export class ProfileService {
   }
 
   async getPublicProfile(username: string): Promise<{
-    data: Record<string, unknown>;
+    data: PublicProfileResponseDto;
     etag: string;
     fromCache: boolean;
   }> {
@@ -152,7 +152,7 @@ export class ProfileService {
 
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
-      const parsed = JSON.parse(cached) as Record<string, unknown>;
+      const parsed = JSON.parse(cached) as PublicProfileResponseDto;
       if (parsed['__notFound']) {
         throw new NotFoundException({ error: 'not_found' });
       }
@@ -187,17 +187,7 @@ export class ProfileService {
         throw new NotFoundException({ error: 'not_found' });
       }
 
-      const components = await this.componentRepo.find({
-        where: { profileId: profile.id, isEnabled: true },
-        order: { displayOrder: 'ASC' },
-        take: MAX_COMPONENTS,
-      });
-
-      const activeComponents = components.filter(
-        (c) => c.metadata && Object.keys(c.metadata).length > 0,
-      );
-
-      const responseData = this.serialize(profile, activeComponents);
+      const responseData = this.serialize(profile);
       const serialized = JSON.stringify(responseData);
 
       this.logger.log(`Cache miss for profile: ${normalizedUsername}`);
@@ -248,10 +238,7 @@ export class ProfileService {
     await this.redisService.del(`profile:${username.toLowerCase()}`);
   }
 
-  private serialize(
-    profile: Profile,
-    components: ProfileComponent[],
-  ): Record<string, unknown> {
+  private serialize(profile: Profile): PublicProfileResponseDto {
     return {
       username: profile.username,
       fullName: profile.fullName ?? null,
@@ -259,13 +246,7 @@ export class ProfileService {
       photoUrl: profile.photoUrl,
       templateType: profile.templateType,
       themeSettings: profile.themeSettings,
-      components: components.map((c) => ({
-        sectionType: c.sectionType,
-        title: c.title,
-        content: c.content,
-        displayOrder: c.displayOrder,
-        metadata: c.metadata,
-      })),
+      content: profile.content ?? null,
     };
   }
 
@@ -521,12 +502,12 @@ export class ProfileService {
       where: { profileId: profile.id },
     });
 
-    if (draft?.content) {
+    if (draft) {
       return {
         profileId: profile.id,
         bio: draft.bio,
         photoUrl: draft.photoUrl,
-        content: draft.content,
+        content: draft.content ?? profile.content ?? null,
         source: 'draft',
         updatedAt: draft.updatedAt,
       };
@@ -604,9 +585,15 @@ export class ProfileService {
       const draft = draftRepo.create({
         ...(existingDraft ? { id: existingDraft.id } : {}),
         profileId: profile.id,
-        bio: dto.bio ?? null,
-        photoUrl: dto.photoUrl ?? null,
-        content: dto.content ?? null,
+        bio: dto.bio !== undefined ? dto.bio : (existingDraft?.bio ?? null),
+        photoUrl:
+          dto.photoUrl !== undefined
+            ? dto.photoUrl
+            : (existingDraft?.photoUrl ?? null),
+        content:
+          dto.content !== undefined
+            ? dto.content
+            : (existingDraft?.content ?? null),
       });
 
       return draftRepo.save(draft);
