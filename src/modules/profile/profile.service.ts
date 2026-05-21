@@ -579,34 +579,38 @@ export class ProfileService {
       );
     }
 
-    if (draftVersion) {
-      const existing = await this.profileDraftRepo.findOne({
-        where: { profileId: profile.id },
-        select: ['updatedAt'],
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const draftRepo = manager.getRepository(ProfileDraft);
+
+      // Lock the existing draft row if it exists — prevents concurrent writes
+      const existingDrafts = await draftRepo
+        .createQueryBuilder('d')
+        .where('d.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getMany();
+
+      const existingDraft = existingDrafts[0] ?? null;
+
+      // Concurrency check — only if caller sent a token
+      if (draftVersion && existingDraft) {
+        if (existingDraft.updatedAt.toISOString() !== draftVersion) {
+          throw new ConflictException(
+            'Draft was modified by another session. ' +
+              'Re-fetch (GET /profiles/content) and retry.',
+          );
+        }
+      }
+
+      const draft = draftRepo.create({
+        ...(existingDraft ? { id: existingDraft.id } : {}),
+        profileId: profile.id,
+        bio: dto.bio ?? null,
+        photoUrl: dto.photoUrl ?? null,
+        content: dto.content ?? null,
       });
 
-      if (existing && existing.updatedAt.toISOString() !== draftVersion) {
-        throw new ConflictException(
-          'Draft was modified by another session. ' +
-            'Re-fetch (GET /profiles/content) and retry.',
-        );
-      }
-    }
-
-    const existingDraft = await this.profileDraftRepo.findOne({
-      where: { profileId: profile.id },
-      select: ['id', 'updatedAt'],
+      return draftRepo.save(draft);
     });
-
-    const draft = this.profileDraftRepo.create({
-      ...(existingDraft ? { id: existingDraft.id } : {}),
-      profileId: profile.id,
-      bio: dto.bio ?? null,
-      photoUrl: dto.photoUrl ?? null,
-      content: dto.content ?? null,
-    });
-
-    const saved = await this.profileDraftRepo.save(draft);
 
     return {
       profileId: profile.id,
