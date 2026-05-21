@@ -1,3 +1,4 @@
+import { ProfileContentDto } from './profile-content.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ProfileResponseDto {
@@ -80,8 +81,6 @@ export class DashboardProfileResponseDto extends ProfileResponseDto {
   @ApiProperty({ type: [ComponentItemDto] })
   components: ComponentItemDto[];
 }
-
-import { ProfileContentDto } from './profile-content.dto';
 
 export class PublicProfileResponseDto {
   @ApiProperty({ example: 'calvin' })
