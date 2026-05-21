@@ -22,15 +22,13 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { UsernamesService } from '../usernames/usernames.service';
 import { UpsertDraftDto } from './dto/upsert-draft.dto';
-import { DraftResponse } from './types/profile-draft.types';
-import { ProfileContentResponse } from './dto/profile-content.dto';
+import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
+  PublicProfileResponseDto,
 } from './dto/profile-response.dto';
-
 const CACHE_TTL_SECONDS = 60;
-const MAX_COMPONENTS = 50;
 const CACHE_404_TTL_SECONDS = 30;
 
 @Injectable()
@@ -143,7 +141,7 @@ export class ProfileService {
   }
 
   async getPublicProfile(username: string): Promise<{
-    data: Record<string, unknown>;
+    data: PublicProfileResponseDto;
     etag: string;
     fromCache: boolean;
   }> {
@@ -153,7 +151,7 @@ export class ProfileService {
 
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
-      const parsed = JSON.parse(cached) as Record<string, unknown>;
+      const parsed = JSON.parse(cached) as PublicProfileResponseDto;
       if (parsed['__notFound']) {
         throw new NotFoundException({ error: 'not_found' });
       }
@@ -188,17 +186,7 @@ export class ProfileService {
         throw new NotFoundException({ error: 'not_found' });
       }
 
-      const components = await this.componentRepo.find({
-        where: { profileId: profile.id, isEnabled: true },
-        order: { displayOrder: 'ASC' },
-        take: MAX_COMPONENTS,
-      });
-
-      const activeComponents = components.filter(
-        (c) => c.metadata && Object.keys(c.metadata).length > 0,
-      );
-
-      const responseData = this.serialize(profile, activeComponents);
+      const responseData = this.serialize(profile);
       const serialized = JSON.stringify(responseData);
 
       this.logger.log(`Cache miss for profile: ${normalizedUsername}`);
@@ -249,27 +237,16 @@ export class ProfileService {
     await this.redisService.del(`profile:${username.toLowerCase()}`);
   }
 
-  private serialize(
-    profile: Profile,
-    components: ProfileComponent[],
-  ): Record<string, unknown> {
+  private serialize(profile: Profile): PublicProfileResponseDto {
     return {
       username: profile.username,
       fullName: profile.fullName ?? null,
-      bio: profile.bio,
       photoUrl: profile.photoUrl,
       templateType: profile.templateType,
       themeSettings: profile.themeSettings,
-      components: components.map((c) => ({
-        sectionType: c.sectionType,
-        title: c.title,
-        content: c.content,
-        displayOrder: c.displayOrder,
-        metadata: c.metadata,
-      })),
+      content: profile.content ?? null,
     };
   }
-
   private computeEtag(content: string): string {
     return `"${crypto.createHash('md5').update(content).digest('hex')}"`;
   }
@@ -464,10 +441,15 @@ export class ProfileService {
       });
 
       if (!draft) {
-        throw new ConflictException({
-          error: 'NO_DRAFT_TO_PUBLISH',
-          message: 'No draft exists to publish.',
-        });
+        return {
+          status: 'success',
+          message: 'Profile is already up to date. Nothing to publish.',
+          data: {
+            profileId: profile.id,
+            username: profile.username,
+            publishedAt: profile.updatedAt.toISOString(),
+          },
+        };
       }
 
       const updatedProfile = profileRepo.create({
@@ -502,12 +484,9 @@ export class ProfileService {
     return result;
   }
 
-  async getProfileContent(userId: string): Promise<ProfileContentResponse> {
+  async getProfileContent(userId: string): Promise<ProfileDraftResponseDto> {
     const profile = await this.profileRepo.findOne({
-      where: {
-        userId,
-        deletedAt: IsNull(),
-      },
+      where: { userId, deletedAt: IsNull() },
     });
 
     if (!profile) {
@@ -520,32 +499,53 @@ export class ProfileService {
       where: { profileId: profile.id },
     });
 
-    if (draft?.content) {
-      return { ...draft.content, source: 'draft' };
+    if (draft) {
+      return {
+        profileId: profile.id,
+        bio: draft.bio ?? profile.bio ?? null,
+        photoUrl: draft.photoUrl ?? profile.photoUrl ?? null,
+        content: draft.content ?? profile.content ?? null,
+        source: 'draft',
+        updatedAt: draft.updatedAt,
+      };
     }
 
     if (profile.content) {
-      return { ...profile.content, source: 'published' };
+      return {
+        profileId: profile.id,
+        bio: profile.bio,
+        photoUrl: profile.photoUrl,
+        content: profile.content,
+        source: 'published',
+        updatedAt: profile.updatedAt,
+      };
     }
 
     return {
-      source: 'published',
-      sectionOrder: ['bio', 'links', 'projects', 'cta'],
-      bio: { visible: true, content: profile.bio ?? '' },
-      links: { visible: true, sectionTitle: 'Links', items: [] },
-      projects: { visible: true, sectionTitle: 'Projects', items: [] },
-      cta: {
-        visible: true,
-        label: profile.ctaLabel ?? '',
-        url: profile.ctaUrl ?? null,
+      profileId: profile.id,
+      bio: profile.bio,
+      photoUrl: profile.photoUrl,
+      content: {
+        sectionOrder: ['bio', 'links', 'projects', 'cta'],
+        bio: { visible: true, content: profile.bio ?? '' },
+        links: { visible: true, sectionTitle: 'Links', items: [] },
+        projects: { visible: true, sectionTitle: 'Projects', items: [] },
+        cta: {
+          visible: true,
+          label: profile.ctaLabel ?? '',
+          url: profile.ctaUrl ?? null,
+        },
       },
+      source: 'published',
+      updatedAt: profile.updatedAt,
     };
   }
 
   async upsertDraft(
     userId: string,
     dto: UpsertDraftDto,
-  ): Promise<DraftResponse> {
+    draftVersion?: string,
+  ): Promise<ProfileDraftResponseDto> {
     const profile = await this.profileRepo.findOne({
       where: { userId, deletedAt: IsNull() },
       select: ['id'],
@@ -557,51 +557,57 @@ export class ProfileService {
       );
     }
 
-    // Step 1: check existing draft for concurrency control
-    const existingDraft = await this.profileDraftRepo.findOne({
-      where: { profileId: profile.id },
-      select: ['id', 'updatedAt'],
-    });
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const draftRepo = manager.getRepository(ProfileDraft);
+      await manager
+        .getRepository(Profile)
+        .createQueryBuilder('p')
+        .where('p.id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getOneOrFail();
+      // Lock the existing draft row if it exists — prevents concurrent writes
+      const existingDrafts = await draftRepo
+        .createQueryBuilder('d')
+        .where('d.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getMany();
 
-    if (existingDraft && !dto.updatedAt) {
-      throw new ConflictException(
-        'updatedAt is required. Draft was modified. Please refresh and try again.',
-      );
-    }
+      const existingDraft = existingDrafts[0] ?? null;
 
-    if (dto.updatedAt && existingDraft) {
-      const clientTime = new Date(dto.updatedAt).getTime();
-      const serverTime = existingDraft.updatedAt.getTime();
-
-      if (clientTime !== serverTime) {
-        throw new ConflictException(
-          'Draft was modified. Please refresh and try again.',
-        );
+      // Concurrency check — only if caller sent a token
+      if (draftVersion && existingDraft) {
+        if (existingDraft.updatedAt.toISOString() !== draftVersion) {
+          throw new ConflictException(
+            'Draft was modified by another session. ' +
+              'Re-fetch (GET /profiles/content) and retry.',
+          );
+        }
       }
-    }
 
-    // Step 2: SAFE TYPEORM UPSERT (NO RAW SQL, NO any)
-    const draft = this.profileDraftRepo.create({
-      ...(existingDraft ? { id: existingDraft.id } : {}),
-      profileId: profile.id,
-      bio: dto.bio ?? null,
-      photoUrl: dto.photoUrl ?? null,
-      content: dto.content ?? null,
+      const draft = draftRepo.create({
+        ...(existingDraft ? { id: existingDraft.id } : {}),
+        profileId: profile.id,
+        bio: dto.bio !== undefined ? dto.bio : (existingDraft?.bio ?? null),
+        photoUrl:
+          dto.photoUrl !== undefined
+            ? dto.photoUrl
+            : (existingDraft?.photoUrl ?? null),
+        content:
+          dto.content !== undefined
+            ? dto.content
+            : (existingDraft?.content ?? null),
+      });
+
+      return draftRepo.save(draft);
     });
 
-    const saved = await this.profileDraftRepo.save(draft);
-
-    // Step 3: response
     return {
-      status: 'success',
-      message: 'Draft saved successfully',
-      data: {
-        profileId: profile.id,
-        bio: saved.bio,
-        photoUrl: saved.photoUrl,
-        content: saved.content,
-        updatedAt: saved.updatedAt,
-      },
+      profileId: profile.id,
+      bio: saved.bio,
+      photoUrl: saved.photoUrl,
+      content: saved.content,
+      source: 'draft',
+      updatedAt: saved.updatedAt,
     };
   }
 
