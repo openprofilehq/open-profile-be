@@ -560,7 +560,7 @@ export class ProfileService {
     // Step 1: check existing draft for concurrency control
     const existingDraft = await this.profileDraftRepo.findOne({
       where: { profileId: profile.id },
-      select: ['updatedAt'],
+      select: ['id', 'updatedAt'],
     });
 
     if (existingDraft && !dto.updatedAt) {
@@ -582,6 +582,7 @@ export class ProfileService {
 
     // Step 2: SAFE TYPEORM UPSERT (NO RAW SQL, NO any)
     const draft = this.profileDraftRepo.create({
+      ...(existingDraft ? { id: existingDraft.id } : {}),
       profileId: profile.id,
       bio: dto.bio ?? null,
       photoUrl: dto.photoUrl ?? null,
