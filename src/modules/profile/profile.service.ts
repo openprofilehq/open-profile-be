@@ -90,10 +90,11 @@ export class ProfileService {
       if (usernameCheck.reason === 'TAKEN') {
         throw new ConflictException('Username already taken');
       }
-      throw new UnprocessableEntityException(
-        'Username must be 3-30 characters, use only letters, numbers, and hyphens, ' +
-          'and must not start, end, or contain consecutive hyphens.',
-      );
+      throw new UnprocessableEntityException({
+        error: 'INVALID_USERNAME_FORMAT',
+        message:
+          'Username must be 3-30 characters, use only letters, numbers, and hyphens, and must not start, end, or contain consecutive hyphens.',
+      });
     }
 
     // Step 3 - fetch user record to get fullName stored at registration

@@ -36,7 +36,6 @@ import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
-  PublicProfileResponseDto,
 } from './dto/profile-response.dto';
 
 @ApiTags('profiles')
@@ -57,7 +56,11 @@ export class ProfileController {
     status: 409,
     description: 'User already has a profile or username is taken',
   })
-  @ApiResponse({ status: 422, description: 'Invalid username format' })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Username format invalid — must be 3-30 characters, lowercase letters, numbers, and hyphens only. Must not start, end, or contain consecutive hyphens.',
+  })
   async createProfile(
     @Body() createProfileDto: CreateProfileDto,
     @currentUserDecorator.CurrentUser()
@@ -173,8 +176,8 @@ export class ProfileController {
   @ApiParam({ name: 'username', description: 'The profile username' })
   @ApiResponse({
     status: 200,
-    type: PublicProfileResponseDto,
-    description: 'Profile found and returned successfully',
+    type: ProfileResponseDto,
+    description: 'Profile updated successfully',
   })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({
@@ -182,7 +185,7 @@ export class ProfileController {
     description: 'Profile does not belong to the authenticated user',
   })
   @ApiResponse({ status: 404, description: 'Profile not found' })
-  @ApiResponse({ status: 422, description: 'Validation error' })
+  @ApiResponse({ status: 422, description: 'Profile update validation failed' })
   async updateProfile(
     @Param('username') username: string,
     @Body() dto: UpdateProfileDto,
@@ -227,7 +230,7 @@ export class ProfileController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Profile found and returned successfully',
+    description: 'Profile updated successfully',
   })
   @ApiResponse({
     status: 304,
