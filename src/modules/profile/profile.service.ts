@@ -28,7 +28,6 @@ import {
   DashboardProfileResponseDto,
   PublicProfileResponseDto,
 } from './dto/profile-response.dto';
-
 const CACHE_TTL_SECONDS = 60;
 const CACHE_404_TTL_SECONDS = 30;
 
@@ -242,14 +241,12 @@ export class ProfileService {
     return {
       username: profile.username,
       fullName: profile.fullName ?? null,
-      bio: profile.bio,
       photoUrl: profile.photoUrl,
       templateType: profile.templateType,
       themeSettings: profile.themeSettings,
       content: profile.content ?? null,
     };
   }
-
   private computeEtag(content: string): string {
     return `"${crypto.createHash('md5').update(content).digest('hex')}"`;
   }
