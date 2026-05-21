@@ -21,6 +21,7 @@ import {
   ApiHeader,
   ApiResponse,
   ApiTags,
+  ApiBody,
 } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
@@ -36,8 +37,8 @@ import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
-  PublicProfileResponseDto,
 } from './dto/profile-response.dto';
+import { PublishProfileDto } from './dto/publish-profile.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -57,7 +58,11 @@ export class ProfileController {
     status: 409,
     description: 'User already has a profile or username is taken',
   })
-  @ApiResponse({ status: 422, description: 'Invalid username format' })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Username format invalid — must be 3-30 characters, lowercase letters, numbers, and hyphens only. Must not start, end, or contain consecutive hyphens.',
+  })
   async createProfile(
     @Body() createProfileDto: CreateProfileDto,
     @currentUserDecorator.CurrentUser()
@@ -145,6 +150,7 @@ export class ProfileController {
   @Post('publish')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
+  @ApiBody({ type: PublishProfileDto })
   @ApiOperation({
     summary: 'Publish authenticated user profile draft',
   })
@@ -173,8 +179,8 @@ export class ProfileController {
   @ApiParam({ name: 'username', description: 'The profile username' })
   @ApiResponse({
     status: 200,
-    type: PublicProfileResponseDto,
-    description: 'Profile found and returned successfully',
+    type: ProfileResponseDto,
+    description: 'Profile updated successfully',
   })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({
@@ -182,7 +188,7 @@ export class ProfileController {
     description: 'Profile does not belong to the authenticated user',
   })
   @ApiResponse({ status: 404, description: 'Profile not found' })
-  @ApiResponse({ status: 422, description: 'Validation error' })
+  @ApiResponse({ status: 422, description: 'Profile update validation failed' })
   async updateProfile(
     @Param('username') username: string,
     @Body() dto: UpdateProfileDto,
