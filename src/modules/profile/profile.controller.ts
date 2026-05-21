@@ -21,6 +21,7 @@ import {
   ApiHeader,
   ApiResponse,
   ApiTags,
+  ApiBody,
 } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
@@ -37,6 +38,7 @@ import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
 } from './dto/profile-response.dto';
+import { PublishProfileDto } from './dto/publish-profile.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -148,6 +150,7 @@ export class ProfileController {
   @Post('publish')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
+  @ApiBody({ type: PublishProfileDto })
   @ApiOperation({
     summary: 'Publish authenticated user profile draft',
   })
