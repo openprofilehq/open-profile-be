@@ -502,9 +502,9 @@ export class ProfileService {
     if (draft) {
       return {
         profileId: profile.id,
-        bio: draft.bio,
-        photoUrl: draft.photoUrl,
-        content: draft.content ?? profile.content,
+        bio: draft.bio ?? profile.bio ?? null,
+        photoUrl: draft.photoUrl ?? profile.photoUrl ?? null,
+        content: draft.content ?? profile.content ?? null,
         source: 'draft',
         updatedAt: draft.updatedAt,
       };
@@ -559,7 +559,12 @@ export class ProfileService {
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const draftRepo = manager.getRepository(ProfileDraft);
-
+      await manager
+        .getRepository(Profile)
+        .createQueryBuilder('p')
+        .where('p.id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getOneOrFail();
       // Lock the existing draft row if it exists — prevents concurrent writes
       const existingDrafts = await draftRepo
         .createQueryBuilder('d')
@@ -582,9 +587,15 @@ export class ProfileService {
       const draft = draftRepo.create({
         ...(existingDraft ? { id: existingDraft.id } : {}),
         profileId: profile.id,
-        bio: dto.bio ?? null,
-        photoUrl: dto.photoUrl ?? null,
-        content: dto.content ?? null,
+        bio: dto.bio !== undefined ? dto.bio : (existingDraft?.bio ?? null),
+        photoUrl:
+          dto.photoUrl !== undefined
+            ? dto.photoUrl
+            : (existingDraft?.photoUrl ?? null),
+        content:
+          dto.content !== undefined
+            ? dto.content
+            : (existingDraft?.content ?? null),
       });
 
       return draftRepo.save(draft);
