@@ -32,12 +32,7 @@ import { ProfileService } from './profile.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertDraftDto } from './dto/upsert-draft.dto';
-import { DraftResponse } from './types/profile-draft.types';
-import { DraftResponseDto } from './dto/draft-response.dto';
-import {
-  ProfileContentDto,
-  ProfileContentResponse,
-} from './dto/profile-content.dto';
+import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
@@ -74,26 +69,40 @@ export class ProfileController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
   @ApiOperation({
-    summary: 'Create or update a profile draft (upsert)',
+    summary: 'Save (upsert) a draft for the authenticated user',
+    description:
+      'Creates the draft row if none exists; updates it if one does. ' +
+      'To guard against concurrent overwrites from another browser tab, ' +
+      'send the `updatedAt` value from the last GET or PUT response as ' +
+      'the `X-Draft-Version` header. Omit the header on the very first save.',
+  })
+  @ApiHeader({
+    name: 'X-Draft-Version',
+    description:
+      'ISO timestamp from the last GET /profiles/content or PUT /profiles/content ' +
+      'response (`updatedAt` field). Omit for the first save. ' +
+      'Returns 409 if the server draft was modified after this timestamp.',
+    required: false,
+    example: '2026-05-19T16:05:00.000Z',
   })
   @ApiResponse({
     status: 200,
+    type: ProfileDraftResponseDto,
     description: 'Draft saved successfully',
-    type: DraftResponseDto,
   })
-  @ApiResponse({
-    status: 404,
-    description: 'Profile not found',
-  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   @ApiResponse({
     status: 409,
-    description: 'Concurrent update conflict',
+    description: 'Concurrent edit — re-fetch and retry',
   })
+  @ApiResponse({ status: 422, description: 'Content validation failed' })
   async upsertDraft(
     @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Headers('x-draft-version') draftVersion: string | undefined,
     @Body() dto: UpsertDraftDto,
-  ): Promise<DraftResponse> {
-    return this.profileService.upsertDraft(userId, dto);
+  ): Promise<ProfileDraftResponseDto> {
+    return this.profileService.upsertDraft(userId, dto, draftVersion);
   }
 
   @Get('content/state')
@@ -117,20 +126,18 @@ export class ProfileController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Profile canvas content returned successfully',
-    type: ProfileContentDto,
+    description:
+      'Returns the draft if one exists (source: "draft"), otherwise falls back to the published profile row (source: "published").',
+    type: ProfileDraftResponseDto,
   })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized',
-  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 404,
     description: 'Profile not found. Please complete onboarding first.',
   })
   async getProfileContent(
     @currentUserDecorator.CurrentUser('sub') userId: string,
-  ): Promise<ProfileContentResponse> {
+  ): Promise<ProfileDraftResponseDto> {
     return this.profileService.getProfileContent(userId);
   }
 
@@ -146,7 +153,7 @@ export class ProfileController {
   })
   @ApiResponse({
     status: 409,
-    description: 'No draft exists to publish',
+    description: 'Concurrent conflict',
   })
   @ApiResponse({
     status: 404,
@@ -253,16 +260,6 @@ export class ProfileController {
     return data;
   }
 
-  /**
-   * PATCH /profiles/me/components/:componentId
-   *
-   * Toggle visibility or edit a component owned by the authenticated user.
-   * Global JwtAuthGuard handles auth; @CurrentUser('sub') gives us the
-   * user ID (JWT subject claim).
-   *
-   * `displayOrder` is intentionally not patchable — the global
-   * ValidationPipe with forbidNonWhitelisted: true rejects it.
-   */
   @Patch('me/components/:componentId')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
@@ -278,13 +275,6 @@ export class ProfileController {
     return this.profileService.patchComponent(userId, componentId, dto);
   }
 
-  /**
-   * PUT /profiles/me/components/order
-   *
-   * Replace the full ordering of components for the authenticated user's
-   * profile in one atomic write. The body's array order becomes the new
-   * top-to-bottom display order.
-   */
   @Put('me/components/order')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
