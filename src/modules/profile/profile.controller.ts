@@ -233,7 +233,7 @@ export class ProfileController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Profile updated successfully',
+    description: 'Profile found and returned successfully',
   })
   @ApiResponse({
     status: 304,
