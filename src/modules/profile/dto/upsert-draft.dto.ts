@@ -1,44 +1,42 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsOptional,
   IsString,
   IsUrl,
-  IsDateString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ProfileContentWriteDto } from './profile-content-write.dto';
+import { ProfileContentDto } from './profile-content.dto';
 
 export class UpsertDraftDto {
   @ApiPropertyOptional({
-    example: 'Software Engineer',
-    description: 'User bio',
+    description: 'Short biography for the profile. Send null to clear.',
+    example: 'Backend engineer building OpenProfile',
+    maxLength: 300,
+    nullable: true,
   })
   @IsOptional()
   @IsString()
+  @MaxLength(300)
   bio?: string | null;
 
   @ApiPropertyOptional({
-    example: 'https://cdn.com/photo.jpg',
+    description: 'Profile photo URL (from POST /uploads/profiles/image-url).',
+    example: 'https://cdn.example.com/avatar.jpg',
+    nullable: true,
   })
   @IsOptional()
   @IsUrl()
   photoUrl?: string | null;
 
   @ApiPropertyOptional({
-    type: ProfileContentWriteDto,
-    description: 'Full profile structured content',
+    description:
+      'Full canvas content document. All fields are optional — only send sections you are updating.',
+    type: () => ProfileContentDto,
   })
   @IsOptional()
   @ValidateNested()
-  @Type(() => ProfileContentWriteDto)
-  content?: ProfileContentWriteDto;
-
-  @ApiPropertyOptional({
-    description: 'Optimistic concurrency token from last GET /profiles/content',
-    example: '2026-05-20T10:00:00.000Z',
-  })
-  @IsOptional()
-  @IsDateString()
-  updatedAt?: string;
+  @Type(() => ProfileContentDto)
+  content?: ProfileContentDto;
 }
