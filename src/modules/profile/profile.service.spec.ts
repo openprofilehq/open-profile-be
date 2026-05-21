@@ -737,13 +737,14 @@ describe('ProfileService', () => {
       const txDraftRepo = txManager.getRepository(ProfileDraft);
       const draftQb = mockQueryBuilder([]);
       txDraftRepo.createQueryBuilder.mockReturnValue(draftQb);
-      txDraftRepo.create.mockReturnValue(mockDraft);
-      txDraftRepo.save.mockResolvedValue(mockDraft);
+      const draftFromDto = { ...mockDraft, bio: upsertDto.bio };
+      txDraftRepo.create.mockReturnValue(draftFromDto);
+      txDraftRepo.save.mockResolvedValue(draftFromDto);
 
       const result = await service.upsertDraft(USER_ID, upsertDto);
 
       expect(result.source).toBe('draft');
-      expect(result.bio).toBe('Draft bio');
+      expect(result.bio).toBe(upsertDto.bio);
     });
 
     it('updates an existing draft and validates concurrency version', async () => {
