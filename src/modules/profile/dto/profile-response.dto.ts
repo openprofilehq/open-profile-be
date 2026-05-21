@@ -1,4 +1,3 @@
-import { ProfileContentDto } from './profile-content.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ProfileContentDto } from './profile-content.dto';
 
