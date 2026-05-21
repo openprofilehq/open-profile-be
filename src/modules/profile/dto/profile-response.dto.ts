@@ -1,5 +1,5 @@
-import { ProfileContentDto } from './profile-content.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ProfileContentDto } from './profile-content.dto';
 
 export class ProfileResponseDto {
   @ApiProperty({ example: '8b59d8f1-45bb-4bc9-84e0-6d5dbdc17c4a' })
