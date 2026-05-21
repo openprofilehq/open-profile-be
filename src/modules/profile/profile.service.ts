@@ -24,6 +24,10 @@ import { UsernamesService } from '../usernames/usernames.service';
 import { UpsertDraftDto } from './dto/upsert-draft.dto';
 import { DraftResponse } from './types/profile-draft.types';
 import { ProfileContentResponse } from './dto/profile-content.dto';
+import {
+  ProfileResponseDto,
+  DashboardProfileResponseDto,
+} from './dto/profile-response.dto';
 
 const CACHE_TTL_SECONDS = 60;
 const MAX_COMPONENTS = 50;
@@ -47,10 +51,29 @@ export class ProfileService {
     private readonly usernamesService: UsernamesService,
   ) {}
 
+  private toProfileResponse(profile: Profile): ProfileResponseDto {
+    return {
+      id: profile.id,
+      username: profile.username,
+      fullName: profile.fullName,
+      bio: profile.bio,
+      photoUrl: profile.photoUrl,
+      templateType: profile.templateType,
+      themeSettings: profile.themeSettings,
+      ctaLabel: profile.ctaLabel,
+      ctaUrl: profile.ctaUrl,
+      isPublished: profile.isPublished,
+      hasUnpublishedChanges: profile.hasUnpublishedChanges,
+      isVerified: profile.isVerified,
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
+    };
+  }
+
   async createProfile(
     createProfileDto: CreateProfileDto,
     user: AuthenticatedUser,
-  ): Promise<Profile> {
+  ): Promise<ProfileResponseDto> {
     // Step 1 - check if user already has a profile
     const existingProfile = await this.profileRepo.findOne({
       where: { userId: user.sub },
@@ -116,7 +139,7 @@ export class ProfileService {
       return saved;
     });
 
-    return savedProfile;
+    return this.toProfileResponse(savedProfile);
   }
 
   async getPublicProfile(username: string): Promise<{
@@ -190,7 +213,9 @@ export class ProfileService {
     }
   }
 
-  async getDashboardProfile(userId: string): Promise<Record<string, unknown>> {
+  async getDashboardProfile(
+    userId: string,
+  ): Promise<DashboardProfileResponseDto> {
     const profile = await this.profileRepo.findOne({
       where: { userId, deletedAt: IsNull() },
     });
@@ -207,16 +232,7 @@ export class ProfileService {
     });
 
     return {
-      username: profile.username,
-      fullName: profile.fullName,
-      bio: profile.bio,
-      photoUrl: profile.photoUrl,
-      templateType: profile.templateType,
-      themeSettings: profile.themeSettings,
-      isPublished: profile.isPublished,
-      hasUnpublishedChanges: profile.hasUnpublishedChanges,
-      ctaLabel: profile.ctaLabel ?? null,
-      ctaUrl: profile.ctaUrl ?? null,
+      ...this.toProfileResponse(profile),
       components: components.map((c) => ({
         id: c.id,
         sectionType: c.sectionType,
@@ -401,7 +417,7 @@ export class ProfileService {
     username: string,
     dto: UpdateProfileDto,
     userId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<ProfileResponseDto> {
     const profile = await this.profileRepo.findOne({
       where: { username: username.toLowerCase(), deletedAt: IsNull() },
     });
@@ -427,13 +443,7 @@ export class ProfileService {
     const saved = await this.profileRepo.save(profile);
     await this.invalidateCache(saved.username);
 
-    return {
-      username: saved.username,
-      fullName: saved.fullName,
-      bio: saved.bio,
-      photoUrl: saved.photoUrl,
-      hasUnpublishedChanges: saved.hasUnpublishedChanges,
-    };
+    return this.toProfileResponse(saved);
   }
 
   async publishProfile(userId: string) {
@@ -550,7 +560,7 @@ export class ProfileService {
     // Step 1: check existing draft for concurrency control
     const existingDraft = await this.profileDraftRepo.findOne({
       where: { profileId: profile.id },
-      select: ['updatedAt'],
+      select: ['id', 'updatedAt'],
     });
 
     if (existingDraft && !dto.updatedAt) {
@@ -572,6 +582,7 @@ export class ProfileService {
 
     // Step 2: SAFE TYPEORM UPSERT (NO RAW SQL, NO any)
     const draft = this.profileDraftRepo.create({
+      ...(existingDraft ? { id: existingDraft.id } : {}),
       profileId: profile.id,
       bio: dto.bio ?? null,
       photoUrl: dto.photoUrl ?? null,

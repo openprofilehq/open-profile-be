@@ -38,6 +38,10 @@ import {
   ProfileContentDto,
   ProfileContentResponse,
 } from './dto/profile-content.dto';
+import {
+  ProfileResponseDto,
+  DashboardProfileResponseDto,
+} from './dto/profile-response.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -48,7 +52,11 @@ export class ProfileController {
   @HttpCode(HttpStatus.CREATED)
   @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Complete onboarding with profile details' })
-  @ApiResponse({ status: 201, description: 'Profile created successfully' })
+  @ApiResponse({
+    status: 201,
+    type: ProfileResponseDto,
+    description: 'Profile created successfully',
+  })
   @ApiResponse({
     status: 409,
     description: 'User already has a profile or username is taken',
@@ -155,7 +163,11 @@ export class ProfileController {
   @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Update profile fields for the authenticated user' })
   @ApiParam({ name: 'username', description: 'The profile username' })
-  @ApiResponse({ status: 200, description: 'Profile updated successfully' })
+  @ApiResponse({
+    status: 200,
+    type: ProfileResponseDto,
+    description: 'Profile updated successfully',
+  })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({
     status: 403,
@@ -177,7 +189,11 @@ export class ProfileController {
   @ApiOperation({
     summary: 'Get full current profile data for the authenticated user',
   })
-  @ApiResponse({ status: 200, description: 'Profile returned successfully' })
+  @ApiResponse({
+    status: 200,
+    type: DashboardProfileResponseDto,
+    description: 'Profile returned successfully',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 404,
