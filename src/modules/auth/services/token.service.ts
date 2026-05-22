@@ -59,6 +59,7 @@ export class TokenService {
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
     const record = this.refreshTokenRepo.create({
       userId,
+      tokenId: rawToken,
       tokenHash,
       expiresAt,
     });
@@ -67,17 +68,27 @@ export class TokenService {
 
   // ─── Token Rotation ──────────────────────────────────────────────────────────
 
-  async rotateTokens(
-    rawRefreshToken: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
-    const hashedToken = await argon2.hash(rawRefreshToken);
-
+  async rotateTokens(rawRefreshToken: string) {
+    // lookup by tokenId instead of re-hashing
     const matchedRecord = await this.refreshTokenRepo.findOne({
-      where: { tokenHash: hashedToken },
+      where: { tokenId: rawRefreshToken },
       relations: ['user'],
     });
 
     if (!matchedRecord) {
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.',
+      });
+    }
+
+    // verify the hash matches — confirms token hasn't been tampered with
+    const isValid = await argon2.verify(
+      matchedRecord.tokenHash,
+      rawRefreshToken,
+    );
+    if (!isValid) {
+      await this.refreshTokenRepo.delete({ id: matchedRecord.id });
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
@@ -95,7 +106,6 @@ export class TokenService {
     const deleteResult = await this.refreshTokenRepo.delete({
       id: matchedRecord.id,
     });
-
     if (deleteResult.affected === 0) {
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
@@ -130,19 +140,24 @@ export class TokenService {
     tokens: { accessToken: string; refreshToken: string },
   ): void {
     const isProd = env.NODE_ENV === 'production';
+    const isStaging = env.NODE_ENV === 'staging';
+    const isDev = env.NODE_ENV === 'development';
+
+    const secure = isProd || isStaging;
+    const sameSite = isDev ? 'lax' : 'strict';
 
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
-      sameSite: isProd ? 'strict' : 'none',
+      secure,
+      sameSite,
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
 
     res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
-      sameSite: isProd ? 'strict' : 'none',
+      secure,
+      sameSite,
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
       path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
@@ -163,11 +178,10 @@ export class TokenService {
       return;
     }
 
-    const hashedToken = await argon2.hash(rawRefreshToken);
-
+    // removed argon2.hash — lookup by tokenId directly
     await this.refreshTokenRepo.delete({
       ...(userId ? { userId } : {}),
-      tokenHash: hashedToken,
+      tokenId: rawRefreshToken, // ← was: tokenHash: hashedToken
     });
   }
 
