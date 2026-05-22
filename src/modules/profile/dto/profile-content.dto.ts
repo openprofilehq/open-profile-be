@@ -60,6 +60,30 @@ export class CtaDto {
   @IsOptional()
   @IsUrl()
   url: string | null;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  subtitle?: string;
+
+  @IsOptional()
+  @IsString()
+  layout?: string;
+
+  @IsOptional()
+  @IsString()
+  iconId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  iconSrc?: string | null;
+
+  @IsOptional()
+  @IsString()
+  iconLabel?: string | null;
 }
 
 export class ProfileContentDto {
