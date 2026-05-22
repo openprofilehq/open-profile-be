@@ -60,6 +60,36 @@ export class CtaDto {
   @IsOptional()
   @IsUrl()
   url: string | null;
+
+  @ApiProperty({ example: "Let's build something", required: false })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiProperty({ example: 'Open to new opportunities', required: false })
+  @IsOptional()
+  @IsString()
+  subtitle?: string;
+
+  @ApiProperty({ example: '1', required: false })
+  @IsOptional()
+  @IsString()
+  layout?: string;
+
+  @ApiProperty({ example: 'chat', required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  iconId?: string | null;
+
+  @ApiProperty({ example: '/profilebuilder_home/icons/chat.svg', required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  iconSrc?: string | null;
+
+  @ApiProperty({ example: 'Chat', required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  iconLabel?: string | null;
 }
 
 export class ProfileContentDto {
