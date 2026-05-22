@@ -9,6 +9,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ProfileContentDto } from './profile-content.dto';
+import { ThemeSettings } from './theme-settings.dto';
 
 export class UpsertDraftDto {
   @ApiPropertyOptional({
@@ -41,4 +42,13 @@ export class UpsertDraftDto {
   @ValidateNested()
   @Type(() => ProfileContentDto)
   content?: ProfileContentDto;
+
+  @ApiPropertyOptional({
+    description: 'Theme settings for the profile.',
+    type: () => ThemeSettings,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ThemeSettings)
+  themeSettings?: ThemeSettings;
 }

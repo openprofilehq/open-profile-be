@@ -148,6 +148,7 @@ describe('ProfileController (integration)', () => {
         bio: 'Updated bio',
         photoUrl: null,
         content: null,
+        themeSettings: null,
         source: 'draft',
         updatedAt: NOW,
       });
@@ -225,6 +226,7 @@ describe('ProfileController (integration)', () => {
         bio: 'My bio',
         photoUrl: null,
         content: null,
+        themeSettings: null,
         source: 'published',
         updatedAt: NOW,
       });
