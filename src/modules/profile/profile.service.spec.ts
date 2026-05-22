@@ -77,6 +77,7 @@ const mockDraft = {
   bio: 'Draft bio',
   photoUrl: null,
   content: null,
+  themeSettings: null,
   createdAt: NOW,
   updatedAt: NOW,
   deletedAt: null,
