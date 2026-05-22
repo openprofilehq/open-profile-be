@@ -24,7 +24,7 @@ export class RefreshToken {
 
   @Index()
   @Column({ type: 'varchar', length: 36, name: 'token_id', unique: true })
-  tokenId: string;
+  tokenId: string; // ← add this
 
   @Column({ type: 'varchar', length: 500, name: 'token_hash' })
   tokenHash: string;

@@ -1,6 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import type { StringValue } from 'ms';
@@ -14,10 +13,10 @@ import { JwtPayload } from '../strategies/jwt.strategy';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
-const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
-const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
-const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60; // 3 minutes
+const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
+const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60;
 
 @Injectable()
 export class TokenService {
@@ -47,20 +46,16 @@ export class TokenService {
   // ─── Refresh Token ───────────────────────────────────────────────────────────
 
   async generateRefreshToken(userId: string): Promise<string> {
-    const { record, rawToken } = this.createRefreshTokenRecord(userId);
+    const { record, rawToken } = await this.createRefreshTokenRecord(userId);
     await this.refreshTokenRepo.save(record);
     return rawToken;
   }
 
-  private createRefreshTokenRecord(userId: string): {
-    record: RefreshToken;
-    rawToken: string;
-  } {
+  private async createRefreshTokenRecord(
+    userId: string,
+  ): Promise<{ record: RefreshToken; rawToken: string }> {
     const rawToken = uuidv4();
-    const tokenHash = crypto
-      .createHash('sha256')
-      .update(rawToken)
-      .digest('hex');
+    const tokenHash = await argon2.hash(rawToken);
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
     const record = this.refreshTokenRepo.create({
       userId,
@@ -73,8 +68,9 @@ export class TokenService {
 
   // ─── Token Rotation ──────────────────────────────────────────────────────────
 
-  async rotateTokens(rawRefreshToken: string) {
-    // lookup by tokenId instead of re-hashing
+  async rotateTokens(
+    rawRefreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const matchedRecord = await this.refreshTokenRepo.findOne({
       where: { tokenId: rawRefreshToken },
       relations: ['user'],
@@ -87,7 +83,6 @@ export class TokenService {
       });
     }
 
-    // verify the hash matches — confirms token hasn't been tampered with
     const isValid = await argon2.verify(
       matchedRecord.tokenHash,
       rawRefreshToken,
@@ -120,7 +115,7 @@ export class TokenService {
 
     const user = matchedRecord.user;
     const { record: newRecord, rawToken: newRawRefreshToken } =
-      this.createRefreshTokenRecord(user.id);
+      await this.createRefreshTokenRecord(user.id);
     await this.refreshTokenRepo.save(newRecord);
     const accessToken = await this.generateAccessToken(user);
 
@@ -145,30 +140,59 @@ export class TokenService {
     tokens: { accessToken: string; refreshToken: string },
   ): void {
     const isProd = env.NODE_ENV === 'production';
+    const isStaging = env.NODE_ENV === 'staging';
+    const isDev = env.NODE_ENV === 'development';
+
+    const secure = isProd || isStaging;
+    const sameSite = isDev ? 'lax' : 'strict';
 
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
-      sameSite: isProd ? 'strict' : 'none',
+      secure,
+      sameSite,
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
 
     res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
-      sameSite: isProd ? 'strict' : 'none',
+      secure,
+      sameSite,
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
       path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
   }
+
   clearTokenCookies(res: Response): void {
-    res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
-    res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
+    const isProd = env.NODE_ENV === 'production';
+    const isStaging = env.NODE_ENV === 'staging';
+    const isDev = env.NODE_ENV === 'development';
+
+    const secure = isProd || isStaging;
+    const sameSite = isDev ? 'lax' : 'strict';
+
+    res.cookie(ACCESS_TOKEN_COOKIE, '', {
+      httpOnly: true,
+      secure,
+      sameSite,
+      maxAge: 0,
+      path: '/',
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+    });
+
+    res.cookie(REFRESH_TOKEN_COOKIE, '', {
+      httpOnly: true,
+      secure,
+      sameSite,
+      maxAge: 0,
+      path: '/',
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+    });
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
+
   async invalidateRefreshToken(
     userId: string | null,
     rawRefreshToken: string,
@@ -178,10 +202,9 @@ export class TokenService {
       return;
     }
 
-    // removed argon2.hash — lookup by tokenId directly
     await this.refreshTokenRepo.delete({
       ...(userId ? { userId } : {}),
-      tokenId: rawRefreshToken, // ← was: tokenHash: hashedToken
+      tokenId: rawRefreshToken,
     });
   }
 
@@ -191,14 +214,13 @@ export class TokenService {
       return;
     }
 
-    const deleteResult = await this.refreshTokenRepo.delete({
-      userId,
-    });
+    const deleteResult = await this.refreshTokenRepo.delete({ userId });
 
     this.logger.log(
       `All refresh tokens invalidated for userId=${userId}, count=${deleteResult.affected ?? 0}`,
     );
   }
+
   // ─── Verify ──────────────────────────────────────────────────────────────────
 
   async verifyAccessToken(
