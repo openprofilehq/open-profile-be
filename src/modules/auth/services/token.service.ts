@@ -145,24 +145,19 @@ export class TokenService {
     tokens: { accessToken: string; refreshToken: string },
   ): void {
     const isProd = env.NODE_ENV === 'production';
-    const isStaging = env.NODE_ENV === 'staging';
-    const isDev = env.NODE_ENV === 'development';
-
-    const secure = isProd || isStaging;
-    const sameSite = isDev ? 'lax' : 'strict';
 
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
-      secure,
-      sameSite,
+      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
+      sameSite: isProd ? 'strict' : 'none',
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
 
     res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
-      secure,
-      sameSite,
+      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
+      sameSite: isProd ? 'strict' : 'none',
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
       path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
