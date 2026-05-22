@@ -239,13 +239,31 @@ export class ProfileService {
   }
 
   private serialize(profile: Profile): PublicProfileResponseDto {
+    const content = profile.content ?? {
+      sectionOrder: ['bio', 'links', 'projects', 'cta'],
+      bio: { visible: true, content: profile.bio ?? '' },
+      links: { visible: true, sectionTitle: 'Links', items: [] },
+      projects: { visible: true, sectionTitle: 'Projects', items: [] },
+      cta: {
+        visible: true,
+        label: profile.ctaLabel ?? '',
+        url: profile.ctaUrl ?? null,
+        title: "Let's build something",
+        subtitle: '',
+        layout: '1',
+        iconId: null,
+        iconSrc: null,
+        iconLabel: null,
+      },
+    };
+
     return {
       username: profile.username,
       fullName: profile.fullName ?? null,
       photoUrl: profile.photoUrl,
       templateType: profile.templateType,
       themeSettings: profile.themeSettings,
-      content: profile.content ?? null,
+      content,
     };
   }
   private computeEtag(content: string): string {
