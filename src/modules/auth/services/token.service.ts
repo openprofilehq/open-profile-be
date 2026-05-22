@@ -1,6 +1,6 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type { StringValue } from 'ms';
 import type { Response } from 'express';
@@ -46,16 +46,20 @@ export class TokenService {
   // ─── Refresh Token ───────────────────────────────────────────────────────────
 
   async generateRefreshToken(userId: string): Promise<string> {
-    const { record, rawToken } = await this.createRefreshTokenRecord(userId);
+    const { record, rawToken } = this.createRefreshTokenRecord(userId);
     await this.refreshTokenRepo.save(record);
     return rawToken;
   }
 
-  private async createRefreshTokenRecord(
-    userId: string,
-  ): Promise<{ record: RefreshToken; rawToken: string }> {
+  private createRefreshTokenRecord(userId: string): {
+    record: RefreshToken;
+    rawToken: string;
+  } {
     const rawToken = uuidv4();
-    const tokenHash = await argon2.hash(rawToken);
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
     const record = this.refreshTokenRepo.create({
       userId,
@@ -70,7 +74,10 @@ export class TokenService {
   async rotateTokens(
     rawRefreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const hashedToken = await argon2.hash(rawRefreshToken);
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(rawRefreshToken)
+      .digest('hex');
 
     const matchedRecord = await this.refreshTokenRepo.findOne({
       where: { tokenHash: hashedToken },
@@ -105,7 +112,7 @@ export class TokenService {
 
     const user = matchedRecord.user;
     const { record: newRecord, rawToken: newRawRefreshToken } =
-      await this.createRefreshTokenRecord(user.id);
+      this.createRefreshTokenRecord(user.id);
     await this.refreshTokenRepo.save(newRecord);
     const accessToken = await this.generateAccessToken(user);
 
@@ -163,7 +170,10 @@ export class TokenService {
       return;
     }
 
-    const hashedToken = await argon2.hash(rawRefreshToken);
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(rawRefreshToken)
+      .digest('hex');
 
     await this.refreshTokenRepo.delete({
       ...(userId ? { userId } : {}),
