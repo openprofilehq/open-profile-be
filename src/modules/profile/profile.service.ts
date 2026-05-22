@@ -459,6 +459,7 @@ export class ProfileService {
         photoUrl: draft.photoUrl ?? profile.photoUrl,
         content: draft.content ?? profile.content,
         fullName: draft.fullName ?? profile.fullName,
+        themeSettings: draft.themeSettings ?? profile.themeSettings,
         isPublished: true,
         updatedAt: new Date(),
       });
@@ -506,6 +507,7 @@ export class ProfileService {
         bio: draft.bio ?? profile.bio ?? null,
         photoUrl: draft.photoUrl ?? profile.photoUrl ?? null,
         content: draft.content ?? profile.content ?? null,
+        themeSettings: draft.themeSettings ?? profile.themeSettings ?? null,
         source: 'draft',
         updatedAt: draft.updatedAt,
       };
@@ -517,6 +519,7 @@ export class ProfileService {
         bio: profile.bio,
         photoUrl: profile.photoUrl,
         content: profile.content,
+        themeSettings: profile.themeSettings,
         source: 'published',
         updatedAt: profile.updatedAt,
       };
@@ -537,6 +540,7 @@ export class ProfileService {
           url: profile.ctaUrl ?? null,
         },
       },
+      themeSettings: profile.themeSettings,
       source: 'published',
       updatedAt: profile.updatedAt,
     };
@@ -597,6 +601,10 @@ export class ProfileService {
           dto.content !== undefined
             ? dto.content
             : (existingDraft?.content ?? null),
+        themeSettings:
+          dto.themeSettings !== undefined
+            ? dto.themeSettings
+            : (existingDraft?.themeSettings ?? null),
       });
 
       return draftRepo.save(draft);
@@ -607,6 +615,7 @@ export class ProfileService {
       bio: saved.bio,
       photoUrl: saved.photoUrl,
       content: saved.content,
+      themeSettings: saved.themeSettings,
       source: 'draft',
       updatedAt: saved.updatedAt,
     };

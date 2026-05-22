@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ProfileContentDto } from './profile-content.dto';
+import { ThemeSettings } from './theme-settings.dto';
 
 export class ProfileResponseDto {
   @ApiProperty({ example: '8b59d8f1-45bb-4bc9-84e0-6d5dbdc17c4a' })
@@ -26,8 +27,8 @@ export class ProfileResponseDto {
   @ApiPropertyOptional({ example: 'developer', nullable: true })
   templateType: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  themeSettings: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: () => ThemeSettings, nullable: true })
+  themeSettings: ThemeSettings | null;
 
   @ApiPropertyOptional({ example: 'Hire Me', nullable: true })
   ctaLabel: string | null;
@@ -98,8 +99,8 @@ export class PublicProfileResponseDto {
   @ApiPropertyOptional({ example: 'developer', nullable: true })
   templateType: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  themeSettings: Record<string, unknown> | null;
+  @ApiPropertyOptional({ type: () => ThemeSettings, nullable: true })
+  themeSettings: ThemeSettings | null;
 
   @ApiPropertyOptional({ type: () => ProfileContentDto, nullable: true })
   content: ProfileContentDto | null;

@@ -13,6 +13,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { ProfileComponent } from './profile-component.entity';
 import { ProfileContentDto } from '../dto/profile-content.dto';
+import { ThemeSettings } from '../dto/theme-settings.dto';
 
 @Entity('profiles')
 export class Profile {
@@ -43,7 +44,7 @@ export class Profile {
   templateType: string | null;
 
   @Column({ name: 'theme_settings', nullable: true, type: 'jsonb' })
-  themeSettings: Record<string, unknown> | null;
+  themeSettings: ThemeSettings | null;
 
   // Persisted editable canvas content document.
 

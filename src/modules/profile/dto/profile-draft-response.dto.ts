@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ProfileContentDto } from './profile-content.dto';
+import { ThemeSettings } from './theme-settings.dto';
 
 export class ProfileDraftResponseDto {
   @ApiProperty({ example: '8b59d8f1-45bb-4bc9-84e0-6d5dbdc17c4a' })
@@ -19,6 +20,9 @@ export class ProfileDraftResponseDto {
 
   @ApiPropertyOptional({ type: () => ProfileContentDto, nullable: true })
   content: ProfileContentDto | null;
+
+  @ApiPropertyOptional({ type: () => ThemeSettings, nullable: true })
+  themeSettings: ThemeSettings | null;
 
   @ApiProperty({
     enum: ['draft', 'published'],
