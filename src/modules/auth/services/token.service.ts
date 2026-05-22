@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
+import * as argon2 from 'argon2';
 import { v4 as uuidv4 } from 'uuid';
 import type { StringValue } from 'ms';
 import type { Response } from 'express';
