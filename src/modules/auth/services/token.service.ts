@@ -155,8 +155,6 @@ export class TokenService {
       path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
-  }
-
   clearTokenCookies(res: Response): void {
     const isProd = env.NODE_ENV === 'production';
 
