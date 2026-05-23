@@ -13,10 +13,10 @@ import { JwtPayload } from '../strategies/jwt.strategy';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
-const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
-const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
-const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60; // 3 minutes
+const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
+const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60;
 
 @Injectable()
 export class TokenService {
@@ -155,23 +155,37 @@ export class TokenService {
       path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
+  }
+
   clearTokenCookies(res: Response): void {
     const isProd = env.NODE_ENV === 'production';
+    const isStaging = env.NODE_ENV === 'staging';
+    const isDev = env.NODE_ENV === 'development';
 
-    const cookieOptions = {
+    const secure = isProd || isStaging;
+    const sameSite = isDev ? 'lax' : 'strict';
+
+    res.cookie(ACCESS_TOKEN_COOKIE, '', {
       httpOnly: true,
-      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
-      sameSite: isProd ? ('strict' as const) : ('lax' as const),
+      secure,
+      sameSite,
+      maxAge: 0,
       path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
-    };
+    });
 
-    res.clearCookie(ACCESS_TOKEN_COOKIE, cookieOptions);
-
-    res.clearCookie(REFRESH_TOKEN_COOKIE, cookieOptions);
+    res.cookie(REFRESH_TOKEN_COOKIE, '', {
+      httpOnly: true,
+      secure,
+      sameSite,
+      maxAge: 0,
+      path: '/',
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+    });
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
+
   async invalidateRefreshToken(
     userId: string | null,
     rawRefreshToken: string,
@@ -180,7 +194,6 @@ export class TokenService {
       this.logger.warn('invalidateRefreshToken called with invalid parameters');
       return;
     }
-
     const tokenHash = crypto
       .createHash('sha256')
       .update(rawRefreshToken)
@@ -198,14 +211,13 @@ export class TokenService {
       return;
     }
 
-    const deleteResult = await this.refreshTokenRepo.delete({
-      userId,
-    });
+    const deleteResult = await this.refreshTokenRepo.delete({ userId });
 
     this.logger.log(
       `All refresh tokens invalidated for userId=${userId}, count=${deleteResult.affected ?? 0}`,
     );
   }
+
   // ─── Verify ──────────────────────────────────────────────────────────────────
 
   async verifyAccessToken(
