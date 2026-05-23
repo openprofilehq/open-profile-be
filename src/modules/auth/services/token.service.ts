@@ -13,10 +13,12 @@ import { JwtPayload } from '../strategies/jwt.strategy';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
-const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
-const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
-const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60; // 3 minutes
+
+const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
+const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60;
 
 @Injectable()
 export class TokenService {
@@ -37,6 +39,7 @@ export class TokenService {
       role: user.role ?? UserRole.USER,
       onboardingComplete: user.onboardingComplete,
     };
+
     return this.jwtService.signAsync(payload, {
       secret: env.JWT_ACCESS_SECRET,
       expiresIn: env.JWT_ACCESS_EXPIRES_IN as StringValue,
@@ -51,29 +54,28 @@ export class TokenService {
     return rawToken;
   }
 
-  private createRefreshTokenRecord(userId: string): {
-    record: RefreshToken;
-    rawToken: string;
-  } {
+  private createRefreshTokenRecord(userId: string) {
     const rawToken = uuidv4();
+
     const tokenHash = crypto
       .createHash('sha256')
       .update(rawToken)
       .digest('hex');
+
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS);
+
     const record = this.refreshTokenRepo.create({
       userId,
       tokenHash,
       expiresAt,
     });
+
     return { record, rawToken };
   }
 
   // ─── Token Rotation ──────────────────────────────────────────────────────────
 
-  async rotateTokens(
-    rawRefreshToken: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  async rotateTokens(rawRefreshToken: string) {
     const hashedToken = crypto
       .createHash('sha256')
       .update(rawRefreshToken)
@@ -111,15 +113,21 @@ export class TokenService {
     }
 
     const user = matchedRecord.user;
+
     const { record: newRecord, rawToken: newRawRefreshToken } =
       this.createRefreshTokenRecord(user.id);
+
     await this.refreshTokenRepo.save(newRecord);
+
     const accessToken = await this.generateAccessToken(user);
 
-    return { accessToken, refreshToken: newRawRefreshToken };
+    return {
+      accessToken,
+      refreshToken: newRawRefreshToken,
+    };
   }
 
-  // ─── Silent Refresh Check ────────────────────────────────────────────────────
+  // ─── Silent Refresh ──────────────────────────────────────────────────────────
 
   getAccessTokenTTL(payload: JwtPayload & { exp?: number }): number {
     if (!payload.exp) return 0;
@@ -130,37 +138,51 @@ export class TokenService {
     return this.getAccessTokenTTL(payload) < SILENT_REFRESH_THRESHOLD_SECONDS;
   }
 
-  // ─── Cookies ─────────────────────────────────────────────────────────────────
+  // ─── Cookie Policy (FIXED CONSISTENCY) ──────────────────────────────────────
+
+  private getCookieOptions() {
+    const isProd = env.NODE_ENV === 'production';
+    const isStaging = env.NODE_ENV === 'staging';
+
+    const secure = isProd || isStaging;
+    const sameSite = isProd ? 'strict' : 'lax';
+
+    return {
+      secure,
+      sameSite,
+      path: '/',
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+    } as const;
+  }
 
   setTokenCookies(
     res: Response,
     tokens: { accessToken: string; refreshToken: string },
   ): void {
-    const isProd = env.NODE_ENV === 'production';
+    const base = this.getCookieOptions();
 
     res.cookie(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
-      sameSite: isProd ? 'strict' : 'none',
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
-      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+      ...base,
     });
 
     res.cookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
-      sameSite: isProd ? 'strict' : 'none',
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
-      path: '/',
-      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+      ...base,
     });
   }
+
   clearTokenCookies(res: Response): void {
-    res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
-    res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
+    const base = this.getCookieOptions();
+
+    res.clearCookie(ACCESS_TOKEN_COOKIE, base);
+    res.clearCookie(REFRESH_TOKEN_COOKIE, base);
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
+
   async invalidateRefreshToken(
     userId: string | null,
     rawRefreshToken: string,
@@ -170,14 +192,14 @@ export class TokenService {
       return;
     }
 
-    const hashedToken = crypto
+    const tokenHash = crypto
       .createHash('sha256')
       .update(rawRefreshToken)
       .digest('hex');
 
     await this.refreshTokenRepo.delete({
       ...(userId ? { userId } : {}),
-      tokenHash: hashedToken,
+      tokenHash,
     });
   }
 
@@ -187,15 +209,14 @@ export class TokenService {
       return;
     }
 
-    const deleteResult = await this.refreshTokenRepo.delete({
-      userId,
-    });
+    const deleteResult = await this.refreshTokenRepo.delete({ userId });
 
     this.logger.log(
       `All refresh tokens invalidated for userId=${userId}, count=${deleteResult.affected ?? 0}`,
     );
   }
-  // ─── Verify ──────────────────────────────────────────────────────────────────
+
+  // ─── Verification ───────────────────────────────────────────────────────────
 
   async verifyAccessToken(
     token: string,

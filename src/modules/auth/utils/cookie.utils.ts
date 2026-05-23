@@ -6,29 +6,28 @@ export interface CookieOptions {
   refreshToken: string;
 }
 
-/**
- * Set secure HTTP-only cookies for authentication tokens
- * Implements: httpOnly, Secure, SameSite=Strict
- * @param res Express response object
- * @param tokens Object containing accessToken and refreshToken
- */
 export function setAuthCookies(res: Response, tokens: CookieOptions): void {
-  const isProduction = env.NODE_ENV === 'production';
+  const isProd = env.NODE_ENV === 'production';
+  const isStaging = env.NODE_ENV === 'staging';
+
+  const secure = isProd || isStaging;
+  const sameSite = isProd ? 'strict' : 'lax';
+
+  const baseOptions = {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: '/',
+    domain: isProd ? env.COOKIE_DOMAIN : undefined,
+  } as const;
 
   res.cookie('accessToken', tokens.accessToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
+    ...baseOptions,
     maxAge: 15 * 60 * 1000,
-    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
   });
 
   res.cookie('refreshToken', tokens.refreshToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    path: '/api/v1/auth/refresh-token',
-    domain: isProduction ? env.COOKIE_DOMAIN : undefined,
+    ...baseOptions,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 }
