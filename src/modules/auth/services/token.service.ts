@@ -143,6 +143,7 @@ export class TokenService {
       secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
       sameSite: isProd ? 'strict' : 'none',
       maxAge: ACCESS_TOKEN_MAX_AGE_MS,
+      path: '/',
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
 
@@ -155,9 +156,21 @@ export class TokenService {
       domain: isProd ? env.COOKIE_DOMAIN : undefined,
     });
   }
+
   clearTokenCookies(res: Response): void {
-    res.cookie(ACCESS_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
-    res.cookie(REFRESH_TOKEN_COOKIE, '', { maxAge: 0, httpOnly: true });
+    const isProd = env.NODE_ENV === 'production';
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'staging' || env.NODE_ENV === 'production',
+      sameSite: isProd ? ('strict' as const) : ('lax' as const),
+      path: '/',
+      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+    };
+
+    res.clearCookie(ACCESS_TOKEN_COOKIE, cookieOptions);
+
+    res.clearCookie(REFRESH_TOKEN_COOKIE, cookieOptions);
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────
@@ -170,14 +183,14 @@ export class TokenService {
       return;
     }
 
-    const hashedToken = crypto
+    const tokenHash = crypto
       .createHash('sha256')
       .update(rawRefreshToken)
       .digest('hex');
 
     await this.refreshTokenRepo.delete({
       ...(userId ? { userId } : {}),
-      tokenHash: hashedToken,
+      tokenHash,
     });
   }
 

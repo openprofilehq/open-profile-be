@@ -28,7 +28,7 @@ export function setAuthCookies(res: Response, tokens: CookieOptions): void {
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    path: '/api/v1/auth/refresh-token',
+    path: '/',
     domain: isProduction ? env.COOKIE_DOMAIN : undefined,
   });
 }
