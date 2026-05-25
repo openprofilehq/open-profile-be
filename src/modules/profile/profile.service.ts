@@ -691,7 +691,18 @@ export class ProfileService {
       );
     }
 
-    profile.appearance = dto;
+    const existing = profile.appearance ?? {};
+    profile.appearance = {
+      ...existing,
+      ...(dto.template !== undefined && { template: dto.template }),
+      ...(dto.accentColour !== undefined && {
+        accentColour: dto.accentColour,
+      }),
+      ...(dto.font !== undefined && { font: dto.font }),
+      ...(dto.cornerStyle !== undefined && { cornerStyle: dto.cornerStyle }),
+      ...(dto.spacing !== undefined && { spacing: dto.spacing }),
+      ...(dto.theme !== undefined && { theme: dto.theme }),
+    };
 
     profile.hasUnpublishedChanges = true;
 

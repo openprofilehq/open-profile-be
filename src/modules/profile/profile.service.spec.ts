@@ -873,5 +873,38 @@ describe('ProfileService', () => {
         service.updateAppearance(USER_ID, appearanceDto),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('merges partial payload with existing appearance fields', async () => {
+      const existingAppearance = {
+        template: 'portfolio' as const,
+        accentColour: '#ff0000',
+        font: 'poppins' as const,
+        cornerStyle: 'sharp' as const,
+        spacing: 8,
+        theme: 'light' as const,
+      };
+
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        appearance: existingAppearance,
+      });
+      profileRepo.save.mockImplementation((p: Profile) => Promise.resolve(p));
+
+      const partial = { theme: 'dark' as const };
+      await service.updateAppearance(USER_ID, partial);
+
+      expect(profileRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearance: expect.objectContaining({
+            template: 'portfolio',
+            accentColour: '#ff0000',
+            font: 'poppins',
+            cornerStyle: 'sharp',
+            spacing: 8,
+            theme: 'dark',
+          }),
+        }),
+      );
+    });
   });
 });
