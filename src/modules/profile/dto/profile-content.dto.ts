@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsEnum,
   IsBoolean,
   IsString,
   IsUrl,
@@ -8,6 +9,13 @@ import {
   IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export enum SectionType {
+  BIO = 'bio',
+  LINKS = 'links',
+  PROJECTS = 'projects',
+  CTA = 'cta',
+}
 
 export class BioDto {
   @ApiProperty({ example: true })
@@ -19,6 +27,33 @@ export class BioDto {
   content: string;
 }
 
+// Links
+export class LinkItemDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  @IsString()
+  id: string;
+
+  @ApiProperty({ example: 'My GitHub' })
+  @IsString()
+  label: string;
+
+  @ApiProperty({ example: 'https://github.com/username' })
+  @IsUrl(
+    { require_protocol: true },
+    { message: 'url must be a valid URL including http:// or https://' },
+  )
+  url: string;
+
+  @ApiProperty({ example: 'github', required: false })
+  @IsOptional()
+  @IsString()
+  platform?: string;
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  visible: boolean;
+}
+
 export class LinksDto {
   @ApiProperty({ example: true })
   @IsBoolean()
@@ -28,9 +63,38 @@ export class LinksDto {
   @IsString()
   sectionTitle: string;
 
-  @ApiProperty({ type: [Object] })
+  @ApiProperty({ type: [LinkItemDto] })
   @IsArray()
-  items: Record<string, unknown>[];
+  @ValidateNested({ each: true })
+  @Type(() => LinkItemDto)
+  items: LinkItemDto[];
+}
+
+export class ProjectItemDto {
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
+  @IsString()
+  id: string;
+
+  @ApiProperty({ example: 'My Portfolio App' })
+  @IsString()
+  title: string;
+
+  @ApiProperty({ example: 'A full-stack project using NestJS' })
+  @IsString()
+  description: string;
+
+  @ApiProperty({ example: 'https://github.com/user/repo' })
+  @IsUrl()
+  repoUrl: string;
+
+  @ApiProperty({ example: 'https://live-site.com', required: false })
+  @IsOptional()
+  @IsUrl()
+  liveUrl?: string;
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  visible: boolean;
 }
 
 export class ProjectsDto {
@@ -42,9 +106,11 @@ export class ProjectsDto {
   @IsString()
   sectionTitle: string;
 
-  @ApiProperty({ type: [Object] })
+  @ApiProperty({ type: [ProjectItemDto] })
   @IsArray()
-  items: Record<string, unknown>[];
+  @ValidateNested({ each: true })
+  @Type(() => ProjectItemDto)
+  items: ProjectItemDto[];
 }
 
 export class CtaDto {
@@ -56,10 +122,18 @@ export class CtaDto {
   @IsString()
   label: string;
 
-  @ApiProperty({ example: 'https://example.com' })
+  @ApiProperty({
+    example: 'https://example.com',
+    required: false,
+    nullable: true,
+  })
   @IsOptional()
-  @IsUrl()
-  url: string | null;
+  @IsString()
+  @IsUrl(
+    { require_protocol: true },
+    { message: 'url must be a valid URL including http:// or https://' },
+  )
+  url?: string | null;
 
   @ApiProperty({ example: "Let's build something", required: false })
   @IsOptional()
@@ -81,7 +155,11 @@ export class CtaDto {
   @IsString()
   iconId?: string | null;
 
-  @ApiProperty({ example: '/profilebuilder_home/icons/chat.svg', required: false, nullable: true })
+  @ApiProperty({
+    example: '/profilebuilder_home/icons/chat.svg',
+    required: false,
+    nullable: true,
+  })
   @IsOptional()
   @IsString()
   iconSrc?: string | null;
@@ -95,9 +173,12 @@ export class CtaDto {
 export class ProfileContentDto {
   @ApiProperty({
     example: ['bio', 'links', 'projects', 'cta'],
+    enum: SectionType,
+    isArray: true,
   })
   @IsArray()
-  sectionOrder: string[];
+  @IsEnum(SectionType, { each: true })
+  sectionOrder: SectionType[];
 
   @ApiProperty()
   @ValidateNested()
