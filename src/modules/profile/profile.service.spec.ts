@@ -444,10 +444,14 @@ describe('ProfileService', () => {
 
       const result = await service.getAppearance(USER_ID);
 
-      expect(profileRepo.findOne).toHaveBeenCalledWith({
-        where: { userId: USER_ID },
-        select: ['appearance'],
-      });
+      expect(profileRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: USER_ID,
+            deletedAt: IsNull(),
+          }),
+        }),
+      );
 
       expect(result.status).toBe('success');
       expect(result.appearance).toEqual({

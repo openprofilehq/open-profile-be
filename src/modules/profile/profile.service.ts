@@ -736,7 +736,10 @@ export class ProfileService {
 
     return {
       status: 'success',
-      appearance: profile.appearance ?? DEFAULT_APPEARANCE,
+      appearance: {
+        ...DEFAULT_APPEARANCE,
+        ...(profile.appearance ?? {}),
+      },
     };
   }
 }
