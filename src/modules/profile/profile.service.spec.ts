@@ -831,4 +831,80 @@ describe('ProfileService', () => {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // updateAppearance
+  // ---------------------------------------------------------------------------
+  describe('updateAppearance', () => {
+    const appearanceDto = {
+      template: 'professional' as const,
+      accentColour: '#6366f1',
+      font: 'inter' as const,
+      cornerStyle: 'rounded' as const,
+      spacing: 16,
+      theme: 'dark' as const,
+    };
+
+    it('saves appearance, sets hasUnpublishedChanges, and invalidates cache', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+      profileRepo.save.mockResolvedValue({
+        ...mockProfile,
+        appearance: appearanceDto,
+        hasUnpublishedChanges: true,
+      });
+
+      const result = await service.updateAppearance(USER_ID, appearanceDto);
+
+      expect(result.status).toBe('success');
+      expect(result.appearance).toEqual(appearanceDto);
+      expect(profileRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearance: appearanceDto,
+          hasUnpublishedChanges: true,
+        }),
+      );
+      expect(redisService.del).toHaveBeenCalledWith(`profile:${USERNAME}`);
+    });
+
+    it('throws NotFoundException when profile does not exist', async () => {
+      profileRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateAppearance(USER_ID, appearanceDto),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('merges partial payload with existing appearance fields', async () => {
+      const existingAppearance = {
+        template: 'portfolio' as const,
+        accentColour: '#ff0000',
+        font: 'poppins' as const,
+        cornerStyle: 'sharp' as const,
+        spacing: 8,
+        theme: 'light' as const,
+      };
+
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        appearance: existingAppearance,
+      });
+      profileRepo.save.mockImplementation((p: Profile) => Promise.resolve(p));
+
+      const partial = { theme: 'dark' as const };
+      await service.updateAppearance(USER_ID, partial);
+
+      expect(profileRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          appearance: expect.objectContaining({
+            template: 'portfolio',
+            accentColour: '#ff0000',
+            font: 'poppins',
+            cornerStyle: 'sharp',
+            spacing: 8,
+            theme: 'dark',
+          }),
+        }),
+      );
+    });
+  });
 });

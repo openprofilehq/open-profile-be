@@ -48,6 +48,7 @@ describe('ProfileController (integration)', () => {
       getProfileContent: jest.fn(),
       upsertDraft: jest.fn(),
       getDraftState: jest.fn(),
+      updateAppearance: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -523,6 +524,152 @@ describe('ProfileController (integration)', () => {
       await request(app.getHttpServer())
         .put('/api/v1/profiles/me/components/order')
         .send({ componentIds: ['not-a-uuid'] })
+        .expect(422);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // PATCH /api/v1/profiles/appearance
+  // -----------------------------------------------------------------------
+  describe('PATCH /api/v1/profiles/appearance', () => {
+    const fullPayload = {
+      template: 'professional',
+      accentColour: '#6366f1',
+      font: 'inter',
+      cornerStyle: 'rounded',
+      spacing: 16,
+      theme: 'dark',
+    };
+
+    it('returns 200 with saved appearance on valid full payload', async () => {
+      mockProfileService.updateAppearance.mockResolvedValue({
+        status: 'success',
+        appearance: fullPayload,
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send(fullPayload)
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.status).toBe('success');
+          expect(res.body.appearance).toEqual(fullPayload);
+        });
+    });
+
+    it('returns 200 with partial payload (single field)', async () => {
+      const partial = { theme: 'light' };
+      mockProfileService.updateAppearance.mockResolvedValue({
+        status: 'success',
+        appearance: partial,
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send(partial)
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.appearance).toEqual(partial);
+        });
+    });
+
+    it('returns 422 for invalid template', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ template: 'unknown' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain(
+            'Invalid template selection',
+          );
+        });
+    });
+
+    it('returns 422 for hex colour missing # prefix', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ accentColour: '6366f1' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain(
+            'Please provide a valid hex colour code',
+          );
+        });
+    });
+
+    it('returns 422 for short hex colour', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ accentColour: '#fff' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain(
+            'Please provide a valid hex colour code',
+          );
+        });
+    });
+
+    it('returns 422 for invalid font', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ font: 'comic-sans' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain('Invalid font selection');
+        });
+    });
+
+    it('returns 422 for invalid cornerStyle', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ cornerStyle: 'extreme' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain('Invalid corner style');
+        });
+    });
+
+    it('returns 422 for spacing below 0', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ spacing: -1 })
+        .expect(422);
+    });
+
+    it('returns 422 for spacing above 40', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ spacing: 41 })
+        .expect(422);
+    });
+
+    it('returns 422 for invalid theme', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ theme: 'neon' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain('Invalid theme');
+        });
+    });
+
+    it('returns 404 when profile not found', async () => {
+      mockProfileService.updateAppearance.mockRejectedValue(
+        new NotFoundException(
+          'Profile not found. Please complete onboarding first.',
+        ),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send(fullPayload)
+        .expect(404);
+    });
+
+    it('returns 422 for unknown fields (forbidNonWhitelisted)', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ unknownField: 'something' })
         .expect(422);
     });
   });
