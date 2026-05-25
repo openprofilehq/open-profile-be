@@ -148,6 +148,30 @@ export class ProfileController {
     return this.profileService.getProfileContent(userId);
   }
 
+  @Get('appearance')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Get appearance settings for the authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Appearance settings returned successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 404,
+    description: 'Profile not found',
+  })
+  async getAppearance(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ): Promise<{
+    status: string;
+    appearance: AppearanceSettingsDto;
+  }> {
+    return this.profileService.getAppearance(userId);
+  }
+
   @Patch('appearance')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')

@@ -417,6 +417,81 @@ describe('ProfileService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // getAppearance
+  // ---------------------------------------------------------------------------
+  describe('getAppearance', () => {
+    const defaultAppearance = {
+      template: 'professional',
+      accentColour: '#0EA5E9',
+      font: 'inter',
+      cornerStyle: 'rounded',
+      spacing: 20,
+      theme: 'light',
+    };
+
+    it('returns saved appearance when profile has appearance', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        appearance: {
+          template: 'creator',
+          accentColour: '#6366f1',
+          font: 'poppins',
+          cornerStyle: 'pill',
+          spacing: 16,
+          theme: 'dark',
+        },
+      });
+
+      const result = await service.getAppearance(USER_ID);
+
+      expect(profileRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: USER_ID,
+            deletedAt: IsNull(),
+          }),
+        }),
+      );
+
+      expect(result.status).toBe('success');
+      expect(result.appearance).toEqual({
+        template: 'creator',
+        accentColour: '#6366f1',
+        font: 'poppins',
+        cornerStyle: 'pill',
+        spacing: 16,
+        theme: 'dark',
+      });
+    });
+
+    it('returns default appearance when none exists', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        appearance: null,
+      });
+
+      const result = await service.getAppearance(USER_ID);
+
+      expect(result.appearance).toEqual(defaultAppearance);
+    });
+
+    it('returns default appearance when appearance is undefined', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const result = await service.getAppearance(USER_ID);
+
+      expect(result.appearance).toEqual(defaultAppearance);
+    });
+
+    it('throws NotFoundException when profile does not exist', async () => {
+      profileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getAppearance(USER_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+  // ---------------------------------------------------------------------------
   // getDashboardProfile
   // ---------------------------------------------------------------------------
   describe('getDashboardProfile', () => {
