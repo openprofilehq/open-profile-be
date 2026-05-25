@@ -29,6 +29,7 @@ import {
   PublicProfileResponseDto,
 } from './dto/profile-response.dto';
 import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
+import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 
 const CACHE_TTL_SECONDS = 60;
 const CACHE_404_TTL_SECONDS = 30;
@@ -713,6 +714,29 @@ export class ProfileService {
     return {
       status: 'success',
       appearance: dto,
+    };
+  }
+
+  async getAppearance(userId: string): Promise<{
+    status: string;
+    appearance: AppearanceSettingsDto;
+  }> {
+    const profile = await this.profileRepo.findOne({
+      where: {
+        userId,
+        deletedAt: IsNull(),
+      },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    return {
+      status: 'success',
+      appearance: profile.appearance ?? DEFAULT_APPEARANCE,
     };
   }
 }
