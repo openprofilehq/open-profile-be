@@ -28,6 +28,8 @@ import {
   DashboardProfileResponseDto,
   PublicProfileResponseDto,
 } from './dto/profile-response.dto';
+import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
+
 const CACHE_TTL_SECONDS = 60;
 const CACHE_404_TTL_SECONDS = 30;
 
@@ -263,12 +265,15 @@ export class ProfileService {
       photoUrl: profile.photoUrl,
       templateType: profile.templateType,
       themeSettings: profile.themeSettings,
+      appearance: profile.appearance,
       content,
     };
   }
+
   private computeEtag(content: string): string {
     return `"${crypto.createHash('md5').update(content).digest('hex')}"`;
   }
+
   /**
    * PATCH /profiles/me/components/:componentId
    *
@@ -478,6 +483,7 @@ export class ProfileService {
         content: draft.content ?? profile.content,
         fullName: draft.fullName ?? profile.fullName,
         themeSettings: draft.themeSettings ?? profile.themeSettings,
+        appearance: draft.appearance ?? profile.appearance,
         isPublished: true,
         updatedAt: new Date(),
       });
@@ -669,6 +675,33 @@ export class ProfileService {
       hasDraft: true,
       draftId: draft.id,
       updatedAt: draft.updatedAt,
+    };
+  }
+
+  async updateAppearance(
+    userId: string,
+    dto: AppearanceSettingsDto,
+  ): Promise<{ status: string; appearance: AppearanceSettingsDto }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    profile.appearance = dto;
+
+    profile.hasUnpublishedChanges = true;
+
+    const saved = await this.profileRepo.save(profile);
+
+    await this.invalidateCache(saved.username);
+
+    return {
+      status: 'success',
+      appearance: dto,
     };
   }
 }

@@ -39,6 +39,7 @@ import {
   DashboardProfileResponseDto,
 } from './dto/profile-response.dto';
 import { PublishProfileDto } from './dto/publish-profile.dto';
+import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -145,6 +146,26 @@ export class ProfileController {
     @currentUserDecorator.CurrentUser('sub') userId: string,
   ): Promise<ProfileDraftResponseDto> {
     return this.profileService.getProfileContent(userId);
+  }
+
+  @Patch('appearance')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Save appearance settings for the authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Appearance settings saved successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async updateAppearance(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: AppearanceSettingsDto,
+  ): Promise<{ status: string; appearance: AppearanceSettingsDto }> {
+    return this.profileService.updateAppearance(userId, dto);
   }
 
   @Post('publish')

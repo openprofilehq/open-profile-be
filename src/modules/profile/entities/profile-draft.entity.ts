@@ -11,6 +11,7 @@ import {
 import { Profile } from './profile.entity';
 import { ProfileContentDto } from '../dto/profile-content.dto';
 import { ThemeSettings } from '../dto/theme-settings.dto';
+import { AppearanceSettingsDto } from '../dto/appearance-settings.dto';
 
 @Entity('profile_drafts')
 export class ProfileDraft {
@@ -38,6 +39,9 @@ export class ProfileDraft {
 
   @Column({ type: 'jsonb', nullable: true })
   content: ProfileContentDto | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  appearance: AppearanceSettingsDto | null;
 
   @Column({ name: 'theme_settings', nullable: true, type: 'jsonb' })
   themeSettings: ThemeSettings | null;
