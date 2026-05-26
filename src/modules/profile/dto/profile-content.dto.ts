@@ -38,10 +38,7 @@ export class LinkItemDto {
   label: string;
 
   @ApiProperty({ example: 'https://github.com/username' })
-  @IsUrl(
-    { require_protocol: true },
-    { message: 'url must be a valid URL including http:// or https://' },
-  )
+  @IsString() // ← was @IsUrl(), removed
   url: string;
 
   @ApiProperty({ example: 'github', required: false })
@@ -53,7 +50,6 @@ export class LinkItemDto {
   @IsBoolean()
   visible: boolean;
 }
-
 export class LinksDto {
   @ApiProperty({ example: true })
   @IsBoolean()
@@ -113,27 +109,31 @@ export class ProjectsDto {
   items: ProjectItemDto[];
 }
 
+export enum CtaType {
+  LINK = 'link',
+  EMAIL = 'email',
+}
+
 export class CtaDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
+  @ApiProperty({ enum: CtaType, example: CtaType.EMAIL })
+  @IsEnum(CtaType)
+  type: CtaType;
 
   @ApiProperty({ example: 'Contact Me' })
   @IsString()
   label: string;
 
   @ApiProperty({
-    example: 'https://example.com',
+    example: 'https://example.com or hello@example.com',
     required: false,
     nullable: true,
   })
   @IsOptional()
   @IsString()
-  @IsUrl(
-    { require_protocol: true },
-    { message: 'url must be a valid URL including http:// or https://' },
-  )
-  url?: string | null;
+  value?: string | null;
 
   @ApiProperty({ example: "Let's build something", required: false })
   @IsOptional()
