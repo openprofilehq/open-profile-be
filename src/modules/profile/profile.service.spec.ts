@@ -2,6 +2,10 @@ jest.mock('../../config/env', () => ({
   env: {},
 }));
 
+jest.mock('../../common/utils/validate-url.utils', () => ({
+  validateUrl: jest.fn(),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ConflictException,
@@ -20,6 +24,8 @@ import { RedisService } from '../../common/redis/redis.service';
 import { UsernamesService } from '../usernames/usernames.service';
 import { ComponentSetMismatchException } from './exceptions/component-set-mismatch.exception';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import type { LinkItemDto } from './dto/profile-content.dto';
+import { SectionType } from './dto/profile-content.dto';
 
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000';
 const PROFILE_ID = '660e8400-e29b-41d4-a716-446655440001';
@@ -82,6 +88,27 @@ const mockDraft = {
   updatedAt: NOW,
   deletedAt: null,
 } as ProfileDraft;
+
+const mockLinkItem: LinkItemDto = {
+  id: 'link-001',
+  label: 'My GitHub',
+  url: 'https://github.com/username',
+  platform: 'github',
+  visible: true,
+};
+
+const mockDraftContent = {
+  sectionOrder: [
+    SectionType.BIO,
+    SectionType.LINKS,
+    SectionType.PROJECTS,
+    SectionType.CTA,
+  ],
+  bio: { visible: true, content: '' },
+  links: { visible: true, sectionTitle: 'Links', items: [mockLinkItem] },
+  projects: { visible: true, sectionTitle: 'Projects', items: [] },
+  cta: { visible: true, label: 'Contact Me', url: 'https://example.com' },
+};
 
 // Helper to build a chainable query-builder mock
 function mockQueryBuilder<T>(getManyResolve: T, getOneOrFailResolve?: unknown) {
@@ -379,8 +406,8 @@ describe('ProfileService', () => {
         },
         relations: ['user'],
       });
-      expect(redisService.set).toHaveBeenCalledTimes(2); // lock + cache
-      expect(redisService.del).toHaveBeenCalled(); // lock cleanup
+      expect(redisService.set).toHaveBeenCalledTimes(2);
+      expect(redisService.del).toHaveBeenCalled();
       expect(result.data.username).toBe(USERNAME);
       expect(result.fromCache).toBe(false);
       expect(result.etag).toBeTruthy();
@@ -404,7 +431,7 @@ describe('ProfileService', () => {
 
     it('does not release lock it did not acquire', async () => {
       redisService.get.mockResolvedValue(null);
-      redisService.set.mockResolvedValue(false); // lock not acquired
+      redisService.set.mockResolvedValue(false);
       profileRepo.findOne.mockResolvedValue({
         ...mockProfile,
         user: { id: USER_ID },
@@ -417,30 +444,105 @@ describe('ProfileService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // getAppearance
+  // ---------------------------------------------------------------------------
+  describe('getAppearance', () => {
+    const defaultAppearance = {
+      template: 'professional',
+      accentColour: '#0EA5E9',
+      font: 'inter',
+      cornerStyle: 'rounded',
+      spacing: 20,
+      theme: 'light',
+    };
+
+    it('returns saved appearance when profile has appearance', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        appearance: {
+          template: 'creator',
+          accentColour: '#6366f1',
+          font: 'poppins',
+          cornerStyle: 'pill',
+          spacing: 16,
+          theme: 'dark',
+        },
+      });
+
+      const result = await service.getAppearance(USER_ID);
+
+      expect(profileRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: USER_ID,
+            deletedAt: IsNull(),
+          }),
+        }),
+      );
+
+      expect(result.status).toBe('success');
+      expect(result.appearance).toEqual({
+        template: 'creator',
+        accentColour: '#6366f1',
+        font: 'poppins',
+        cornerStyle: 'pill',
+        spacing: 16,
+        theme: 'dark',
+      });
+    });
+
+    it('returns default appearance when none exists', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        appearance: null,
+      });
+
+      const result = await service.getAppearance(USER_ID);
+
+      expect(result.appearance).toEqual(defaultAppearance);
+    });
+
+    it('returns default appearance when appearance is undefined', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const result = await service.getAppearance(USER_ID);
+
+      expect(result.appearance).toEqual(defaultAppearance);
+    });
+
+    it('throws NotFoundException when profile does not exist', async () => {
+      profileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getAppearance(USER_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+  // ---------------------------------------------------------------------------
   // getDashboardProfile
   // ---------------------------------------------------------------------------
   describe('getDashboardProfile', () => {
-    it('returns profile with ordered components', async () => {
-      profileRepo.findOne.mockResolvedValue(mockProfile);
-      const components = [
-        { ...mockComponent, displayOrder: 0, sectionType: 'bio' },
-        {
-          ...mockComponent,
-          id: 'comp-2',
-          displayOrder: 1,
-          sectionType: 'links',
-          title: 'Links',
-          content: null,
-        },
-      ];
-      componentRepo.find.mockResolvedValue(components);
+    it('returns default content when neither draft nor published content exist', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        content: null,
+        bio: null,
+        ctaLabel: null,
+        ctaUrl: null,
+      });
+      draftRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.getDashboardProfile(USER_ID);
+      const result = await service.getProfileContent(USER_ID);
 
-      expect(result.id).toBe(PROFILE_ID);
-      expect(result.components).toHaveLength(2);
-      expect(result.components[0].sectionType).toBe('bio');
-      expect(result.components[1].displayOrder).toBe(1);
+      expect(result.source).toBe('published');
+      expect(result.content).toBeDefined();
+
+      // safer: avoids coupling test to enum string values
+      expect(result.content!.sectionOrder).toHaveLength(4);
+      expect(result.content!.bio.visible).toBe(true);
+      expect(result.content!.links.visible).toBe(true);
+      expect(result.content!.projects.visible).toBe(true);
+      expect(result.content!.cta.visible).toBe(true);
     });
 
     it('throws NotFoundException when profile does not exist', async () => {
@@ -513,7 +615,6 @@ describe('ProfileService', () => {
   // ---------------------------------------------------------------------------
   describe('reorderComponents', () => {
     const componentIds = [COMPONENT_ID];
-
     const currentComponents = [{ ...mockComponent, displayOrder: 0 }];
 
     it('reorders components and invalidates cache', async () => {
@@ -546,7 +647,7 @@ describe('ProfileService', () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
       const txComponentRepo = txManager.getRepository(ProfileComponent);
-      const qb = mockQueryBuilder([]); // no current components
+      const qb = mockQueryBuilder([]);
       txComponentRepo.createQueryBuilder.mockReturnValue(qb);
       txComponentRepo.find.mockResolvedValue([
         { id: COMPONENT_ID },
@@ -666,6 +767,59 @@ describe('ProfileService', () => {
         NotFoundException,
       );
     });
+
+    it('throws UnprocessableEntityException when a visible link is unreachable on publish', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const {
+        validateUrl: mockValidateUrl,
+      } = require('../../common/utils/validate-url.utils');
+      mockValidateUrl.mockResolvedValue({
+        valid: false,
+        finalUrl: null,
+        statusCode: null,
+        error: 'Domain not found',
+      });
+
+      const txDraftRepo = txManager.getRepository(ProfileDraft);
+      txDraftRepo.findOne.mockResolvedValue({
+        ...mockDraft,
+        content: mockDraftContent,
+      });
+
+      await expect(service.publishProfile(USER_ID)).rejects.toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('publishes successfully when all visible links are reachable', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const {
+        validateUrl: mockValidateUrl,
+      } = require('../../common/utils/validate-url.utils');
+      mockValidateUrl.mockResolvedValue({
+        valid: true,
+        finalUrl: mockLinkItem.url,
+        statusCode: 200,
+        error: null,
+      });
+
+      const txDraftRepo = txManager.getRepository(ProfileDraft);
+      txDraftRepo.findOne.mockResolvedValue({
+        ...mockDraft,
+        content: mockDraftContent,
+      });
+
+      const txProfileRepo = txManager.getRepository(Profile);
+      txProfileRepo.create.mockReturnValue({ ...mockProfile });
+      txProfileRepo.save.mockResolvedValue({ ...mockProfile });
+
+      const result = await service.publishProfile(USER_ID);
+
+      expect(result.status).toBe('success');
+      expect(mockValidateUrl).toHaveBeenCalledWith(mockLinkItem.url);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -732,12 +886,12 @@ describe('ProfileService', () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
       const txProfileRepo = txManager.getRepository(Profile);
-      const qb = mockQueryBuilder(undefined, undefined);
-      txProfileRepo.createQueryBuilder.mockReturnValue(qb);
+      txProfileRepo.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder(undefined, undefined),
+      );
 
       const txDraftRepo = txManager.getRepository(ProfileDraft);
-      const draftQb = mockQueryBuilder([]);
-      txDraftRepo.createQueryBuilder.mockReturnValue(draftQb);
+      txDraftRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder([]));
       const draftFromDto = { ...mockDraft, bio: upsertDto.bio };
       txDraftRepo.create.mockReturnValue(draftFromDto);
       txDraftRepo.save.mockResolvedValue(draftFromDto);
@@ -752,13 +906,15 @@ describe('ProfileService', () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
       const txProfileRepo = txManager.getRepository(Profile);
-      const qb = mockQueryBuilder(undefined, undefined);
-      txProfileRepo.createQueryBuilder.mockReturnValue(qb);
+      txProfileRepo.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder(undefined, undefined),
+      );
 
       const txDraftRepo = txManager.getRepository(ProfileDraft);
       const existingDraft = { ...mockDraft, updatedAt: NOW };
-      const draftQb = mockQueryBuilder([existingDraft]);
-      txDraftRepo.createQueryBuilder.mockReturnValue(draftQb);
+      txDraftRepo.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder([existingDraft]),
+      );
       txDraftRepo.create.mockReturnValue(existingDraft);
       txDraftRepo.save.mockResolvedValue(existingDraft);
 
@@ -775,16 +931,18 @@ describe('ProfileService', () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
       const txProfileRepo = txManager.getRepository(Profile);
-      const qb = mockQueryBuilder(undefined, undefined);
-      txProfileRepo.createQueryBuilder.mockReturnValue(qb);
+      txProfileRepo.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder(undefined, undefined),
+      );
 
       const txDraftRepo = txManager.getRepository(ProfileDraft);
       const staleDraft = {
         ...mockDraft,
         updatedAt: new Date(NOW.getTime() - 10000),
       };
-      const draftQb = mockQueryBuilder([staleDraft]);
-      txDraftRepo.createQueryBuilder.mockReturnValue(draftQb);
+      txDraftRepo.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder([staleDraft]),
+      );
 
       await expect(
         service.upsertDraft(USER_ID, upsertDto, 'different-version'),
@@ -797,6 +955,112 @@ describe('ProfileService', () => {
       await expect(service.upsertDraft(USER_ID, upsertDto)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('validates visible link items before saving draft', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const {
+        validateUrl: mockValidateUrl,
+      } = require('../../common/utils/validate-url.utils');
+      mockValidateUrl.mockResolvedValue({
+        valid: true,
+        finalUrl: mockLinkItem.url,
+        statusCode: 200,
+        error: null,
+      });
+
+      const txProfileRepo = txManager.getRepository(Profile);
+      txProfileRepo.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder(undefined, undefined),
+      );
+
+      const txDraftRepo = txManager.getRepository(ProfileDraft);
+      txDraftRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder([]));
+      txDraftRepo.create.mockReturnValue(mockDraft);
+      txDraftRepo.save.mockResolvedValue(mockDraft);
+
+      await expect(
+        service.upsertDraft(USER_ID, { content: mockDraftContent }),
+      ).resolves.not.toThrow();
+
+      expect(mockValidateUrl).toHaveBeenCalledWith(mockLinkItem.url);
+    });
+
+    it('throws UnprocessableEntityException when a visible link is unreachable in upsertDraft', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const {
+        validateUrl: mockValidateUrl,
+      } = require('../../common/utils/validate-url.utils');
+      mockValidateUrl.mockResolvedValue({
+        valid: false,
+        finalUrl: null,
+        statusCode: null,
+        error: 'Domain not found',
+      });
+
+      await expect(
+        service.upsertDraft(USER_ID, { content: mockDraftContent }),
+      ).rejects.toThrow(UnprocessableEntityException);
+    });
+
+    it('skips validation for hidden link items in upsertDraft', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const {
+        validateUrl: mockValidateUrl,
+      } = require('../../common/utils/validate-url.utils');
+      mockValidateUrl.mockReset();
+
+      const txProfileRepo = txManager.getRepository(Profile);
+      txProfileRepo.createQueryBuilder.mockReturnValue(
+        mockQueryBuilder(undefined, undefined),
+      );
+
+      const txDraftRepo = txManager.getRepository(ProfileDraft);
+      txDraftRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder([]));
+      txDraftRepo.create.mockReturnValue(mockDraft);
+      txDraftRepo.save.mockResolvedValue(mockDraft);
+
+      await expect(
+        service.upsertDraft(USER_ID, {
+          content: {
+            ...mockDraftContent,
+            links: {
+              visible: true,
+              sectionTitle: 'Links',
+              items: [{ ...mockLinkItem, visible: false }],
+            },
+          },
+        }),
+      ).resolves.not.toThrow();
+
+      expect(mockValidateUrl).not.toHaveBeenCalled();
+    });
+
+    it('throws UnprocessableEntityException for SSRF url in upsertDraft', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+
+      const {
+        validateUrl: mockValidateUrl,
+      } = require('../../common/utils/validate-url.utils');
+      mockValidateUrl.mockReset();
+
+      await expect(
+        service.upsertDraft(USER_ID, {
+          content: {
+            ...mockDraftContent,
+            links: {
+              visible: true,
+              sectionTitle: 'Links',
+              items: [{ ...mockLinkItem, url: 'http://localhost:5432' }],
+            },
+          },
+        }),
+      ).rejects.toThrow(UnprocessableEntityException);
+
+      expect(mockValidateUrl).not.toHaveBeenCalled();
     });
   });
 

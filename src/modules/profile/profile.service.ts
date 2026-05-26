@@ -29,7 +29,12 @@ import {
   PublicProfileResponseDto,
 } from './dto/profile-response.dto';
 import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
+import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 
+import { LinkItemDto } from './dto/profile-content.dto';
+import { validateUrl } from '../../common/utils/validate-url.utils';
+import { SectionType } from './dto/profile-content.dto';
+import dns from 'node:dns/promises';
 const CACHE_TTL_SECONDS = 60;
 const CACHE_404_TTL_SECONDS = 30;
 
@@ -241,8 +246,13 @@ export class ProfileService {
   }
 
   private serialize(profile: Profile): PublicProfileResponseDto {
-    const content = profile.content ?? {
-      sectionOrder: ['bio', 'links', 'projects', 'cta'],
+    const defaultContent = {
+      sectionOrder: [
+        SectionType.BIO,
+        SectionType.LINKS,
+        SectionType.PROJECTS,
+        SectionType.CTA,
+      ],
       bio: { visible: true, content: profile.bio ?? '' },
       links: { visible: true, sectionTitle: 'Links', items: [] },
       projects: { visible: true, sectionTitle: 'Projects', items: [] },
@@ -256,6 +266,27 @@ export class ProfileService {
         iconId: null,
         iconSrc: null,
         iconLabel: null,
+      },
+    };
+
+    const content = {
+      ...defaultContent,
+      ...(profile.content ?? {}),
+      bio: {
+        ...defaultContent.bio,
+        ...(profile.content?.bio ?? {}),
+      },
+      links: {
+        ...defaultContent.links,
+        ...(profile.content?.links ?? {}),
+      },
+      projects: {
+        ...defaultContent.projects,
+        ...(profile.content?.projects ?? {}),
+      },
+      cta: {
+        ...defaultContent.cta,
+        ...(profile.content?.cta ?? {}),
       },
     };
 
@@ -476,6 +507,13 @@ export class ProfileService {
         };
       }
 
+      // Validate visible link items before publishing
+      const linkItems =
+        draft.content?.links?.items ?? profile.content?.links?.items ?? [];
+      if (linkItems.length) {
+        await this.validateLinkItems(linkItems);
+      }
+
       const updatedProfile = profileRepo.create({
         ...profile,
         bio: draft.bio ?? profile.bio,
@@ -525,49 +563,90 @@ export class ProfileService {
       where: { profileId: profile.id },
     });
 
-    if (draft) {
-      return {
-        profileId: profile.id,
-        bio: draft.bio ?? profile.bio ?? null,
-        photoUrl: draft.photoUrl ?? profile.photoUrl ?? null,
-        content: draft.content ?? profile.content ?? null,
-        themeSettings: draft.themeSettings ?? profile.themeSettings ?? null,
-        source: 'draft',
-        updatedAt: draft.updatedAt,
-      };
-    }
+    const baseContent = {
+      sectionOrder: [
+        SectionType.BIO,
+        SectionType.LINKS,
+        SectionType.PROJECTS,
+        SectionType.CTA,
+      ],
+      bio: { visible: true, content: profile.bio ?? '' },
+      links: { visible: true, sectionTitle: 'Links', items: [] },
+      projects: { visible: true, sectionTitle: 'Projects', items: [] },
+      cta: {
+        visible: true,
+        label: profile.ctaLabel ?? '',
+        url: profile.ctaUrl ?? null,
+      },
+    };
 
-    if (profile.content) {
-      return {
-        profileId: profile.id,
-        bio: profile.bio,
-        photoUrl: profile.photoUrl,
-        content: profile.content,
-        themeSettings: profile.themeSettings,
-        source: 'published',
-        updatedAt: profile.updatedAt,
-      };
-    }
+    const content = draft?.content ?? profile.content ?? baseContent;
 
     return {
       profileId: profile.id,
-      bio: profile.bio,
-      photoUrl: profile.photoUrl,
-      content: {
-        sectionOrder: ['bio', 'links', 'projects', 'cta'],
-        bio: { visible: true, content: profile.bio ?? '' },
-        links: { visible: true, sectionTitle: 'Links', items: [] },
-        projects: { visible: true, sectionTitle: 'Projects', items: [] },
-        cta: {
-          visible: true,
-          label: profile.ctaLabel ?? '',
-          url: profile.ctaUrl ?? null,
-        },
-      },
-      themeSettings: profile.themeSettings,
-      source: 'published',
-      updatedAt: profile.updatedAt,
+      bio: draft?.bio ?? profile.bio ?? null,
+      photoUrl: draft?.photoUrl ?? profile.photoUrl ?? null,
+      content,
+      themeSettings: draft?.themeSettings ?? profile.themeSettings ?? null,
+      source: draft ? 'draft' : 'published',
+      updatedAt: draft?.updatedAt ?? profile.updatedAt,
     };
+  }
+
+  private async validateLinkItems(items: LinkItemDto[]): Promise<void> {
+    const visibleItems = items.filter((item) => item.visible);
+
+    if (visibleItems.length === 0) return;
+
+    const results = await Promise.all(
+      visibleItems.map(async (item) => {
+        try {
+          const { hostname, protocol } = new URL(item.url);
+
+          // 1. Protocol validation
+          if (!['http:', 'https:'].includes(protocol)) {
+            return `"${item.label}" uses unsupported protocol`;
+          }
+
+          // 2. SSRF protection via DNS lookup
+          const { address } = await dns.lookup(hostname);
+
+          const isPrivate =
+            address.startsWith('10.') ||
+            address.startsWith('192.168.') ||
+            address.startsWith('172.16.') ||
+            address.startsWith('127.') ||
+            address.startsWith('169.254.') ||
+            address === '::1';
+
+          if (isPrivate) {
+            return `"${item.label}" points to a private network`;
+          }
+
+          // 3. Real URL verification (HTTP layer)
+          const result = await validateUrl(item.url);
+
+          if (!result.valid) {
+            return `"${item.label}" could not be verified (${result.error})`;
+          }
+
+          return null;
+        } catch {
+          return `"${item.label}" has an invalid URL`;
+        }
+      }),
+    );
+
+    const failures = results.filter(Boolean) as string[];
+
+    if (failures.length > 0) {
+      throw new UnprocessableEntityException({
+        error: 'INVALID_LINKS',
+        message:
+          'One or more links could not be verified. Please check the URLs and try again.',
+        failures,
+      });
+    }
   }
 
   async upsertDraft(
@@ -586,6 +665,38 @@ export class ProfileService {
       );
     }
 
+    // Validate visible link items before saving
+    if (dto.content?.links?.items?.length) {
+      await this.validateLinkItems(dto.content.links.items);
+    }
+
+    // Validate CTA URL (important fix)
+    const ctaUrl = dto.content?.cta?.url;
+
+    if (dto.content?.cta?.visible) {
+      if (!ctaUrl) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA_URL',
+          message: 'CTA URL is required when CTA is visible.',
+        });
+      }
+
+      try {
+        const parsed = new URL(ctaUrl);
+
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          throw new UnprocessableEntityException({
+            error: 'INVALID_CTA_URL',
+            message: 'CTA URL must use http or https.',
+          });
+        }
+      } catch {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA_URL',
+          message: 'CTA URL is not a valid URL.',
+        });
+      }
+    }
     const saved = await this.dataSource.transaction(async (manager) => {
       const draftRepo = manager.getRepository(ProfileDraft);
       await manager
@@ -594,6 +705,7 @@ export class ProfileService {
         .where('p.id = :profileId', { profileId: profile.id })
         .setLock('pessimistic_write')
         .getOneOrFail();
+
       // Lock the existing draft row if it exists — prevents concurrent writes
       const existingDrafts = await draftRepo
         .createQueryBuilder('d')
@@ -713,6 +825,32 @@ export class ProfileService {
     return {
       status: 'success',
       appearance: dto,
+    };
+  }
+
+  async getAppearance(userId: string): Promise<{
+    status: string;
+    appearance: AppearanceSettingsDto;
+  }> {
+    const profile = await this.profileRepo.findOne({
+      where: {
+        userId,
+        deletedAt: IsNull(),
+      },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    return {
+      status: 'success',
+      appearance: {
+        ...DEFAULT_APPEARANCE,
+        ...(profile.appearance ?? {}),
+      },
     };
   }
 }

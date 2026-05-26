@@ -49,6 +49,7 @@ describe('ProfileController (integration)', () => {
       upsertDraft: jest.fn(),
       getDraftState: jest.fn(),
       updateAppearance: jest.fn(),
+      getAppearance: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
