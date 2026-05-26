@@ -118,7 +118,7 @@ export class ProfileService {
     const profile = this.profileRepo.create({
       userId: user.sub,
       username: usernameCheck.normalizedUsername, // already trimmed + lowercased by UsernamesService
-      fullName: createProfileDto.fullName,
+      fullName: dbUser.fullName,
       bio: createProfileDto.bio,
       photoUrl: createProfileDto.photoUrl,
       isPublished: createProfileDto.isPublished ?? true,
@@ -845,12 +845,26 @@ export class ProfileService {
       );
     }
 
+    const VALID_FONTS = new Set([
+      'afacad',
+      'inter',
+      'serif',
+      'mono',
+      'geologica',
+      'manrope',
+    ]);
+
+    const appearance: AppearanceSettingsDto = {
+      ...DEFAULT_APPEARANCE,
+      ...(profile.appearance ?? {}),
+    };
+    if (!appearance.font || !VALID_FONTS.has(appearance.font)) {
+      appearance.font = DEFAULT_APPEARANCE.font;
+    }
+
     return {
       status: 'success',
-      appearance: {
-        ...DEFAULT_APPEARANCE,
-        ...(profile.appearance ?? {}),
-      },
+      appearance,
     };
   }
 }
