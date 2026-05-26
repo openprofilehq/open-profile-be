@@ -463,7 +463,7 @@ describe('ProfileService', () => {
           template: 'creator',
           accentColour: '#6366f1',
           font: 'serif',
-          cornerStyle: 'rounded',
+          cornerStyle: 'pill',
           spacing: 16,
           theme: 'dark',
         },

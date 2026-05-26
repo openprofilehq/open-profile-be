@@ -36,13 +36,13 @@ export class AppearanceSettingsDto {
   })
   font?: 'afacad' | 'inter' | 'serif' | 'mono' | 'geoligica' | 'manrope';
 
-  @ApiPropertyOptional({ enum: ['sharp', 'rounded'] })
+  @ApiPropertyOptional({ enum: ['sharp', 'rounded', 'pill'] })
   @IsOptional()
   @IsString()
-  @IsIn(['sharp', 'rounded'], {
+  @IsIn(['sharp', 'rounded', 'pill'], {
     message: 'Invalid corner style.',
   })
-  cornerStyle?: 'sharp' | 'rounded';
+  cornerStyle?: 'sharp' | 'rounded' | 'pill';
 
   @ApiPropertyOptional({ minimum: 0, maximum: 40 })
   @IsOptional()
