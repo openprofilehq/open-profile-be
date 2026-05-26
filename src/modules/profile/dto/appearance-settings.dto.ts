@@ -27,14 +27,14 @@ export class AppearanceSettingsDto {
   accentColour?: string;
 
   @ApiPropertyOptional({
-    enum: ['inter', 'lato', 'poppins', 'playfair', 'roboto'],
+    enum: ['afacad', 'inter', 'serif', 'mono', 'geologica', 'manrope'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['inter', 'lato', 'poppins', 'playfair', 'roboto'], {
+  @IsIn(['afacad', 'inter', 'serif', 'mono', 'geologica', 'manrope'], {
     message: 'Invalid font selection.',
   })
-  font?: 'inter' | 'lato' | 'poppins' | 'playfair' | 'roboto';
+  font?: 'afacad' | 'inter' | 'serif' | 'mono' | 'geologica' | 'manrope';
 
   @ApiPropertyOptional({ enum: ['sharp', 'rounded', 'pill'] })
   @IsOptional()
