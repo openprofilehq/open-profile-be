@@ -27,22 +27,22 @@ export class AppearanceSettingsDto {
   accentColour?: string;
 
   @ApiPropertyOptional({
-    enum: ['inter', 'lato', 'poppins', 'playfair', 'roboto'],
+    enum: ['afacad', 'inter', 'serif', 'mono', 'geoligica', 'manrope'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['inter', 'lato', 'poppins', 'playfair', 'roboto'], {
+  @IsIn(['afacad', 'inter', 'serif', 'mono', 'geoligica', 'manrope'], {
     message: 'Invalid font selection.',
   })
-  font?: 'inter' | 'lato' | 'poppins' | 'playfair' | 'roboto';
+  font?: 'afacad' | 'inter' | 'serif' | 'mono' | 'geoligica' | 'manrope';
 
-  @ApiPropertyOptional({ enum: ['sharp', 'rounded', 'pill'] })
+  @ApiPropertyOptional({ enum: ['sharp', 'rounded'] })
   @IsOptional()
   @IsString()
-  @IsIn(['sharp', 'rounded', 'pill'], {
+  @IsIn(['sharp', 'rounded'], {
     message: 'Invalid corner style.',
   })
-  cornerStyle?: 'sharp' | 'rounded' | 'pill';
+  cornerStyle?: 'sharp' | 'rounded';
 
   @ApiPropertyOptional({ minimum: 0, maximum: 40 })
   @IsOptional()
