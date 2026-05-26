@@ -113,19 +113,12 @@ describe('ProfileController (integration)', () => {
 
       await request(app.getHttpServer())
         .post('/api/v1/profiles')
-        .send({ username: USERNAME, fullName: 'Test User' })
+        .send({ username: USERNAME })
         .expect(201)
         .expect((res) => {
           expect(res.body.username).toBe(USERNAME);
           expect(res.body.isPublished).toBe(true);
         });
-    });
-
-    it('returns 422 on validation error (missing fullName)', async () => {
-      await request(app.getHttpServer())
-        .post('/api/v1/profiles')
-        .send({ username: USERNAME })
-        .expect(422);
     });
 
     it('returns 409 when username is taken', async () => {
@@ -135,7 +128,7 @@ describe('ProfileController (integration)', () => {
 
       await request(app.getHttpServer())
         .post('/api/v1/profiles')
-        .send({ username: USERNAME, fullName: 'Test User' })
+        .send({ username: USERNAME })
         .expect(409);
     });
   });

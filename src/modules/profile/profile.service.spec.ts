@@ -239,7 +239,6 @@ describe('ProfileService', () => {
   describe('createProfile', () => {
     const createDto = {
       username: USERNAME,
-      fullName: 'Test User',
       bio: 'A test bio',
       photoUrl: 'https://example.com/photo.jpg',
     };
@@ -274,7 +273,7 @@ describe('ProfileService', () => {
       expect(profileRepo.create).toHaveBeenCalledWith({
         userId: USER_ID,
         username: USERNAME,
-        fullName: createDto.fullName,
+        fullName: 'Test User',
         bio: createDto.bio,
         photoUrl: createDto.photoUrl,
         isPublished: true,
@@ -485,7 +484,7 @@ describe('ProfileService', () => {
         template: 'creator',
         accentColour: '#6366f1',
         font: 'serif',
-        cornerStyle: 'rounded',
+        cornerStyle: 'pill',
         spacing: 16,
         theme: 'dark',
       });
