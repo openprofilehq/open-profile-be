@@ -644,7 +644,9 @@ export class ProfileService {
   private validateCtaContent(cta: Partial<CtaDto>): void {
     if (!cta.visible) return;
 
-    if (cta.type === CtaType.EMAIL) {
+    const effectiveType = cta.type ?? CtaType.LINK;
+
+    if (effectiveType === CtaType.EMAIL) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!cta.value || !emailRegex.test(cta.value.trim())) {
         throw new UnprocessableEntityException({
@@ -652,7 +654,7 @@ export class ProfileService {
           message: 'CTA email must be a valid email address.',
         });
       }
-    } else if (cta.type === CtaType.LINK) {
+    } else {
       if (!cta.value) {
         throw new UnprocessableEntityException({
           error: 'INVALID_CTA',
@@ -694,6 +696,25 @@ export class ProfileService {
 
           // 2. SSRF protection via DNS lookup
           const { address } = await dns.lookup(hostname);
+
+          const ipv4MappedMatch = address.match(
+            /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i,
+          );
+          if (ipv4MappedMatch) {
+            const mappedIp = ipv4MappedMatch[1];
+            const mappedParts = mappedIp.split('.').map(Number);
+            const isMappedPrivate =
+              mappedIp.startsWith('127.') ||
+              mappedIp.startsWith('10.') ||
+              mappedIp.startsWith('192.168.') ||
+              mappedIp.startsWith('169.254.') ||
+              (mappedParts[0] === 172 &&
+                mappedParts[1] >= 16 &&
+                mappedParts[1] <= 31);
+            if (isMappedPrivate) {
+              return `"${item.label}" points to a private network`;
+            }
+          }
 
           const ipParts = address.split('.').map(Number);
 
