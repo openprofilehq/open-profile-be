@@ -33,6 +33,11 @@ import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
 import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 import { LinkItemDto } from './dto/profile-content.dto';
 import { SectionType } from './dto/profile-content.dto';
+import {
+  sanitizeUrl,
+  isValidUrl,
+  encodeUrlForBackend,
+} from './utils/link.utils';
 import dns from 'node:dns/promises';
 const CACHE_TTL_SECONDS = 60;
 const CACHE_404_TTL_SECONDS = 30;
@@ -677,6 +682,37 @@ export class ProfileService {
         });
       }
     }
+  }
+
+  validateLink(
+    url: string,
+    iconId?: string,
+  ): {
+    original: string;
+    sanitized: string;
+    encoded: string;
+  } {
+    const sanitized = sanitizeUrl(url);
+
+    if (sanitized === '#') {
+      throw new UnprocessableEntityException({
+        error: 'DANGEROUS_URL',
+        message: 'URL contains a dangerous scheme and cannot be used.',
+      });
+    }
+
+    if (!isValidUrl(sanitized, iconId)) {
+      throw new UnprocessableEntityException({
+        error: 'INVALID_URL',
+        message: 'Invalid URL format.',
+      });
+    }
+
+    return {
+      original: url,
+      sanitized,
+      encoded: encodeUrlForBackend(sanitized, iconId),
+    };
   }
 
   private async validateLinkItems(items: LinkItemDto[]): Promise<void> {
