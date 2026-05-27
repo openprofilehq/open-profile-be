@@ -73,13 +73,14 @@ export function encodeUrlForBackend(url: string, iconId?: string): string {
     return `${SOCIAL_BASE_URLS[iconId]}${trimmed.slice(1)}`;
   }
 
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed)) {
+    return trimmed;
+  }
+
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return `mailto:${trimmed}`;
 
   if (/^\+\d+$/.test(trimmed))
     return `https://wa.me/${trimmed.replace('+', '')}`;
 
-  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed)) {
-    return trimmed;
-  }
   return `https://${trimmed}`;
 }

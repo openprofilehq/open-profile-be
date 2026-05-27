@@ -372,6 +372,35 @@ describe('ProfileService', () => {
   // ---------------------------------------------------------------------------
   // getPublicProfile
   // ---------------------------------------------------------------------------
+  describe('validateLink', () => {
+    it('sanitizes a valid URL and returns encoded backend URL', () => {
+      const result = service.validateLink('  example.com  ');
+
+      expect(result.original).toBe('  example.com  ');
+      expect(result.sanitized).toBe('example.com');
+      expect(result.encoded).toBe('https://example.com');
+    });
+
+    it('encodes supported social handles when iconId is provided', () => {
+      const result = service.validateLink('@username', 'github');
+
+      expect(result.sanitized).toBe('@username');
+      expect(result.encoded).toBe('https://github.com/username');
+    });
+
+    it('throws UnprocessableEntityException for dangerous URLs', () => {
+      expect(() => service.validateLink('javascript:alert(1)')).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('throws UnprocessableEntityException for invalid URL format', () => {
+      expect(() => service.validateLink('not-a-valid-url')).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+  });
+
   describe('getPublicProfile', () => {
     it('returns cached profile with etag and fromCache true', async () => {
       const cachedData: Record<string, unknown> = {
