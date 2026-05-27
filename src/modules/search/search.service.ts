@@ -1,29 +1,46 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { SearchAction } from './actions/search.action';
+import { Injectable, Logger } from '@nestjs/common';
+import { SearchAction, PaginatedSearchResult } from './actions/search.action';
+import { SearchQueryDto } from './dto/search-query.dto';
+import { RedisService } from '../../common/redis/redis.service';
+
+const SEARCH_CACHE_TTL_SECONDS = 300;
+const SEARCH_CACHE_PREFIX = 'search:';
+
 @Injectable()
 export class SearchService {
-  constructor(private readonly searchAction: SearchAction) {}
+  private readonly logger = new Logger(SearchService.name);
 
-  async searchProfiles(q?: string) {
-    const query = q?.trim();
+  constructor(
+    private readonly searchAction: SearchAction,
+    private readonly redisService: RedisService,
+  ) {}
 
-    if (!query || query.length < 2) {
-      throw new BadRequestException(
-        'Please enter at least 2 characters to search.',
-      );
+  async searchProfiles(dto: SearchQueryDto): Promise<PaginatedSearchResult> {
+    const cacheKey = `${SEARCH_CACHE_PREFIX}${dto.q.toLowerCase()}:page=${dto.page}:limit=${dto.limit}`;
+
+    const cached = await this.redisService.get(cacheKey);
+
+    if (cached) {
+      this.logger.debug(`Cache hit: ${cacheKey}`);
+      return JSON.parse(cached) as PaginatedSearchResult;
     }
 
-    const results = await this.searchAction.searchProfiles(query);
+    this.logger.debug(`Cache miss: ${cacheKey}`);
 
-    return {
-      results: results.map((row) => ({
-        username: row.username,
-        fullName: row.fullName,
-        bio: row.bio?.slice(0, 120) ?? '',
-        photoUrl: row.photoUrl,
-        isVerified: row.isVerified,
-      })),
-      total: results.length,
-    };
+    const result = await this.searchAction.searchProfiles(dto);
+
+    await this.redisService.set(
+      cacheKey,
+      JSON.stringify(result),
+      SEARCH_CACHE_TTL_SECONDS,
+    );
+
+    return result;
+  }
+
+  async invalidateSearchCache(q: string): Promise<void> {
+    const pattern = `${SEARCH_CACHE_PREFIX}${q.toLowerCase()}:*`;
+    this.logger.debug(`Invalidating cache for pattern: ${pattern}`);
+    await this.redisService.del(pattern);
   }
 }
