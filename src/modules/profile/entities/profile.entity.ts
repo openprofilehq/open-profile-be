@@ -42,10 +42,10 @@ export class Profile {
     type: 'text',
     array: true,
     name: 'skills',
-    nullable: true,
+    nullable: false,
     default: [],
   })
-  skills: string[] | null;
+  skills: string[];
 
   @Column({ type: 'varchar', name: 'photo_url', nullable: true })
   photoUrl: string | null;

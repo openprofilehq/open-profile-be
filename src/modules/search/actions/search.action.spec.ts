@@ -53,6 +53,14 @@ describe('SearchAction', () => {
     expect(repo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
+  it('throws BadRequestException for a whitespace-only query', async () => {
+    await expect(action.searchProfiles({ q: '   ' })).rejects.toThrow(
+      BadRequestException,
+    );
+
+    expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
   it('searches published, active, searchable profiles and returns pagination metadata', async () => {
     const rows = [
       {
@@ -118,4 +126,28 @@ describe('SearchAction', () => {
     expect(result.page).toBe(1);
     expect(result.limit).toBe(5);
   });
+
+  it.each([
+    { page: 0, limit: 5, expectedPage: 1, expectedLimit: 5 },
+    { page: 1, limit: 0, expectedPage: 1, expectedLimit: 1 },
+    { page: 1, limit: -1, expectedPage: 1, expectedLimit: 1 },
+  ])(
+    'clamps non-positive pagination values: page=$page limit=$limit',
+    async ({ page, limit, expectedPage, expectedLimit }) => {
+      qb.getCount.mockResolvedValue(0);
+      qb.getRawMany.mockResolvedValue([]);
+
+      const result = await action.searchProfiles({
+        q: 'node',
+        page,
+        limit,
+      });
+
+      expect(repo.createQueryBuilder).toHaveBeenCalledWith('p');
+      expect(qb.limit).toHaveBeenCalledWith(expectedLimit);
+      expect(qb.offset).toHaveBeenCalledWith(0);
+      expect(result.page).toBe(expectedPage);
+      expect(result.limit).toBe(expectedLimit);
+    },
+  );
 });

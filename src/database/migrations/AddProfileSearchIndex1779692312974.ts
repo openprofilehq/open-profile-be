@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddProfileSearchIndex1779134183317 implements MigrationInterface {
-  name = 'AddProfileSearchIndex1779134183317';
+export class AddProfileSearchIndex1779692312974 implements MigrationInterface {
+  name = 'AddProfileSearchIndex1779692312974';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

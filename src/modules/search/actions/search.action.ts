@@ -47,15 +47,18 @@ export class SearchAction extends AbstractModelAction<Profile> {
     page = 1,
     limit = SEARCH_DEFAULT_LIMIT,
   }: SearchProfilesOptions): Promise<PaginatedSearchResult> {
-    if (q.length < SEARCH_MIN_LENGTH) {
+    const normalizedQ = q.trim();
+
+    if (normalizedQ.length < SEARCH_MIN_LENGTH) {
       throw new BadRequestException({
         code: 'QUERY_TOO_SHORT',
         message: `Search query must be at least ${SEARCH_MIN_LENGTH} characters.`,
       });
     }
 
-    const safeLimit = Math.min(limit, SEARCH_MAX_LIMIT);
-    const offset = (page - 1) * safeLimit;
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(Math.max(1, limit), SEARCH_MAX_LIMIT);
+    const offset = (safePage - 1) * safeLimit;
 
     const baseQuery = this.repo
       .createQueryBuilder('p')
@@ -77,7 +80,7 @@ export class SearchAction extends AbstractModelAction<Profile> {
         // short tags like "React", "Node.js" are ideal for pg_trgm
         // bio deferred to Phase 2 tsvector — too long for trigram matching
       )
-      .setParameter('q', q);
+      .setParameter('q', normalizedQ);
 
     const total = await baseQuery.getCount();
 
@@ -112,7 +115,7 @@ export class SearchAction extends AbstractModelAction<Profile> {
     return {
       results,
       total,
-      page,
+      page: safePage,
       limit: safeLimit,
       totalPages: Math.ceil(total / safeLimit),
     };
