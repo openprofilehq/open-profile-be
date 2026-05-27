@@ -1,17 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
-const SUPPORTED_SOCIAL_ICONS = [
-  'insta',
-  'twitter',
-  'linkedin',
-  'github',
-  'youtube',
-  'tiktok',
-  'behance',
-  'flickr',
-  'pinterest',
-] as const;
+import { SUPPORTED_SOCIAL_ICONS } from '../utils/link.utils';
 
 export type SocialIconId = (typeof SUPPORTED_SOCIAL_ICONS)[number];
 

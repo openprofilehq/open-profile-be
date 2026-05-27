@@ -31,6 +31,7 @@ export function sanitizeUrl(url: string): string {
 }
 
 /** Mirrors frontend isValidUrl */
+/** Mirrors frontend isValidUrl */
 export function isValidUrl(url: string, iconId?: string): boolean {
   const trimmed = url.trim();
   if (!trimmed || DANGEROUS_SCHEMES.test(trimmed)) return false;
@@ -41,7 +42,9 @@ export function isValidUrl(url: string, iconId?: string): boolean {
 
   if (trimmed.startsWith('@')) {
     return (
-      !!iconId && (SUPPORTED_SOCIAL_ICONS as readonly string[]).includes(iconId)
+      !!iconId &&
+      (SUPPORTED_SOCIAL_ICONS as readonly string[]).includes(iconId) &&
+      /^@[^\s@]+$/.test(trimmed)
     );
   }
 
@@ -75,8 +78,8 @@ export function encodeUrlForBackend(url: string, iconId?: string): string {
   if (/^\+\d+$/.test(trimmed))
     return `https://wa.me/${trimmed.replace('+', '')}`;
 
-  if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed))
-    return `https://${trimmed}`;
-
-  return trimmed;
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
 }
