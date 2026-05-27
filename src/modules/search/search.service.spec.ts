@@ -10,7 +10,9 @@ import { SearchService } from './search.service';
 describe('SearchService', () => {
   let service: SearchService;
   let searchAction: jest.Mocked<Pick<SearchAction, 'searchProfiles'>>;
-  let redisService: jest.Mocked<Pick<RedisService, 'get' | 'set' | 'del'>>;
+  let redisService: jest.Mocked<
+    Pick<RedisService, 'get' | 'set' | 'delByPattern'>
+  >;
 
   const dto = { q: 'Ada', page: 2, limit: 10 };
   const result: PaginatedSearchResult = {
@@ -37,7 +39,7 @@ describe('SearchService', () => {
     redisService = {
       get: jest.fn(),
       set: jest.fn(),
-      del: jest.fn(),
+      delByPattern: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -91,9 +93,9 @@ describe('SearchService', () => {
     );
   });
 
-  it('deletes matching cache keys for a lowercased query pattern', async () => {
+  it('deletes matching cache keys by lowercased query pattern', async () => {
     await service.invalidateSearchCache('Ada');
 
-    expect(redisService.del).toHaveBeenCalledWith('search:ada:*');
+    expect(redisService.delByPattern).toHaveBeenCalledWith('search:ada:*');
   });
 });

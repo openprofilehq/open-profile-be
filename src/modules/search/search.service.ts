@@ -18,22 +18,35 @@ export class SearchService {
   async searchProfiles(dto: SearchQueryDto): Promise<PaginatedSearchResult> {
     const cacheKey = `${SEARCH_CACHE_PREFIX}${dto.q.toLowerCase()}:page=${dto.page}:limit=${dto.limit}`;
 
-    const cached = await this.redisService.get(cacheKey);
-
-    if (cached) {
-      this.logger.debug(`Cache hit: ${cacheKey}`);
-      return JSON.parse(cached) as PaginatedSearchResult;
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) {
+        this.logger.debug(`Cache hit: ${cacheKey}`);
+        return JSON.parse(cached) as PaginatedSearchResult;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Cache read/parse failed for key ${cacheKey}`,
+        error as Error,
+      );
     }
 
     this.logger.debug(`Cache miss: ${cacheKey}`);
 
     const result = await this.searchAction.searchProfiles(dto);
 
-    await this.redisService.set(
-      cacheKey,
-      JSON.stringify(result),
-      SEARCH_CACHE_TTL_SECONDS,
-    );
+    try {
+      await this.redisService.set(
+        cacheKey,
+        JSON.stringify(result),
+        SEARCH_CACHE_TTL_SECONDS,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Cache write failed for key ${cacheKey}`,
+        error as Error,
+      );
+    }
 
     return result;
   }
@@ -41,6 +54,6 @@ export class SearchService {
   async invalidateSearchCache(q: string): Promise<void> {
     const pattern = `${SEARCH_CACHE_PREFIX}${q.toLowerCase()}:*`;
     this.logger.debug(`Invalidating cache for pattern: ${pattern}`);
-    await this.redisService.del(pattern);
+    await this.redisService.delByPattern(pattern);
   }
 }
