@@ -75,11 +75,22 @@ describe('link.utils', () => {
       );
     });
 
-    it('preserves existing schemes and adds https to bare domains', () => {
+    it('preserves real schemes and adds https to bare host:port values', () => {
+      expect(encodeUrlForBackend('https://example.com')).toBe(
+        'https://example.com',
+      );
       expect(encodeUrlForBackend('mailto:hello@example.com')).toBe(
         'mailto:hello@example.com',
       );
-      expect(encodeUrlForBackend('example.com')).toBe('https://example.com');
+      expect(encodeUrlForBackend('tel:+2348012345678')).toBe(
+        'tel:+2348012345678',
+      );
+      expect(encodeUrlForBackend('example.com:8080')).toBe(
+        'https://example.com:8080',
+      );
+      expect(encodeUrlForBackend('subdomain.example.com:3000')).toBe(
+        'https://subdomain.example.com:3000',
+      );
     });
   });
 

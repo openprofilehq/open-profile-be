@@ -23,6 +23,8 @@ const SOCIAL_BASE_URLS: Record<string, string> = {
 };
 
 const DANGEROUS_SCHEMES = /^(javascript|vbscript|data):/i;
+const HIERARCHICAL_SCHEME = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//;
+const SAFE_SINGLE_COLON_SCHEME = /^(mailto|tel|whatsapp|sms):/i;
 
 /** Mirrors frontend sanitizeUrl */
 export function sanitizeUrl(url: string): string {
@@ -73,7 +75,10 @@ export function encodeUrlForBackend(url: string, iconId?: string): string {
     return `${SOCIAL_BASE_URLS[iconId]}${trimmed.slice(1)}`;
   }
 
-  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed)) {
+  if (
+    HIERARCHICAL_SCHEME.test(trimmed) ||
+    SAFE_SINGLE_COLON_SCHEME.test(trimmed)
+  ) {
     return trimmed;
   }
 
