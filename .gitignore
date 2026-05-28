@@ -66,3 +66,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 #personal
 notes.md
+
+# generated release output (do not commit)
+release.md
