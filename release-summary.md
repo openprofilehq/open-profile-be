@@ -6,6 +6,8 @@ Automatically generates structured markdown release summaries by comparing two g
 
 When promoting code between environments (`dev → staging` or `staging → production`), this tool collects all commits, groups them by conventional commit type, detects migrations and risky changes, and outputs a formatted PR summary ready to paste.
 
+> **⚠️ Do not commit the generated output file** (`release.md`) — it is gitignored by default. Use `--output release.md` for local reference only.
+
 ## Usage
 
 ```bash
@@ -24,7 +26,7 @@ node tools/release-cli.js <base> <compare>
 ```bash
 node tools/release-cli.js staging dev
 node tools/release-cli.js production staging
-node tools/release-cli.js staging dev --output release-summary.md # write to file
+node tools/release-cli.js staging dev --output release.md  # write to file (do not commit)
 ```
 
 ## Output
