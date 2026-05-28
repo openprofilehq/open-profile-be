@@ -40,7 +40,6 @@ export class UsersService {
       createPayload: {
         email: dto.email,
         password: passwordHash,
-        fullName: dto.fullName,
         role: dto.role,
       },
     });
@@ -171,7 +170,6 @@ export class UsersService {
   async createEmailUser(dto: {
     email: string;
     password: string;
-    fullName: string;
   }): Promise<User> {
     const lowercasedEmail = dto.email.toLowerCase();
     const existing = await this.userModelAction.findByEmail(lowercasedEmail);
@@ -191,7 +189,6 @@ export class UsersService {
         identifierOptions: { id: existing.id },
         updatePayload: {
           password: passwordHash,
-          fullName: dto.fullName,
           otpHash: null,
           otpExpiresAt: null,
         },
@@ -208,7 +205,6 @@ export class UsersService {
       createPayload: {
         email: lowercasedEmail,
         password: passwordHash,
-        fullName: dto.fullName,
         authProvider: AuthProvider.EMAIL,
         role: null,
         otpHash: null,
