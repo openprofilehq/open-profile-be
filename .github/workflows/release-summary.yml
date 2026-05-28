@@ -16,6 +16,10 @@ jobs:
       pull-requests: write
       contents: read
 
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      HEAD_REF: ${{ github.head_ref }}
+
     steps:
       - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
         with:
@@ -34,17 +38,11 @@ jobs:
       - run: pnpm install
 
       - name: Set up branch refs
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          HEAD_REF: ${{ github.head_ref }}
         run: |
           git branch "$BASE_REF" "origin/$BASE_REF" 2>/dev/null || true
           git branch "$HEAD_REF" "origin/$HEAD_REF" 2>/dev/null || true
 
       - name: Generate release summary
-        env:
-          BASE_REF: ${{ github.base_ref }}
-          HEAD_REF: ${{ github.head_ref }}
         run: |
           node tools/release-cli.js \
             "$BASE_REF" \
@@ -53,7 +51,6 @@ jobs:
 
       - name: Post PR comment
         env:
-          BASE_REF: ${{ github.base_ref }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/post-release-summary.sh \
           /tmp/release-summary.md \
