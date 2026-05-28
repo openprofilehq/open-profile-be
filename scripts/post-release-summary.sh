@@ -57,19 +57,25 @@ while : ; do
     exit 1
   }
 
-  FOUND=$(echo "$RESPONSE" | jq -r '
+  if ! FOUND=$(echo "$RESPONSE" | jq -r '
     .[] | select(
       (.user.login == "github-actions[bot]")
       and (.body | contains("release-summary-automation"))
     ) | .id
-  ' 2>/dev/null | head -1) || true
+  ' | head -1); then
+    echo "Error: Failed to parse comments response with jq (page $PAGE)"
+    exit 1
+  fi
 
   if [ -n "$FOUND" ]; then
     EXISTING="$FOUND"
     break
   fi
 
-  COUNT=$(echo "$RESPONSE" | jq 'length' 2>/dev/null || echo "0")
+  if ! COUNT=$(echo "$RESPONSE" | jq 'length'); then
+    echo "Error: Failed to parse comments length with jq (page $PAGE)"
+    exit 1
+  fi
   [ "$COUNT" -lt 100 ] && break
   PAGE=$((PAGE + 1))
 done
