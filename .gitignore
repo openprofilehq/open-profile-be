@@ -66,3 +66,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 #personal
 notes.md
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
