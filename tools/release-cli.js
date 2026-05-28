@@ -5,6 +5,7 @@ const { execFileSync } = require('child_process');
 const { writeFileSync } = require('fs');
 
 const args = process.argv.slice(2);
+
 const outputIdx = args.indexOf('--output');
 let outputPath;
 if (outputIdx !== -1 && args[outputIdx + 1]) {
@@ -104,11 +105,15 @@ const typeLabels = {
   ci: 'CI',
 };
 
+const defaultTitle = `chore: merge ${compare} into ${base}`;
+
 const lines = [];
 
+lines.push(`**${defaultTitle}**`);
+lines.push('');
 lines.push('# Release Summary');
 lines.push('');
-lines.push(`## Release\n${base} → ${compare}`);
+lines.push(`## Release\n${compare} → ${base}`);
 lines.push('');
 
 for (const [type, items] of Object.entries(groups)) {

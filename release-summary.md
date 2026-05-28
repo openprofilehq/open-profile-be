@@ -26,7 +26,7 @@ node tools/release-cli.js <base> <compare>
 ```bash
 node tools/release-cli.js staging dev
 node tools/release-cli.js production staging
-node tools/release-cli.js staging dev --output release.md  # write to file (do not commit)
+node tools/release-cli.js staging dev --output release.md  # write to file
 ```
 
 ## Output
