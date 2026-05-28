@@ -113,7 +113,7 @@ describe('ProfileController (integration)', () => {
 
       await request(app.getHttpServer())
         .post('/api/v1/profiles')
-        .send({ username: USERNAME })
+        .send({ username: USERNAME, fullName: 'Test User' })
         .expect(201)
         .expect((res) => {
           expect(res.body.username).toBe(USERNAME);
@@ -128,7 +128,7 @@ describe('ProfileController (integration)', () => {
 
       await request(app.getHttpServer())
         .post('/api/v1/profiles')
-        .send({ username: USERNAME })
+        .send({ username: USERNAME, fullName: 'Test User' })
         .expect(409);
     });
   });

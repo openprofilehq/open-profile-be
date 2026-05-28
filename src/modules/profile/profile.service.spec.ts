@@ -252,6 +252,7 @@ describe('ProfileService', () => {
   describe('createProfile', () => {
     const createDto = {
       username: USERNAME,
+      fullName: 'Test User',
       bio: 'A test bio',
       photoUrl: 'https://example.com/photo.jpg',
     };
@@ -262,7 +263,6 @@ describe('ProfileService', () => {
         available: true,
         normalizedUsername: USERNAME,
       });
-      userRepo.findOne.mockResolvedValue({ fullName: 'Test User' });
 
       const createdProfile = { ...mockProfile };
       profileRepo.create.mockReturnValue(createdProfile);
@@ -279,14 +279,11 @@ describe('ProfileService', () => {
         where: { userId: USER_ID },
       });
       expect(usernamesService.check).toHaveBeenCalledWith(USERNAME);
-      expect(userRepo.findOne).toHaveBeenCalledWith({
-        where: { id: USER_ID },
-        select: ['fullName'],
-      });
+      expect(userRepo.findOne).not.toHaveBeenCalled();
       expect(profileRepo.create).toHaveBeenCalledWith({
         userId: USER_ID,
         username: USERNAME,
-        fullName: 'Test User',
+        fullName: createDto.fullName,
         bio: createDto.bio,
         photoUrl: createDto.photoUrl,
         isPublished: true,
@@ -334,26 +331,12 @@ describe('ProfileService', () => {
       );
     });
 
-    it('throws NotFoundException when user record is missing', async () => {
-      profileRepo.findOne.mockResolvedValue(null);
-      usernamesService.check.mockResolvedValue({
-        available: true,
-        normalizedUsername: USERNAME,
-      });
-      userRepo.findOne.mockResolvedValue(null);
-
-      await expect(service.createProfile(createDto, mockUser)).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
     it('throws NotFoundException when user update inside transaction fails', async () => {
       profileRepo.findOne.mockResolvedValue(null);
       usernamesService.check.mockResolvedValue({
         available: true,
         normalizedUsername: USERNAME,
       });
-      userRepo.findOne.mockResolvedValue({ fullName: 'Test User' });
 
       const createdProfile = { ...mockProfile, id: undefined };
       profileRepo.create.mockReturnValue(createdProfile);

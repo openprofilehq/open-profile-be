@@ -83,9 +83,7 @@ export class AuthService {
     const user = await this.usersService.createEmailUser({
       email: dto.email,
       password: dto.password,
-      fullName: dto.fullName,
     });
-
     const otp = this.generateOtp();
     const otpHash = await argon2.hash(otp);
     const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
@@ -96,7 +94,7 @@ export class AuthService {
       await this.queueService.addJob(
         QUEUE_NAMES.EMAIL,
         QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
-        { to: user.email, otp, fullName: user.fullName },
+        { to: user.email, otp, fullName: user.fullName ?? '' },
       );
     } catch (err) {
       await this.usersService.clearOtpOnly(user.id);
@@ -186,7 +184,7 @@ export class AuthService {
         await this.queueService.addJob(
           QUEUE_NAMES.EMAIL,
           QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
-          { to: user.email, otp, fullName: user.fullName },
+          { to: user.email, otp, fullName: user.fullName ?? '' },
         );
       } catch (err) {
         await this.usersService.clearOtpOnly(user.id);
@@ -684,7 +682,7 @@ export class AuthService {
     await this.queueService.addJob(
       QUEUE_NAMES.EMAIL,
       QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
-      { to: user.email, otp, fullName: user.fullName },
+      { to: user.email, otp, fullName: user.fullName ?? '' },
     );
 
     return { message: 'OTP has been sent successfully' };
