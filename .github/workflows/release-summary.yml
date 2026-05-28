@@ -1,0 +1,49 @@
+name: Release Summary
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [staging, production]
+
+jobs:
+  release-summary:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install
+
+      - name: Set up branch refs
+        run: |
+          git branch "${{ github.base_ref }}" "origin/${{ github.base_ref }}" 2>/dev/null || true
+          git branch "${{ github.head_ref }}" "origin/${{ github.head_ref }}" 2>/dev/null || true
+
+      - name: Generate release summary
+        run: |
+          node tools/release-cli.js \
+            "${{ github.base_ref }}" \
+            "${{ github.head_ref }}" \
+            --output /tmp/release-summary.md
+
+      - name: Post PR comment
+        run: bash scripts/post-release-summary.sh \
+          /tmp/release-summary.md \
+          "${{ github.event.pull_request.number }}" \
+          "${{ github.base_ref }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
