@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { writeFileSync } = require('fs');
 
 const args = process.argv.slice(2);
@@ -24,22 +24,28 @@ if (!base || !compare) {
   process.exit(1);
 }
 
-function exec(cmd) {
-  return execSync(cmd, { encoding: 'utf-8' }).trim();
+function runGit(cmdArgs) {
+  return execFileSync('git', cmdArgs, { encoding: 'utf-8' }).trim();
 }
 
 try {
-  exec(`git fetch origin ${base} ${compare}`);
-} catch {}
+  runGit(['fetch', 'origin', base, compare]);
+} catch (err) {
+  console.warn(`\u26a0 Fetch failed for ${base}/${compare}: ${err.message}`);
+}
 
-const commits = exec(`git log ${base}..${compare} --pretty=format:"%s"`)
+const commits = runGit(['log', `${base}..${compare}`, '--pretty=format:%s'])
   .split('\n')
   .filter(Boolean);
-const diffStat = exec(`git diff --stat ${base}...${compare}`);
-const changedFiles = exec(`git diff --name-only ${base}...${compare}`)
+const diffStat = runGit(['diff', '--stat', `${base}...${compare}`]);
+const changedFiles = runGit(['diff', '--name-only', `${base}...${compare}`])
   .split('\n')
   .filter(Boolean);
-const changedStatuses = exec(`git diff --name-status ${base}...${compare}`)
+const changedStatuses = runGit([
+  'diff',
+  '--name-status',
+  `${base}...${compare}`,
+])
   .split('\n')
   .filter(Boolean);
 
@@ -67,6 +73,12 @@ for (const commit of commits) {
     }
   }
   if (!matched) groups.other.push(commit);
+}
+
+const statusMap = {};
+for (const s of changedStatuses) {
+  const parts = s.split('\t');
+  statusMap[parts[parts.length - 1]] = parts[0];
 }
 
 const hasMigrations = changedFiles.some((f) => /migration/i.test(f));
@@ -108,8 +120,15 @@ for (const [type, items] of Object.entries(groups)) {
 
 if (hasMigrations) {
   lines.push('## Database Changes');
-  for (const f of changedFiles.filter((f) => /migration/i.test(f)))
-    lines.push(`- Added migration: \`${f}\``);
+  for (const f of changedFiles.filter((f) => /migration/i.test(f))) {
+    const st = statusMap[f] || '';
+    const label = st.startsWith('A')
+      ? 'Added'
+      : st.startsWith('D')
+        ? 'Deleted'
+        : 'Updated';
+    lines.push(`- ${label} migration: \`${f}\``);
+  }
   lines.push('');
 }
 
