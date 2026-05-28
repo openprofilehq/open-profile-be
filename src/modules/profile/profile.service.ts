@@ -23,6 +23,7 @@ import { AuthenticatedUser } from '../../common/decorators/current-user.decorato
 import { UsernamesService } from '../usernames/usernames.service';
 import { UpsertDraftDto } from './dto/upsert-draft.dto';
 import { ProfileDraftResponseDto } from './dto/profile-draft-response.dto';
+import { CtaDto, CtaType, ProfileContentDto } from './dto/profile-content.dto';
 import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
@@ -30,10 +31,13 @@ import {
 } from './dto/profile-response.dto';
 import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
 import { DEFAULT_APPEARANCE } from './constants/default-appearance';
-
 import { LinkItemDto } from './dto/profile-content.dto';
-import { validateUrl } from '../../common/utils/validate-url.utils';
 import { SectionType } from './dto/profile-content.dto';
+import {
+  sanitizeUrl,
+  isValidUrl,
+  encodeUrlForBackend,
+} from './utils/link.utils';
 import dns from 'node:dns/promises';
 const CACHE_TTL_SECONDS = 60;
 const CACHE_404_TTL_SECONDS = 30;
@@ -246,7 +250,7 @@ export class ProfileService {
   }
 
   private serialize(profile: Profile): PublicProfileResponseDto {
-    const defaultContent = {
+    const defaultContent: ProfileContentDto = {
       sectionOrder: [
         SectionType.BIO,
         SectionType.LINKS,
@@ -258,8 +262,9 @@ export class ProfileService {
       projects: { visible: true, sectionTitle: 'Projects', items: [] },
       cta: {
         visible: true,
+        type: CtaType.LINK,
         label: profile.ctaLabel ?? '',
-        url: profile.ctaUrl ?? null,
+        value: profile.ctaUrl ?? null,
         title: "Let's build something",
         subtitle: '',
         layout: '1',
@@ -269,7 +274,12 @@ export class ProfileService {
       },
     };
 
-    const content = {
+    const rawCta: Partial<CtaDto> & {
+      type?: CtaType;
+      url?: string | null;
+    } = profile.content?.cta ?? {};
+
+    const content: ProfileContentDto = {
       ...defaultContent,
       ...(profile.content ?? {}),
       bio: {
@@ -286,7 +296,12 @@ export class ProfileService {
       },
       cta: {
         ...defaultContent.cta,
-        ...(profile.content?.cta ?? {}),
+        ...rawCta,
+        type: rawCta.type ?? CtaType.LINK,
+        value:
+          rawCta.type === CtaType.EMAIL
+            ? (rawCta.value ?? null)
+            : (rawCta.value ?? rawCta.url ?? null),
       },
     };
 
@@ -507,11 +522,17 @@ export class ProfileService {
         };
       }
 
-      // Validate visible link items before publishing
+      // 1. Validate visible link items
       const linkItems =
         draft.content?.links?.items ?? profile.content?.links?.items ?? [];
-      if (linkItems.length) {
+      if (linkItems.some((i) => i.visible)) {
         await this.validateLinkItems(linkItems);
+      }
+
+      // Validate CTA — catches drafts that predate CTA validation
+      const cta = draft.content?.cta;
+      if (cta) {
+        this.validateCtaContent(cta);
       }
 
       const updatedProfile = profileRepo.create({
@@ -528,9 +549,7 @@ export class ProfileService {
 
       await profileRepo.save(updatedProfile);
 
-      await draftRepo.delete({
-        profileId: profile.id,
-      });
+      await draftRepo.delete({ profileId: profile.id });
 
       return {
         status: 'success',
@@ -563,7 +582,7 @@ export class ProfileService {
       where: { profileId: profile.id },
     });
 
-    const baseContent = {
+    const baseContent: ProfileContentDto = {
       sectionOrder: [
         SectionType.BIO,
         SectionType.LINKS,
@@ -575,12 +594,46 @@ export class ProfileService {
       projects: { visible: true, sectionTitle: 'Projects', items: [] },
       cta: {
         visible: true,
+        type: CtaType.LINK,
         label: profile.ctaLabel ?? '',
-        url: profile.ctaUrl ?? null,
+        value: profile.ctaUrl ?? null,
       },
     };
 
-    const content = draft?.content ?? profile.content ?? baseContent;
+    const rawCta: Partial<CtaDto> & {
+      url?: string | null;
+    } = draft?.content?.cta ?? profile.content?.cta ?? {};
+
+    const content: ProfileContentDto = {
+      ...baseContent,
+      ...(profile.content ?? {}),
+      ...(draft?.content ?? {}),
+      bio: {
+        ...baseContent.bio,
+        ...(profile.content?.bio ?? {}),
+        ...(draft?.content?.bio ?? {}),
+      },
+      links: {
+        ...baseContent.links,
+        ...(profile.content?.links ?? {}),
+        ...(draft?.content?.links ?? {}),
+      },
+      projects: {
+        ...baseContent.projects,
+        ...(profile.content?.projects ?? {}),
+        ...(draft?.content?.projects ?? {}),
+      },
+      cta: {
+        ...baseContent.cta,
+        ...(profile.content?.cta ?? {}),
+        ...(draft?.content?.cta ?? {}),
+        type: rawCta.type ?? CtaType.LINK,
+        value:
+          rawCta.type === CtaType.EMAIL
+            ? (rawCta.value ?? null)
+            : (rawCta.value ?? rawCta.url ?? null),
+      },
+    };
 
     return {
       profileId: profile.id,
@@ -590,6 +643,75 @@ export class ProfileService {
       themeSettings: draft?.themeSettings ?? profile.themeSettings ?? null,
       source: draft ? 'draft' : 'published',
       updatedAt: draft?.updatedAt ?? profile.updatedAt,
+    };
+  }
+
+  private validateCtaContent(cta: Partial<CtaDto>): void {
+    if (!cta.visible) return;
+
+    const effectiveType = cta.type ?? CtaType.LINK;
+
+    if (effectiveType === CtaType.EMAIL) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!cta.value || !emailRegex.test(cta.value.trim())) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA',
+          message: 'CTA email must be a valid email address.',
+        });
+      }
+    } else {
+      if (!cta.value) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA',
+          message: 'URL required for link CTA.',
+        });
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(cta.value);
+      } catch {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA',
+          message: 'CTA URL is not a valid URL.',
+        });
+      }
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA',
+          message: 'CTA URL must use http or https.',
+        });
+      }
+    }
+  }
+
+  validateLink(
+    url: string,
+    iconId?: string,
+  ): {
+    original: string;
+    sanitized: string;
+    encoded: string;
+  } {
+    const sanitized = sanitizeUrl(url);
+
+    if (sanitized === '#') {
+      throw new UnprocessableEntityException({
+        error: 'DANGEROUS_URL',
+        message: 'URL contains a dangerous scheme and cannot be used.',
+      });
+    }
+
+    if (!isValidUrl(sanitized, iconId)) {
+      throw new UnprocessableEntityException({
+        error: 'INVALID_URL',
+        message: 'Invalid URL format.',
+      });
+    }
+
+    return {
+      original: url,
+      sanitized,
+      encoded: encodeUrlForBackend(sanitized, iconId),
     };
   }
 
@@ -611,23 +733,43 @@ export class ProfileService {
           // 2. SSRF protection via DNS lookup
           const { address } = await dns.lookup(hostname);
 
+          const ipv4MappedMatch = address.match(
+            /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i,
+          );
+          if (ipv4MappedMatch) {
+            const mappedIp = ipv4MappedMatch[1];
+            const mappedParts = mappedIp.split('.').map(Number);
+            const isMappedPrivate =
+              mappedIp.startsWith('127.') ||
+              mappedIp.startsWith('10.') ||
+              mappedIp.startsWith('192.168.') ||
+              mappedIp.startsWith('169.254.') ||
+              (mappedParts[0] === 172 &&
+                mappedParts[1] >= 16 &&
+                mappedParts[1] <= 31);
+            if (isMappedPrivate) {
+              return `"${item.label}" points to a private network`;
+            }
+          }
+
+          const ipParts = address.split('.').map(Number);
+
+          const isPrivateIpv6 =
+            address === '::1' ||
+            /^fe80:/i.test(address) ||
+            /^fc[0-9a-f]{2}:/i.test(address) ||
+            /^fd[0-9a-f]{2}:/i.test(address);
+
           const isPrivate =
+            isPrivateIpv6 ||
+            address.startsWith('127.') ||
             address.startsWith('10.') ||
             address.startsWith('192.168.') ||
-            address.startsWith('172.16.') ||
-            address.startsWith('127.') ||
             address.startsWith('169.254.') ||
-            address === '::1';
+            (ipParts[0] === 172 && ipParts[1] >= 16 && ipParts[1] <= 31);
 
           if (isPrivate) {
             return `"${item.label}" points to a private network`;
-          }
-
-          // 3. Real URL verification (HTTP layer)
-          const result = await validateUrl(item.url);
-
-          if (!result.valid) {
-            return `"${item.label}" could not be verified (${result.error})`;
           }
 
           return null;
@@ -670,33 +812,12 @@ export class ProfileService {
       await this.validateLinkItems(dto.content.links.items);
     }
 
-    // Validate CTA URL (important fix)
-    const ctaUrl = dto.content?.cta?.url;
-
-    if (dto.content?.cta?.visible) {
-      if (!ctaUrl) {
-        throw new UnprocessableEntityException({
-          error: 'INVALID_CTA_URL',
-          message: 'CTA URL is required when CTA is visible.',
-        });
-      }
-
-      try {
-        const parsed = new URL(ctaUrl);
-
-        if (!['http:', 'https:'].includes(parsed.protocol)) {
-          throw new UnprocessableEntityException({
-            error: 'INVALID_CTA_URL',
-            message: 'CTA URL must use http or https.',
-          });
-        }
-      } catch {
-        throw new UnprocessableEntityException({
-          error: 'INVALID_CTA_URL',
-          message: 'CTA URL is not a valid URL.',
-        });
-      }
+    // Validate CTA
+    const cta = dto.content?.cta;
+    if (cta) {
+      this.validateCtaContent(cta);
     }
+
     const saved = await this.dataSource.transaction(async (manager) => {
       const draftRepo = manager.getRepository(ProfileDraft);
       await manager

@@ -40,6 +40,8 @@ import {
 } from './dto/profile-response.dto';
 import { PublishProfileDto } from './dto/publish-profile.dto';
 import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
+import { Query } from '@nestjs/common';
+import { ValidateLinkQueryDto } from './dto/validate-link-query.dto';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -146,6 +148,18 @@ export class ProfileController {
     @currentUserDecorator.CurrentUser('sub') userId: string,
   ): Promise<ProfileDraftResponseDto> {
     return this.profileService.getProfileContent(userId);
+  }
+
+  @Public()
+  @Get('validate/link')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @UseGuards(ThrottlerGuard)
+  @ApiOperation({ summary: 'Validate and normalise a link URL' })
+  @ApiResponse({ status: 200, description: 'URL is valid' })
+  @ApiResponse({ status: 422, description: 'Invalid or dangerous URL' })
+  validateLink(@Query() query: ValidateLinkQueryDto) {
+    return this.profileService.validateLink(query.url, query.iconId);
   }
 
   @Get('appearance')

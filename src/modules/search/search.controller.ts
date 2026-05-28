@@ -18,10 +18,22 @@ export class SearchController {
   @ApiQuery({
     name: 'q',
     required: true,
-    description: 'Search term, minimum 2 characters',
+    description: 'Search term, minimum 3 characters',
     example: 'ade',
   })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number (default: 1).',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Results per page (default: 5, max: 20).',
+    example: 5,
+  })
   search(@Query() dto: SearchQueryDto) {
-    return this.searchService.searchProfiles(dto.q);
+    return this.searchService.searchProfiles(dto);
   }
 }

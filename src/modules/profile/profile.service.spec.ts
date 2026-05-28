@@ -2,8 +2,11 @@ jest.mock('../../config/env', () => ({
   env: {},
 }));
 
-jest.mock('../../common/utils/validate-url.utils', () => ({
-  validateUrl: jest.fn(),
+jest.mock('node:dns/promises', () => ({
+  __esModule: true,
+  default: {
+    lookup: jest.fn(),
+  },
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -15,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, IsNull } from 'typeorm';
+import dns from 'node:dns/promises';
 import { ProfileService } from './profile.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
@@ -26,6 +30,9 @@ import { ComponentSetMismatchException } from './exceptions/component-set-mismat
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import type { LinkItemDto } from './dto/profile-content.dto';
 import { SectionType } from './dto/profile-content.dto';
+import { CtaType } from './dto/profile-content.dto';
+
+const mockDnsLookup = dns.lookup as jest.Mock;
 
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000';
 const PROFILE_ID = '660e8400-e29b-41d4-a716-446655440001';
@@ -107,7 +114,12 @@ const mockDraftContent = {
   bio: { visible: true, content: '' },
   links: { visible: true, sectionTitle: 'Links', items: [mockLinkItem] },
   projects: { visible: true, sectionTitle: 'Projects', items: [] },
-  cta: { visible: true, label: 'Contact Me', url: 'https://example.com' },
+  cta: {
+    visible: true,
+    type: CtaType.LINK,
+    label: 'Contact Me',
+    value: 'https://example.com',
+  },
 };
 
 // Helper to build a chainable query-builder mock
@@ -231,6 +243,7 @@ describe('ProfileService', () => {
 
     service = module.get<ProfileService>(ProfileService);
     jest.clearAllMocks();
+    mockDnsLookup.mockResolvedValue({ address: '140.82.114.4' });
   });
 
   // ---------------------------------------------------------------------------
@@ -359,6 +372,35 @@ describe('ProfileService', () => {
   // ---------------------------------------------------------------------------
   // getPublicProfile
   // ---------------------------------------------------------------------------
+  describe('validateLink', () => {
+    it('sanitizes a valid URL and returns encoded backend URL', () => {
+      const result = service.validateLink('  example.com  ');
+
+      expect(result.original).toBe('  example.com  ');
+      expect(result.sanitized).toBe('example.com');
+      expect(result.encoded).toBe('https://example.com');
+    });
+
+    it('encodes supported social handles when iconId is provided', () => {
+      const result = service.validateLink('@username', 'github');
+
+      expect(result.sanitized).toBe('@username');
+      expect(result.encoded).toBe('https://github.com/username');
+    });
+
+    it('throws UnprocessableEntityException for dangerous URLs', () => {
+      expect(() => service.validateLink('javascript:alert(1)')).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('throws UnprocessableEntityException for invalid URL format', () => {
+      expect(() => service.validateLink('not-a-valid-url')).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+  });
+
   describe('getPublicProfile', () => {
     it('returns cached profile with etag and fromCache true', async () => {
       const cachedData: Record<string, unknown> = {
@@ -767,18 +809,10 @@ describe('ProfileService', () => {
       );
     });
 
-    it('throws UnprocessableEntityException when a visible link is unreachable on publish', async () => {
+    it('throws UnprocessableEntityException when a visible link cannot be resolved on publish', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
-      const {
-        validateUrl: mockValidateUrl,
-      } = require('../../common/utils/validate-url.utils');
-      mockValidateUrl.mockResolvedValue({
-        valid: false,
-        finalUrl: null,
-        statusCode: null,
-        error: 'Domain not found',
-      });
+      mockDnsLookup.mockRejectedValue(new Error('Domain not found'));
 
       const txDraftRepo = txManager.getRepository(ProfileDraft);
       txDraftRepo.findOne.mockResolvedValue({
@@ -789,20 +823,11 @@ describe('ProfileService', () => {
       await expect(service.publishProfile(USER_ID)).rejects.toThrow(
         UnprocessableEntityException,
       );
+      expect(mockDnsLookup).toHaveBeenCalledWith('github.com');
     });
 
-    it('publishes successfully when all visible links are reachable', async () => {
+    it('publishes successfully when all visible links resolve to public addresses', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
-
-      const {
-        validateUrl: mockValidateUrl,
-      } = require('../../common/utils/validate-url.utils');
-      mockValidateUrl.mockResolvedValue({
-        valid: true,
-        finalUrl: mockLinkItem.url,
-        statusCode: 200,
-        error: null,
-      });
 
       const txDraftRepo = txManager.getRepository(ProfileDraft);
       txDraftRepo.findOne.mockResolvedValue({
@@ -817,7 +842,7 @@ describe('ProfileService', () => {
       const result = await service.publishProfile(USER_ID);
 
       expect(result.status).toBe('success');
-      expect(mockValidateUrl).toHaveBeenCalledWith(mockLinkItem.url);
+      expect(mockDnsLookup).toHaveBeenCalledWith('github.com');
     });
   });
 
@@ -959,16 +984,6 @@ describe('ProfileService', () => {
     it('validates visible link items before saving draft', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
-      const {
-        validateUrl: mockValidateUrl,
-      } = require('../../common/utils/validate-url.utils');
-      mockValidateUrl.mockResolvedValue({
-        valid: true,
-        finalUrl: mockLinkItem.url,
-        statusCode: 200,
-        error: null,
-      });
-
       const txProfileRepo = txManager.getRepository(Profile);
       txProfileRepo.createQueryBuilder.mockReturnValue(
         mockQueryBuilder(undefined, undefined),
@@ -983,34 +998,22 @@ describe('ProfileService', () => {
         service.upsertDraft(USER_ID, { content: mockDraftContent }),
       ).resolves.not.toThrow();
 
-      expect(mockValidateUrl).toHaveBeenCalledWith(mockLinkItem.url);
+      expect(mockDnsLookup).toHaveBeenCalledWith('github.com');
     });
 
-    it('throws UnprocessableEntityException when a visible link is unreachable in upsertDraft', async () => {
+    it('throws UnprocessableEntityException when a visible link cannot be resolved in upsertDraft', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
-      const {
-        validateUrl: mockValidateUrl,
-      } = require('../../common/utils/validate-url.utils');
-      mockValidateUrl.mockResolvedValue({
-        valid: false,
-        finalUrl: null,
-        statusCode: null,
-        error: 'Domain not found',
-      });
+      mockDnsLookup.mockRejectedValue(new Error('Domain not found'));
 
       await expect(
         service.upsertDraft(USER_ID, { content: mockDraftContent }),
       ).rejects.toThrow(UnprocessableEntityException);
+      expect(mockDnsLookup).toHaveBeenCalledWith('github.com');
     });
 
     it('skips validation for hidden link items in upsertDraft', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
-
-      const {
-        validateUrl: mockValidateUrl,
-      } = require('../../common/utils/validate-url.utils');
-      mockValidateUrl.mockReset();
 
       const txProfileRepo = txManager.getRepository(Profile);
       txProfileRepo.createQueryBuilder.mockReturnValue(
@@ -1035,16 +1038,13 @@ describe('ProfileService', () => {
         }),
       ).resolves.not.toThrow();
 
-      expect(mockValidateUrl).not.toHaveBeenCalled();
+      expect(mockDnsLookup).not.toHaveBeenCalled();
     });
 
     it('throws UnprocessableEntityException for SSRF url in upsertDraft', async () => {
       profileRepo.findOne.mockResolvedValue(mockProfile);
 
-      const {
-        validateUrl: mockValidateUrl,
-      } = require('../../common/utils/validate-url.utils');
-      mockValidateUrl.mockReset();
+      mockDnsLookup.mockResolvedValue({ address: '127.0.0.1' });
 
       await expect(
         service.upsertDraft(USER_ID, {
@@ -1059,7 +1059,7 @@ describe('ProfileService', () => {
         }),
       ).rejects.toThrow(UnprocessableEntityException);
 
-      expect(mockValidateUrl).not.toHaveBeenCalled();
+      expect(mockDnsLookup).toHaveBeenCalledWith('localhost');
     });
   });
 
