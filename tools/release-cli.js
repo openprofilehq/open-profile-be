@@ -35,20 +35,24 @@ try {
   console.warn(`\u26a0 Fetch failed for ${base}/${compare}: ${err.message}`);
 }
 
-const commits = runGit(['log', `${base}..${compare}`, '--pretty=format:%s'])
-  .split('\n')
-  .filter(Boolean);
-const diffStat = runGit(['diff', '--stat', `${base}...${compare}`]);
-const changedFiles = runGit(['diff', '--name-only', `${base}...${compare}`])
-  .split('\n')
-  .filter(Boolean);
-const changedStatuses = runGit([
-  'diff',
-  '--name-status',
-  `${base}...${compare}`,
-])
-  .split('\n')
-  .filter(Boolean);
+let commits, diffStat, changedFiles, changedStatuses;
+try {
+  commits = runGit(['log', `${base}..${compare}`, '--pretty=format:%s'])
+    .split('\n')
+    .filter(Boolean);
+  diffStat = runGit(['diff', '--stat', `${base}...${compare}`]);
+  changedFiles = runGit(['diff', '--name-only', `${base}...${compare}`])
+    .split('\n')
+    .filter(Boolean);
+  changedStatuses = runGit(['diff', '--name-status', `${base}...${compare}`])
+    .split('\n')
+    .filter(Boolean);
+} catch (err) {
+  console.error(
+    `Failed to get git diff for ${base}..${compare}: ${err.message}`,
+  );
+  process.exit(1);
+}
 
 const groups = {
   feat: [],
@@ -67,7 +71,8 @@ for (const commit of commits) {
   let matched = false;
   for (const type of groupTypes) {
     if (type === 'other') continue;
-    if (commit.startsWith(`${type}:`) || commit.startsWith(`${type}(`)) {
+    const re = new RegExp(`^${type}(?:\\([^)]*\\))?!?:`);
+    if (re.test(commit)) {
       groups[type].push(commit);
       matched = true;
       break;
