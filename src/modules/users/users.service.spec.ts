@@ -57,7 +57,6 @@ describe('UsersService', () => {
     const dto = {
       email: 'test@example.com',
       password: 'StrongPass1!',
-      fullName: 'Test User',
     };
 
     const lowercasedEmail = 'test@example.com';
@@ -73,7 +72,6 @@ describe('UsersService', () => {
         createPayload: {
           email: lowercasedEmail,
           password: 'mocked-password-hash',
-          fullName: dto.fullName,
           authProvider: AuthProvider.EMAIL,
           role: null,
           otpHash: null,
@@ -121,10 +119,7 @@ describe('UsersService', () => {
         otpExpiresAt: pastDate,
       };
       action.findByEmail.mockResolvedValue(unverifiedExpired);
-      action.update.mockResolvedValue({
-        ...unverifiedExpired,
-        fullName: dto.fullName,
-      });
+      action.update.mockResolvedValue(unverifiedExpired);
 
       const result = await service.createEmailUser(dto);
 
@@ -133,14 +128,13 @@ describe('UsersService', () => {
         identifierOptions: { id: unverifiedExpired.id },
         updatePayload: {
           password: 'mocked-password-hash',
-          fullName: dto.fullName,
           otpHash: null,
           otpExpiresAt: null,
         },
         transactionOptions: { useTransaction: false as const },
       });
       expect(action.create).not.toHaveBeenCalled();
-      expect((result as User).fullName).toBe(dto.fullName);
+      expect(result).toEqual(unverifiedExpired);
     });
 
     it('updates existing user when unverified and OTP was never set', async () => {

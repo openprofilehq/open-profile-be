@@ -53,8 +53,6 @@ export class ProfileService {
     private readonly componentRepo: Repository<ProfileComponent>,
     @InjectRepository(ProfileDraft)
     private readonly profileDraftRepo: Repository<ProfileDraft>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
     private readonly redisService: RedisService,
     private readonly dataSource: DataSource,
     private readonly usernamesService: UsernamesService,
@@ -108,27 +106,17 @@ export class ProfileService {
       });
     }
 
-    // Step 3 - fetch user record to get fullName stored at registration
-    const dbUser = await this.userRepo.findOne({
-      where: { id: user.sub },
-      select: ['fullName'],
-    });
-
-    if (!dbUser) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Step 4 - create and save the profile
+    // Step 3 - create and save the profile
     const profile = this.profileRepo.create({
       userId: user.sub,
       username: usernameCheck.normalizedUsername, // already trimmed + lowercased by UsernamesService
-      fullName: dbUser.fullName,
+      fullName: createProfileDto.fullName,
       bio: createProfileDto.bio,
       photoUrl: createProfileDto.photoUrl,
       isPublished: createProfileDto.isPublished ?? true,
     });
 
-    // Step 5 - persist profile + flip onboarding flag atomically.
+    // Step 4 - persist profile + flip onboarding flag atomically.
     // If either write fails the transaction rolls back, leaving the user
     // in a clean state where they can retry without hitting a conflict.
     const savedProfile = await this.dataSource.transaction(async (manager) => {

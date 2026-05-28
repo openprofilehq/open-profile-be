@@ -36,7 +36,6 @@ const mockUser = {
 const mockRegisterDto = {
   email: 'test@example.com',
   password: 'StrongPass1!',
-  fullName: 'Test User',
 };
 
 describe('AuthService', () => {
@@ -84,7 +83,6 @@ describe('AuthService', () => {
       expect(usersService.createEmailUser).toHaveBeenCalledWith({
         email: mockRegisterDto.email,
         password: mockRegisterDto.password,
-        fullName: mockRegisterDto.fullName,
       });
 
       expect(usersService.storeOtpHash).toHaveBeenCalledWith(

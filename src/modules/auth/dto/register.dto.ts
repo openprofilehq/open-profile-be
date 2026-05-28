@@ -38,14 +38,4 @@ export class RegisterDto {
       'Password must include at least one uppercase letter, one number, and one special character.',
   })
   password: string;
-
-  @ApiProperty({ example: 'Jane Doe' })
-  @IsString({ message: 'Full name is required' })
-  @IsNotEmpty({ message: 'Full name is required' })
-  @MinLength(1, { message: 'Full name is required' })
-  @MaxLength(255, { message: 'Full name must not be more than 255 characters' })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  fullName: string;
 }
