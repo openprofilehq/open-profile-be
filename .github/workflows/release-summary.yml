@@ -5,6 +5,10 @@ on:
     types: [opened, synchronize, reopened]
     branches: [staging, production]
 
+concurrency:
+  group: release-summary-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release-summary:
     runs-on: ubuntu-latest
@@ -13,15 +17,16 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093
         with:
           version: 11
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@0355742c943ddb13ca8a6b700f824231caa91e75
         with:
           node-version: 22
           cache: 'pnpm'
@@ -29,21 +34,28 @@ jobs:
       - run: pnpm install
 
       - name: Set up branch refs
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          git branch "${{ github.base_ref }}" "origin/${{ github.base_ref }}" 2>/dev/null || true
-          git branch "${{ github.head_ref }}" "origin/${{ github.head_ref }}" 2>/dev/null || true
+          git branch "$BASE_REF" "origin/$BASE_REF" 2>/dev/null || true
+          git branch "$HEAD_REF" "origin/$HEAD_REF" 2>/dev/null || true
 
       - name: Generate release summary
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           node tools/release-cli.js \
-            "${{ github.base_ref }}" \
-            "${{ github.head_ref }}" \
+            "$BASE_REF" \
+            "$HEAD_REF" \
             --output /tmp/release-summary.md
 
       - name: Post PR comment
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/post-release-summary.sh \
           /tmp/release-summary.md \
           "${{ github.event.pull_request.number }}" \
-          "${{ github.base_ref }}"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          "$BASE_REF"

@@ -47,17 +47,32 @@ BODY="$SUMMARY
 
 API="https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"
 
-RESPONSE=$(curl -sf -H "Authorization: Bearer $GITHUB_TOKEN" \
-  -H "Accept: application/vnd.github+json" \
-  "$API" 2>&1) || {
-  echo "Error: Failed to fetch comments: $RESPONSE"
-  exit 1
-}
+EXISTING=""
+PAGE=1
+while : ; do
+  RESPONSE=$(curl -sf -H "Authorization: Bearer $GITHUB_TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    "$API?per_page=100&page=$PAGE" 2>&1) || {
+    echo "Error: Failed to fetch comments (page $PAGE): $RESPONSE"
+    exit 1
+  }
 
-EXISTING=$(echo "$RESPONSE" | jq -r '.[] | select(.body | contains("release-summary-automation")) | .id' 2>/dev/null | head -1) || {
-  echo "Warning: Failed to parse comments response, assuming no existing comment"
-  EXISTING=""
-}
+  FOUND=$(echo "$RESPONSE" | jq -r '
+    .[] | select(
+      (.user.login == "github-actions[bot]")
+      and (.body | contains("release-summary-automation"))
+    ) | .id
+  ' 2>/dev/null | head -1) || true
+
+  if [ -n "$FOUND" ]; then
+    EXISTING="$FOUND"
+    break
+  fi
+
+  COUNT=$(echo "$RESPONSE" | jq 'length' 2>/dev/null || echo "0")
+  [ "$COUNT" -lt 100 ] && break
+  PAGE=$((PAGE + 1))
+done
 
 if [ -n "$EXISTING" ]; then
   echo "Updating comment $EXISTING..."
