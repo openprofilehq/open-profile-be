@@ -20,6 +20,7 @@ jobs:
       BASE_REF: ${{ github.base_ref }}
       HEAD_REF: ${{ github.head_ref }}
       SUMMARY_PATH: /tmp/release-summary.md
+      PR_NUMBER: ${{ github.event.pull_request.number }}
 
     steps:
       - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
@@ -60,7 +61,7 @@ jobs:
 
       - name: Verify release summary was generated
         run: |
-          if [ ! -f "$SUMMARY_PATH" ]; then
+          if [ ! -s "$SUMMARY_PATH" ]; then
             echo "::error::Release summary was not generated at $SUMMARY_PATH"
             exit 1
           fi
@@ -72,5 +73,5 @@ jobs:
         run: |
           bash scripts/post-release-summary.sh \
             "$SUMMARY_PATH" \
-            "${{ github.event.pull_request.number }}" \
+            "$PR_NUMBER" \
             "$BASE_REF"
