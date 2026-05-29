@@ -1,0 +1,58 @@
+name: Release Summary
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [staging, production]
+
+concurrency:
+  group: release-summary-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-summary:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      HEAD_REF: ${{ github.head_ref }}
+
+    steps:
+      - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093
+        with:
+          version: 11
+
+      - uses: actions/setup-node@0355742c943ddb13ca8a6b700f824231caa91e75
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install
+
+      - name: Set up branch refs
+        run: |
+          git branch "$BASE_REF" "origin/$BASE_REF" 2>/dev/null || true
+          git branch "$HEAD_REF" "origin/$HEAD_REF" 2>/dev/null || true
+
+      - name: Generate release summary
+        run: |
+          node tools/release-cli.js \
+            "$BASE_REF" \
+            "$HEAD_REF" \
+            --output /tmp/release-summary.md
+
+      - name: Post PR comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/post-release-summary.sh \
+          /tmp/release-summary.md \
+          "${{ github.event.pull_request.number }}" \
+          "$BASE_REF"
