@@ -58,18 +58,26 @@ while : ; do
   }
 
   FOUND=$(echo "$RESPONSE" | jq -r '
-    .[] | select(
-      (.user.login == "github-actions[bot]")
-      and (.body | contains("release-summary-automation"))
-    ) | .id
-  ' 2>/dev/null | head -1) || true
+    first(
+      .[] | select(
+        (.user.login == "github-actions[bot]")
+        and (.body | contains("release-summary-automation"))
+      ) | .id
+    ) // ""
+  ' 2>/dev/null) || {
+    echo "Error: Failed to parse comments response with jq (page $PAGE)"
+    exit 1
+  }
 
   if [ -n "$FOUND" ]; then
     EXISTING="$FOUND"
     break
   fi
 
-  COUNT=$(echo "$RESPONSE" | jq 'length' 2>/dev/null || echo "0")
+  COUNT=$(echo "$RESPONSE" | jq 'length' 2>/dev/null) || {
+    echo "Error: Failed to parse pagination response with jq (page $PAGE)"
+    exit 1
+  }
   [ "$COUNT" -lt 100 ] && break
   PAGE=$((PAGE + 1))
 done
