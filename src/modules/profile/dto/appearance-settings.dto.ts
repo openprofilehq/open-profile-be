@@ -10,13 +10,15 @@ import {
 } from 'class-validator';
 
 export class AppearanceSettingsDto {
-  @ApiPropertyOptional({ enum: ['professional', 'creator', 'portfolio'] })
+  @ApiPropertyOptional({
+    enum: ['professional', 'creator', 'portfolio', 'default'],
+  })
   @IsOptional()
   @IsString()
-  @IsIn(['professional', 'creator', 'portfolio'], {
+  @IsIn(['professional', 'creator', 'portfolio', 'default'], {
     message: 'Invalid template selection.',
   })
-  template?: 'professional' | 'creator' | 'portfolio';
+  template?: 'professional' | 'creator' | 'portfolio' | 'default';
 
   @ApiPropertyOptional({ example: '#6366f1' })
   @IsOptional()
