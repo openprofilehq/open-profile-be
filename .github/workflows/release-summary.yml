@@ -19,6 +19,8 @@ jobs:
     env:
       BASE_REF: ${{ github.base_ref }}
       HEAD_REF: ${{ github.head_ref }}
+      SUMMARY_PATH: /tmp/release-summary.md
+      PR_NUMBER: ${{ github.event.pull_request.number }}
 
     steps:
       - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
@@ -39,20 +41,37 @@ jobs:
 
       - name: Set up branch refs
         run: |
-          git branch "$BASE_REF" "origin/$BASE_REF" 2>/dev/null || true
-          git branch "$HEAD_REF" "origin/$HEAD_REF" 2>/dev/null || true
+          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF" "+refs/heads/$HEAD_REF:refs/remotes/origin/$HEAD_REF"
+          if ! git branch "$BASE_REF" "origin/$BASE_REF" 2>/dev/null; then
+            echo "::error::Failed to create local branch '$BASE_REF' from 'origin/$BASE_REF'. Fetch output above."
+            exit 1
+          fi
+          if ! git branch "$HEAD_REF" "origin/$HEAD_REF" 2>/dev/null; then
+            echo "::error::Failed to create local branch '$HEAD_REF' from 'origin/$HEAD_REF'. Fetch output above."
+            exit 1
+          fi
 
       - name: Generate release summary
         run: |
           node tools/release-cli.js \
             "$BASE_REF" \
-            "$HEAD_REF" \
-            --output /tmp/release-summary.md
+            "$HEAD_REF" > "$SUMMARY_PATH"
+          echo "Generated summary:"
+          cat "$SUMMARY_PATH"
+
+      - name: Verify release summary was generated
+        run: |
+          if [ ! -s "$SUMMARY_PATH" ]; then
+            echo "::error::Release summary was not generated at $SUMMARY_PATH"
+            exit 1
+          fi
+          echo "Release summary found ($(wc -l < "$SUMMARY_PATH") lines)"
 
       - name: Post PR comment
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/post-release-summary.sh \
-          /tmp/release-summary.md \
-          "${{ github.event.pull_request.number }}" \
-          "$BASE_REF"
+        run: |
+          bash scripts/post-release-summary.sh \
+            "$SUMMARY_PATH" \
+            "$PR_NUMBER" \
+            "$BASE_REF"
