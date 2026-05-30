@@ -474,6 +474,8 @@ describe('ProfileService', () => {
     const defaultAppearance = {
       template: 'professional',
       accentColour: '#0EA5E9',
+      backgroundColour: '#ffffff',
+      textColour: '#111827',
       font: 'inter',
       cornerStyle: 'rounded',
       spacing: 20,
@@ -486,6 +488,8 @@ describe('ProfileService', () => {
         appearance: {
           template: 'creator',
           accentColour: '#6366f1',
+          backgroundColour: '#ffffff',
+          textColour: '#111827',
           font: 'serif',
           cornerStyle: 'pill',
           spacing: 16,
@@ -508,6 +512,8 @@ describe('ProfileService', () => {
       expect(result.appearance).toEqual({
         template: 'creator',
         accentColour: '#6366f1',
+        backgroundColour: '#ffffff',
+        textColour: '#111827',
         font: 'serif',
         cornerStyle: 'pill',
         spacing: 16,
@@ -1085,6 +1091,8 @@ describe('ProfileService', () => {
     const appearanceDto = {
       template: 'professional' as const,
       accentColour: '#6366f1',
+      backgroundColour: '#ffffff',
+      textColour: '#111827',
       font: 'inter' as const,
       cornerStyle: 'rounded' as const,
       spacing: 16,
@@ -1124,6 +1132,8 @@ describe('ProfileService', () => {
       const existingAppearance = {
         template: 'portfolio' as const,
         accentColour: '#ff0000',
+        backgroundColour: '#000000',
+        textColour: '#111827',
         font: 'serif' as const,
         cornerStyle: 'sharp' as const,
         spacing: 8,
@@ -1144,6 +1154,8 @@ describe('ProfileService', () => {
           appearance: expect.objectContaining({
             template: 'portfolio',
             accentColour: '#ff0000',
+            backgroundColour: '#000000',
+            textColour: '#111827',
             font: 'serif',
             cornerStyle: 'sharp',
             spacing: 8,

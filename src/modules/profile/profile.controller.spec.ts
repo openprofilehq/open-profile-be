@@ -529,6 +529,8 @@ describe('ProfileController (integration)', () => {
     const fullPayload = {
       template: 'professional',
       accentColour: '#6366f1',
+      backgroundColour: '#ffffff',
+      textColour: '#111827',
       font: 'inter',
       cornerStyle: 'rounded',
       spacing: 16,
@@ -595,6 +597,54 @@ describe('ProfileController (integration)', () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
         .send({ accentColour: '#fff' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain(
+            'Please provide a valid hex colour code',
+          );
+        });
+    });
+
+    it('returns 422 for backgroundColour missing # prefix', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ backgroundColour: 'ffffff' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain(
+            'Please provide a valid hex colour code',
+          );
+        });
+    });
+
+    it('returns 422 for short backgroundColour hex', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ backgroundColour: '#fff' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain(
+            'Please provide a valid hex colour code',
+          );
+        });
+    });
+
+    it('returns 422 for textColour missing # prefix', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ textColour: '111827' })
+        .expect(422)
+        .expect((res) => {
+          expect(res.body.message[0].error).toContain(
+            'Please provide a valid hex colour code',
+          );
+        });
+    });
+
+    it('returns 422 for short textColour hex', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/appearance')
+        .send({ textColour: '#fff' })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
