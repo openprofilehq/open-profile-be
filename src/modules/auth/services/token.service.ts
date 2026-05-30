@@ -151,7 +151,7 @@ export class TokenService {
       secure,
       sameSite,
       path: '/',
-      domain: isProd ? env.COOKIE_DOMAIN : undefined,
+      domain: isProd || isStaging ? env.COOKIE_DOMAIN : undefined,
     } as const;
   }
 
