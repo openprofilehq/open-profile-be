@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsString,
   IsUrl,
+  IsNumber,
   ValidateNested,
   IsOptional,
 } from 'class-validator';
@@ -25,6 +26,15 @@ export class BioDto {
   @ApiProperty({ example: 'Software engineer...' })
   @IsString()
   content: string;
+
+  @IsOptional() @IsString() textColor?: string;
+  @IsOptional() @IsString() bgColor?: string;
+  @IsOptional() @IsString() font?: string;
+  @IsOptional() @IsString() iconColor?: string;
+  @IsOptional() @IsNumber() paddingTop?: number;
+  @IsOptional() @IsNumber() paddingBottom?: number;
+  @IsOptional() @IsNumber() gap?: number;
+  @IsOptional() @IsNumber() padding?: number;
 }
 
 // Links
@@ -64,6 +74,15 @@ export class LinksDto {
   @ValidateNested({ each: true })
   @Type(() => LinkItemDto)
   items: LinkItemDto[];
+
+  @IsOptional() @IsString() textColor?: string;
+  @IsOptional() @IsString() bgColor?: string;
+  @IsOptional() @IsString() font?: string;
+  @IsOptional() @IsString() iconColor?: string;
+  @IsOptional() @IsNumber() paddingTop?: number;
+  @IsOptional() @IsNumber() paddingBottom?: number;
+  @IsOptional() @IsNumber() gap?: number;
+  @IsOptional() @IsNumber() padding?: number;
 }
 
 export class ProjectItemDto {
@@ -107,6 +126,15 @@ export class ProjectsDto {
   @ValidateNested({ each: true })
   @Type(() => ProjectItemDto)
   items: ProjectItemDto[];
+
+  @IsOptional() @IsString() textColor?: string;
+  @IsOptional() @IsString() bgColor?: string;
+  @IsOptional() @IsString() font?: string;
+  @IsOptional() @IsString() iconColor?: string;
+  @IsOptional() @IsNumber() paddingTop?: number;
+  @IsOptional() @IsNumber() paddingBottom?: number;
+  @IsOptional() @IsNumber() gap?: number;
+  @IsOptional() @IsNumber() padding?: number;
 }
 
 export enum CtaType {
