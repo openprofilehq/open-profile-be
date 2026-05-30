@@ -27,14 +27,14 @@ export class BioDto {
   @IsString()
   content: string;
 
-  @IsOptional() @IsString() textColor?: string;
-  @IsOptional() @IsString() bgColor?: string;
-  @IsOptional() @IsString() font?: string;
-  @IsOptional() @IsString() iconColor?: string;
-  @IsOptional() @IsNumber() paddingTop?: number;
-  @IsOptional() @IsNumber() paddingBottom?: number;
-  @IsOptional() @IsNumber() gap?: number;
-  @IsOptional() @IsNumber() padding?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() iconColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingTop?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
 // Links
@@ -75,14 +75,14 @@ export class LinksDto {
   @Type(() => LinkItemDto)
   items: LinkItemDto[];
 
-  @IsOptional() @IsString() textColor?: string;
-  @IsOptional() @IsString() bgColor?: string;
-  @IsOptional() @IsString() font?: string;
-  @IsOptional() @IsString() iconColor?: string;
-  @IsOptional() @IsNumber() paddingTop?: number;
-  @IsOptional() @IsNumber() paddingBottom?: number;
-  @IsOptional() @IsNumber() gap?: number;
-  @IsOptional() @IsNumber() padding?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() iconColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingTop?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
 export class ProjectItemDto {
@@ -110,6 +110,9 @@ export class ProjectItemDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
+
+  @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsString() imageSrc?: string | null;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() buttonText?: string;
 }
 
 export class ProjectsDto {
@@ -127,14 +130,15 @@ export class ProjectsDto {
   @Type(() => ProjectItemDto)
   items: ProjectItemDto[];
 
-  @IsOptional() @IsString() textColor?: string;
-  @IsOptional() @IsString() bgColor?: string;
-  @IsOptional() @IsString() font?: string;
-  @IsOptional() @IsString() iconColor?: string;
-  @IsOptional() @IsNumber() paddingTop?: number;
-  @IsOptional() @IsNumber() paddingBottom?: number;
-  @IsOptional() @IsNumber() gap?: number;
-  @IsOptional() @IsNumber() padding?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() layout?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() iconColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingTop?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
 export enum CtaType {
