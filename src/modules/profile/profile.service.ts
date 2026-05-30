@@ -800,12 +800,6 @@ export class ProfileService {
       await this.validateLinkItems(dto.content.links.items);
     }
 
-    // Validate CTA
-    const cta = dto.content?.cta;
-    if (cta) {
-      this.validateCtaContent(cta);
-    }
-
     const saved = await this.dataSource.transaction(async (manager) => {
       const draftRepo = manager.getRepository(ProfileDraft);
       await manager
