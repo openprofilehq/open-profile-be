@@ -144,13 +144,16 @@ export enum CtaType {
 
 export class CtaDto {
   @ApiProperty({ example: true })
+  @IsOptional()
   @IsBoolean()
   visible: boolean;
   @ApiProperty({ enum: CtaType, example: CtaType.EMAIL })
+  @IsOptional()
   @IsEnum(CtaType)
   type: CtaType;
 
   @ApiProperty({ example: 'Contact Me' })
+  @IsOptional()
   @IsString()
   label: string;
 
@@ -224,6 +227,7 @@ export class ProfileContentDto {
   projects: ProjectsDto;
 
   @ApiProperty()
+  @IsOptional()
   @ValidateNested()
   @Type(() => CtaDto)
   cta: CtaDto;
