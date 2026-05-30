@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsString,
   IsUrl,
+  IsNumber,
   ValidateNested,
   IsOptional,
 } from 'class-validator';
@@ -25,6 +26,15 @@ export class BioDto {
   @ApiProperty({ example: 'Software engineer...' })
   @IsString()
   content: string;
+
+  @ApiProperty({ required: false }) @IsOptional() @IsString() textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() iconColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingTop?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
 // Links
@@ -64,6 +74,15 @@ export class LinksDto {
   @ValidateNested({ each: true })
   @Type(() => LinkItemDto)
   items: LinkItemDto[];
+
+  @ApiProperty({ required: false }) @IsOptional() @IsString() textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() iconColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingTop?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
 export class ProjectItemDto {
@@ -91,6 +110,9 @@ export class ProjectItemDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
+
+  @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsString() imageSrc?: string | null;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() buttonText?: string;
 }
 
 export class ProjectsDto {
@@ -107,6 +129,16 @@ export class ProjectsDto {
   @ValidateNested({ each: true })
   @Type(() => ProjectItemDto)
   items: ProjectItemDto[];
+
+  @ApiProperty({ required: false }) @IsOptional() @IsString() layout?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() iconColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingTop?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
 export enum CtaType {
