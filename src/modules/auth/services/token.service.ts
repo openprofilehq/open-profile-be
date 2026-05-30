@@ -10,6 +10,7 @@ import { env } from '../../../config/env';
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../../users/entities/user.entity';
 import { JwtPayload } from '../strategies/jwt.strategy';
+import { resolveAuthCookieOptions } from '../utils/auth-cookie-policy';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
@@ -138,21 +139,10 @@ export class TokenService {
     return this.getAccessTokenTTL(payload) < SILENT_REFRESH_THRESHOLD_SECONDS;
   }
 
-  // ─── Cookie Policy (FIXED CONSISTENCY) ──────────────────────────────────────
+  // ─── Cookie Policy ──────────────────────────────────────────────────────────
 
-  private getCookieOptions() {
-    const isProd = env.NODE_ENV === 'production';
-    const isStaging = env.NODE_ENV === 'staging';
-
-    const secure = isProd || isStaging;
-    const sameSite = isProd ? 'strict' : 'lax';
-
-    return {
-      secure,
-      sameSite,
-      path: '/',
-      domain: isProd || isStaging ? env.COOKIE_DOMAIN : undefined,
-    } as const;
+  getCookieOptions() {
+    return resolveAuthCookieOptions(env.NODE_ENV, env.COOKIE_DOMAIN);
   }
 
   setTokenCookies(
