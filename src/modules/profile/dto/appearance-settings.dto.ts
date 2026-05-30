@@ -28,6 +28,22 @@ export class AppearanceSettingsDto {
   })
   accentColour?: string;
 
+  @ApiPropertyOptional({ example: '#ffffff' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9a-fA-F]{6}$/, {
+    message: 'Please provide a valid hex colour code.',
+  })
+  backgroundColour?: string;
+
+  @ApiPropertyOptional({ example: '#111827' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9a-fA-F]{6}$/, {
+    message: 'Please provide a valid hex colour code.',
+  })
+  textColour?: string;
+
   @ApiPropertyOptional({
     enum: ['afacad', 'inter', 'serif', 'mono', 'geologica', 'manrope'],
   })

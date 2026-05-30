@@ -919,6 +919,12 @@ export class ProfileService {
       ...(dto.accentColour !== undefined && {
         accentColour: dto.accentColour,
       }),
+      ...(dto.backgroundColour !== undefined && {
+        backgroundColour: dto.backgroundColour,
+      }),
+      ...(dto.textColour !== undefined && {
+        textColour: dto.textColour,
+      }),
       ...(dto.font !== undefined && { font: dto.font }),
       ...(dto.cornerStyle !== undefined && { cornerStyle: dto.cornerStyle }),
       ...(dto.spacing !== undefined && { spacing: dto.spacing }),
