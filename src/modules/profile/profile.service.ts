@@ -648,12 +648,7 @@ export class ProfileService {
         });
       }
     } else {
-      if (!cta.value) {
-        throw new UnprocessableEntityException({
-          error: 'INVALID_CTA',
-          message: 'URL required for link CTA.',
-        });
-      }
+      if (!cta.value) return;
       let parsed: URL;
       try {
         parsed = new URL(cta.value);
