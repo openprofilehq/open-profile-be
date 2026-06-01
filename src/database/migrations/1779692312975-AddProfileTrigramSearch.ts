@@ -2,6 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddProfileTrigramSearch1779692312975 implements MigrationInterface {
   name = 'AddProfileTrigramSearch1779692312975';
+  public transaction = false;
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
@@ -9,12 +10,12 @@ export class AddProfileTrigramSearch1779692312975 implements MigrationInterface 
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS profiles_full_name_trgm_idx
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS profiles_full_name_trgm_idx
       ON profiles USING GIN (full_name gin_trgm_ops);
     `);
 
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS profiles_username_trgm_idx
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS profiles_username_trgm_idx
       ON profiles USING GIN (username gin_trgm_ops);
     `);
   }

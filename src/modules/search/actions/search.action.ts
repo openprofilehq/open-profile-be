@@ -87,6 +87,7 @@ export class SearchAction extends AbstractModelAction<Profile> {
         'GREATEST(similarity(p.full_name, :q), similarity(p.username, :q))',
         'DESC',
       )
+      .addOrderBy('p.id', 'ASC')
       .limit(safeLimit)
       .offset(offset)
       .getRawMany<SearchProfileRow>();
