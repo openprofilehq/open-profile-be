@@ -60,7 +60,7 @@ const BRUTE_LOCKOUT_SECONDS = 30 * 60;
 const IP_RATE_LIMIT_MAX = 10;
 const IP_RATE_LIMIT_WINDOW_SECONDS = 15 * 60;
 
-export interface GoogleAuthResponse extends AuthTokens {
+export interface GoogleAuthResponse {
   user: Omit<User, 'password' | 'refreshTokenHash' | 'deletedAt'>;
   isNewUser: boolean;
 }
@@ -568,18 +568,18 @@ export class AuthService {
     user: User,
     ipAddress: string,
     _req: Request,
+    res: Response,
   ): Promise<GoogleAuthResponse> {
     this.usersService.logOAuthLogin(user.id, ipAddress, 'google');
 
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
+    this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, deletedAt, ...safeUser } = user;
 
     return {
-      accessToken,
-      refreshToken,
       user: safeUser,
       isNewUser: !user.onboardingComplete,
     };
