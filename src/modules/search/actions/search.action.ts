@@ -14,9 +14,6 @@ type SearchProfileRow = {
   fullName: string;
   bio: string | null;
   photoUrl: string | null;
-  // null when no photo — frontend renders initials from fullName
-  isVerified: boolean;
-  skills: string[];
 };
 
 export type PaginatedSearchResult = {
@@ -63,22 +60,12 @@ export class SearchAction extends AbstractModelAction<Profile> {
     const baseQuery = this.repo
       .createQueryBuilder('p')
       .where('p.is_published = true')
-      // explicit guard — only active profiles are searchable
       .andWhere('p.deleted_at IS NULL')
-      // explicit soft-delete guard — hidden/inactive accounts excluded
-      .andWhere('p.is_searchable = true')
       .andWhere(
         `(
           p.full_name % :q
           OR p.username % :q
-          OR EXISTS (
-            SELECT 1 FROM unnest(p.skills) AS skill
-            WHERE skill % :q
-          )
         )`,
-        // skills matched via unnest — each tag matched individually
-        // short tags like "React", "Node.js" are ideal for pg_trgm
-        // bio deferred to Phase 2 tsvector — too long for trigram matching
       )
       .setParameter('q', normalizedQ);
 
@@ -91,23 +78,16 @@ export class SearchAction extends AbstractModelAction<Profile> {
         'p.full_name                                          AS "fullName"',
         `LEFT(p.bio, ${BIO_TRUNCATE_LENGTH})                  AS bio`,
         'p.photo_url                                          AS "photoUrl"',
-        // returns null when no photo — frontend renders initials from fullName
-        'p.is_verified                                        AS "isVerified"',
-        'p.skills                                             AS skills',
-        // returned so frontend can display matched skill tags
       ])
-      .orderBy('CASE WHEN p.is_verified THEN 1 ELSE 0 END', 'DESC')
-      // verified profiles rank above unverified at same similarity score
-      .addOrderBy(
+      .orderBy(
         'CASE WHEN lower(p.username) = lower(:q) THEN 1 ELSE 0 END',
         'DESC',
       )
-      // exact username match ranks above partial matches
       .addOrderBy(
         'GREATEST(similarity(p.full_name, :q), similarity(p.username, :q))',
         'DESC',
       )
-      // highest trigram similarity score ranks first
+      .addOrderBy('p.id', 'ASC')
       .limit(safeLimit)
       .offset(offset)
       .getRawMany<SearchProfileRow>();
