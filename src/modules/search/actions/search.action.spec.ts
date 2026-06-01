@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repository } from 'typeorm';
 import { Profile } from '../../profile/entities/profile.entity';
-import { SearchAction } from './search.action';
+import { PaginatedSearchResult, SearchAction } from './search.action';
 
 function createQueryBuilderMock() {
   const qb = {
@@ -62,14 +62,12 @@ describe('SearchAction', () => {
   });
 
   it('searches published, active profiles and returns pagination metadata', async () => {
-    const rows = [
+    const rows: PaginatedSearchResult['results'] = [
       {
         username: 'ada',
         fullName: 'Ada Lovelace',
         bio: 'Mathematician',
         photoUrl: null,
-        isVerified: true,
-        skills: ['math', 'software'],
       },
     ];
     qb.getCount.mockResolvedValue(11);
