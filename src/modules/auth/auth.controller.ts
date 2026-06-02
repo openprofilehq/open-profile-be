@@ -75,9 +75,7 @@ export class AuthController {
     summary: 'Silently refresh access token from httpOnly cookie',
   })
   refreshToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    this.logger.debug(
-      `[refreshToken] cookies=${JSON.stringify(req.cookies)}`,
-    );
+    this.logger.debug(`[refreshToken] cookies=${JSON.stringify(req.cookies)}`);
     return this.authService.refreshTokens(req, res);
   }
 
