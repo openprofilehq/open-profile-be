@@ -15,11 +15,11 @@ import { resolveAuthCookieOptions } from '../utils/auth-cookie-policy';
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
 
-const ACCESS_TOKEN_MAX_AGE_MS = 3 * 60 * 1000;
+const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
 const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
-const SILENT_REFRESH_THRESHOLD_SECONDS = 2 * 60;
+const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60;
 
 @Injectable()
 export class TokenService {
@@ -29,7 +29,7 @@ export class TokenService {
     private readonly jwtService: JwtService,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
-  ) { }
+  ) {}
 
   // ─── Access Token ────────────────────────────────────────────────────────────
 
