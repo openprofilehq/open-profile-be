@@ -22,8 +22,6 @@ describe('SearchService', () => {
         fullName: 'Ada Lovelace',
         bio: 'Mathematician',
         photoUrl: null,
-        isVerified: true,
-        skills: ['software'],
       },
     ],
     total: 1,

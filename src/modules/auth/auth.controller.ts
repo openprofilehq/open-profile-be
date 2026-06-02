@@ -25,7 +25,6 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
-import { TokenService } from './services/token.service';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { GoogleAuthRequest } from './interfaces/google.interface';
 import { ResendOtpDto } from './dto/resend-otp.dto';
@@ -36,7 +35,6 @@ import { UsersService } from '../users/users.service';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly tokenService: TokenService,
     private readonly usersService: UsersService,
   ) {}
 
@@ -192,11 +190,12 @@ export class AuthController {
       return res.redirect(302, errorUrl);
     }
 
-    const response = await this.authService.loginGoogle(req.user, req.ip, req);
-    this.tokenService.setTokenCookies(res, {
-      accessToken: response.accessToken,
-      refreshToken: response.refreshToken,
-    });
+    const response = await this.authService.loginGoogle(
+      req.user,
+      req.ip,
+      req,
+      res,
+    );
 
     const redirectUrl = response.isNewUser
       ? `${env.FRONTEND_URL}/create-profile`

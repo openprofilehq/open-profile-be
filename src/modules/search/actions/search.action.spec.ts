@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Repository } from 'typeorm';
 import { Profile } from '../../profile/entities/profile.entity';
-import { SearchAction } from './search.action';
+import { PaginatedSearchResult, SearchAction } from './search.action';
 
 function createQueryBuilderMock() {
   const qb = {
@@ -61,15 +61,13 @@ describe('SearchAction', () => {
     expect(repo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
-  it('searches published, active, searchable profiles and returns pagination metadata', async () => {
-    const rows = [
+  it('searches published, active profiles and returns pagination metadata', async () => {
+    const rows: PaginatedSearchResult['results'] = [
       {
         username: 'ada',
         fullName: 'Ada Lovelace',
         bio: 'Mathematician',
         photoUrl: null,
-        isVerified: true,
-        skills: ['math', 'software'],
       },
     ];
     qb.getCount.mockResolvedValue(11);
@@ -84,7 +82,6 @@ describe('SearchAction', () => {
     expect(repo.createQueryBuilder).toHaveBeenCalledWith('p');
     expect(qb.where).toHaveBeenCalledWith('p.is_published = true');
     expect(qb.andWhere).toHaveBeenCalledWith('p.deleted_at IS NULL');
-    expect(qb.andWhere).toHaveBeenCalledWith('p.is_searchable = true');
     expect(qb.setParameter).toHaveBeenCalledWith('q', 'ada');
     expect(qb.limit).toHaveBeenCalledWith(4);
     expect(qb.offset).toHaveBeenCalledWith(4);
