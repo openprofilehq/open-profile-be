@@ -15,11 +15,11 @@ import { resolveAuthCookieOptions } from '../utils/auth-cookie-policy';
 const ACCESS_TOKEN_COOKIE = 'accessToken';
 const REFRESH_TOKEN_COOKIE = 'refreshToken';
 
-const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
+const ACCESS_TOKEN_MAX_AGE_MS = 3 * 60 * 1000;
 const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_TOKEN_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
-const SILENT_REFRESH_THRESHOLD_SECONDS = 3 * 60;
+const SILENT_REFRESH_THRESHOLD_SECONDS = 2 * 60;
 
 @Injectable()
 export class TokenService {
@@ -29,7 +29,7 @@ export class TokenService {
     private readonly jwtService: JwtService,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
-  ) {}
+  ) { }
 
   // ─── Access Token ────────────────────────────────────────────────────────────
 
@@ -52,6 +52,9 @@ export class TokenService {
   async generateRefreshToken(userId: string): Promise<string> {
     const { record, rawToken } = this.createRefreshTokenRecord(userId);
     await this.refreshTokenRepo.save(record);
+    this.logger.debug(
+      `[generateRefreshToken] userId=${userId} recordId=${record.id} rawTokenPrefix=${rawToken.slice(0, 8)}...`,
+    );
     return rawToken;
   }
 
@@ -82,19 +85,33 @@ export class TokenService {
       .update(rawRefreshToken)
       .digest('hex');
 
+    this.logger.debug(
+      `[rotateTokens] tokenHash=${hashedToken.slice(0, 16)}... rawTokenPrefix=${rawRefreshToken.slice(0, 8)}...`,
+    );
+
     const matchedRecord = await this.refreshTokenRepo.findOne({
       where: { tokenHash: hashedToken },
       relations: ['user'],
     });
 
     if (!matchedRecord) {
+      this.logger.warn(
+        `[rotateTokens] No matching record found tokenHash=${hashedToken.slice(0, 16)}...`,
+      );
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     }
 
+    this.logger.debug(
+      `[rotateTokens] Found record id=${matchedRecord.id} userId=${matchedRecord.userId} expiresAt=${matchedRecord.expiresAt.toISOString()}`,
+    );
+
     if (new Date() > matchedRecord.expiresAt) {
+      this.logger.warn(
+        `[rotateTokens] Token expired id=${matchedRecord.id} expiresAt=${matchedRecord.expiresAt.toISOString()}`,
+      );
       await this.refreshTokenRepo.delete({ id: matchedRecord.id });
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
@@ -107,11 +124,18 @@ export class TokenService {
     });
 
     if (deleteResult.affected === 0) {
+      this.logger.warn(
+        `[rotateTokens] Delete failed id=${matchedRecord.id} affected=0`,
+      );
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Session has expired. Please try again.',
       });
     }
+
+    this.logger.debug(
+      `[rotateTokens] Old record deleted id=${matchedRecord.id}`,
+    );
 
     const user = matchedRecord.user;
 
@@ -119,6 +143,10 @@ export class TokenService {
       this.createRefreshTokenRecord(user.id);
 
     await this.refreshTokenRepo.save(newRecord);
+
+    this.logger.debug(
+      `[rotateTokens] New token created and saved for userId=${user.id}`,
+    );
 
     const accessToken = await this.generateAccessToken(user);
 

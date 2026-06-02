@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Req,
   Res,
@@ -33,6 +34,8 @@ import { UsersService } from '../users/users.service';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
@@ -50,7 +53,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Log in with email and password' })
-  login(
+  async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -61,6 +64,7 @@ export class AuthController {
         ?.trim() ??
       req.socket.remoteAddress ??
       'unknown';
+    this.logger.debug(`[login] email=${dto.email} ip=${ip}`);
     return this.authService.login(dto, ip, req, res);
   }
 
@@ -71,6 +75,9 @@ export class AuthController {
     summary: 'Silently refresh access token from httpOnly cookie',
   })
   refreshToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    this.logger.debug(
+      `[refreshToken] cookies=${JSON.stringify(req.cookies)}`,
+    );
     return this.authService.refreshTokens(req, res);
   }
 
@@ -180,15 +187,21 @@ export class AuthController {
   async googleCallback(@Req() req: GoogleAuthRequest, @Res() res: Response) {
     const state = (req.query?.state as string | undefined) ?? null;
     if (!state) {
+      this.logger.warn('[googleCallback] Missing state parameter');
       const errorUrl = `${env.FRONTEND_URL}/auth?error=AUTH_FAILED&message=Missing%20state`;
       return res.redirect(302, errorUrl);
     }
 
     const entry = await this.authService.consumeOauthState('google', state);
     if (!entry) {
+      this.logger.warn('[googleCallback] Invalid or expired state');
       const errorUrl = `${env.FRONTEND_URL}/auth?error=AUTH_FAILED&message=Invalid%20or%20expired%20state`;
       return res.redirect(302, errorUrl);
     }
+
+    this.logger.debug(
+      `[googleCallback] State validated userId=${req.user?.id ?? 'unknown'}`,
+    );
 
     const response = await this.authService.loginGoogle(
       req.user,
@@ -200,6 +213,10 @@ export class AuthController {
     const redirectUrl = response.isNewUser
       ? `${env.FRONTEND_URL}/create-profile`
       : `${env.FRONTEND_URL}/dashboard`;
+
+    this.logger.debug(
+      `[googleCallback] Redirecting to ${redirectUrl} isNewUser=${response.isNewUser}`,
+    );
     return res.redirect(302, redirectUrl);
   }
 

@@ -9,7 +9,7 @@ export type AuthCookieBaseOptions = {
  * Resolves httpOnly auth cookie attributes by environment.
  *
  * - production: shared backend parent domain (COOKIE_DOMAIN), SameSite=strict
- * - staging: host-only on the API that set the cookie (no Domain), SameSite=none for localhost frontends
+ * - staging: shared backend parent domain (COOKIE_DOMAIN), SameSite=none for cross-origin frontends
  * - development/test: host-only, lax for local HTTP
  */
 export function resolveAuthCookieOptions(
@@ -30,6 +30,7 @@ export function resolveAuthCookieOptions(
       secure: true,
       sameSite: 'none',
       path: '/',
+      domain: cookieDomain,
     };
   }
 

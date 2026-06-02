@@ -261,6 +261,10 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+
+    this.logger.debug(
+      `[login] userId=${user.id} authProvider=${user.authProvider} tokensGenerated=true refreshTokenPrefix=${refreshToken.slice(0, 8)}...`,
+    );
     return {
       status: 'success',
       user: {
@@ -279,7 +283,14 @@ export class AuthService {
     const cookies = req.cookies as Record<string, string> | undefined;
     const rawRefreshToken = cookies?.['refreshToken'];
 
+    this.logger.debug(
+      `[refreshTokens] cookies=${JSON.stringify(cookies)} hasRefreshToken=${!!rawRefreshToken} allCookiesKeys=${JSON.stringify(Object.keys(cookies ?? {}))}`,
+    );
+
     if (!rawRefreshToken) {
+      this.logger.warn(
+        `[refreshTokens] No refreshToken cookie found cookies=${JSON.stringify(cookies)}`,
+      );
       this.tokenService.clearTokenCookies(res);
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
@@ -289,8 +300,12 @@ export class AuthService {
     try {
       const tokens = await this.tokenService.rotateTokens(rawRefreshToken);
       this.tokenService.setTokenCookies(res, tokens);
+      this.logger.debug(`[refreshTokens] Tokens rotated successfully`);
       return { status: 'success' };
-    } catch {
+    } catch (err) {
+      this.logger.warn(
+        `[refreshTokens] Token rotation failed error=${err instanceof Error ? err.message : String(err)}`,
+      );
       this.tokenService.clearTokenCookies(res);
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
@@ -575,6 +590,10 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+
+    this.logger.debug(
+      `[loginGoogle] userId=${user.id} tokensGenerated=true refreshTokenPrefix=${refreshToken.slice(0, 8)}...`,
+    );
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, deletedAt, ...safeUser } = user;
