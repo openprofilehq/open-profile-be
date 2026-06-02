@@ -53,7 +53,7 @@ export class TokenService {
     const { record, rawToken } = this.createRefreshTokenRecord(userId);
     await this.refreshTokenRepo.save(record);
     this.logger.debug(
-      `[generateRefreshToken] userId=${userId} recordId=${record.id} rawTokenPrefix=${rawToken.slice(0, 8)}...`,
+      `[generateRefreshToken] userId=${userId} recordId=${record.id}`,
     );
     return rawToken;
   }
@@ -86,7 +86,7 @@ export class TokenService {
       .digest('hex');
 
     this.logger.debug(
-      `[rotateTokens] tokenHash=${hashedToken.slice(0, 16)}... rawTokenPrefix=${rawRefreshToken.slice(0, 8)}...`,
+      `[rotateTokens] tokenHash=${hashedToken.slice(0, 16)}...`,
     );
 
     const matchedRecord = await this.refreshTokenRepo.findOne({

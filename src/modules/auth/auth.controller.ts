@@ -64,7 +64,7 @@ export class AuthController {
         ?.trim() ??
       req.socket.remoteAddress ??
       'unknown';
-    this.logger.debug(`[login] email=${dto.email} ip=${ip}`);
+    this.logger.debug(`[login] emailProvided=true ip=${ip}`);
     return this.authService.login(dto, ip, req, res);
   }
 
@@ -75,7 +75,9 @@ export class AuthController {
     summary: 'Silently refresh access token from httpOnly cookie',
   })
   refreshToken(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    this.logger.debug(`[refreshToken] cookies=${JSON.stringify(req.cookies)}`);
+    this.logger.debug(
+      `[refreshToken] hasCookies=${!!req.cookies} cookieKeys=${JSON.stringify(Object.keys(req.cookies ?? {}))}`,
+    );
     return this.authService.refreshTokens(req, res);
   }
 

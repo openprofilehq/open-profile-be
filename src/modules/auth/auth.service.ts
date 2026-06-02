@@ -263,7 +263,7 @@ export class AuthService {
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
 
     this.logger.debug(
-      `[login] userId=${user.id} authProvider=${user.authProvider} tokensGenerated=true refreshTokenPrefix=${refreshToken.slice(0, 8)}...`,
+      `[login] userId=${user.id} authProvider=${user.authProvider} tokensGenerated=true`,
     );
     return {
       status: 'success',
@@ -284,12 +284,12 @@ export class AuthService {
     const rawRefreshToken = cookies?.['refreshToken'];
 
     this.logger.debug(
-      `[refreshTokens] cookies=${JSON.stringify(cookies)} hasRefreshToken=${!!rawRefreshToken} allCookiesKeys=${JSON.stringify(Object.keys(cookies ?? {}))}`,
+      `[refreshTokens] hasRefreshToken=${!!rawRefreshToken} cookieKeys=${JSON.stringify(Object.keys(cookies ?? {}))}`,
     );
 
     if (!rawRefreshToken) {
       this.logger.warn(
-        `[refreshTokens] No refreshToken cookie found cookies=${JSON.stringify(cookies)}`,
+        `[refreshTokens] No refreshToken cookie found cookieKeys=${JSON.stringify(Object.keys(cookies ?? {}))}`,
       );
       this.tokenService.clearTokenCookies(res);
       throw new UnauthorizedException({
@@ -591,9 +591,7 @@ export class AuthService {
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
 
-    this.logger.debug(
-      `[loginGoogle] userId=${user.id} tokensGenerated=true refreshTokenPrefix=${refreshToken.slice(0, 8)}...`,
-    );
+    this.logger.debug(`[loginGoogle] userId=${user.id} tokensGenerated=true`);
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, deletedAt, ...safeUser } = user;
