@@ -31,6 +31,8 @@ import { ContactModule } from './modules/contact/contact.module';
 import { PortfolioModule } from './modules/portfolio/portfolio.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { UploadModule } from './modules/upload/upload.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { HttpMetricsInterceptor } from './modules/metrics/http-metrics.interceptor';
 import { ValidationError } from 'class-validator';
 
 @Module({
@@ -73,6 +75,7 @@ import { ValidationError } from 'class-validator';
     ContactModule,
     PortfolioModule,
     UploadModule,
+    MetricsModule,
   ],
   providers: [
     {
@@ -112,6 +115,7 @@ import { ValidationError } from 'class-validator';
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: HttpMetricsInterceptor },
   ],
 })
 export class AppModule {}

@@ -52,7 +52,10 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api', {
-    exclude: [{ path: 'health', method: RequestMethod.GET }],
+    exclude: [
+      { path: 'health', method: RequestMethod.GET },
+      { path: 'metrics', method: RequestMethod.GET },
+    ],
   });
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });

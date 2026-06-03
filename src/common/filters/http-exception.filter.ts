@@ -7,10 +7,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { MetricsService } from '../../modules/metrics/metrics.service';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
+
+  constructor(private readonly metricsService?: MetricsService) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -31,7 +34,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
         const r = res as Record<string, unknown>;
         message = (r.message as string | string[]) ?? message;
         error = (r.error as string) ?? exception.name;
-        // pass through any extra fields (errorCode, email, etc.)
         extras = Object.fromEntries(
           Object.entries(r).filter(
             ([k]) => !['message', 'error', 'statusCode'].includes(k),
@@ -50,6 +52,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       );
     }
 
+    this.trackErrorMetric(request, status);
+
     response.status(status).json({
       success: false,
       statusCode: status,
@@ -59,5 +63,30 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  private trackErrorMetric(request: Request, statusCode: number) {
+    try {
+      if (this.metricsService) {
+        const route: string =
+          (request.route as { path?: string } | undefined)?.path ??
+          request.url?.split('?')[0] ??
+          '/';
+        this.metricsService.httpRequestsTotal.inc({
+          method: request.method,
+          route,
+          status_code: statusCode,
+        });
+        this.metricsService.httpErrorsTotal.inc({
+          method: request.method,
+          route,
+          status_code: statusCode,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        err instanceof Error ? err.message : 'Failed to record error metric',
+      );
+    }
   }
 }
