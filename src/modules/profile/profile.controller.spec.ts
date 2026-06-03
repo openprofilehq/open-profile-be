@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ValidationError } from 'class-validator';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -64,11 +65,26 @@ describe('ProfileController (integration)', () => {
             forbidNonWhitelisted: true,
             transformOptions: { enableImplicitConversion: false },
             exceptionFactory: (errors) => {
-              const formatted = errors.map((e) => ({
-                field: e.property,
-                error: Object.values(e.constraints ?? {}).join(', '),
-              }));
-              return new UnprocessableEntityException(formatted);
+              const flatten = (
+                errs: ValidationError[],
+                parentField = '',
+              ): { field: string; error: string }[] => {
+                const result: { field: string; error: string }[] = [];
+                for (const e of errs) {
+                  const field = parentField
+                    ? `${parentField}.${e.property}`
+                    : e.property;
+                  const constraints = Object.values(e.constraints ?? {});
+                  if (constraints.length > 0) {
+                    result.push({ field, error: constraints.join(', ') });
+                  }
+                  if (e.children?.length) {
+                    result.push(...flatten(e.children, field));
+                  }
+                }
+                return result;
+              };
+              return new UnprocessableEntityException(flatten(errors));
             },
           }),
         },
@@ -527,14 +543,16 @@ describe('ProfileController (integration)', () => {
   // -----------------------------------------------------------------------
   describe('PATCH /api/v1/profiles/appearance', () => {
     const fullPayload = {
-      template: 'professional',
-      accentColour: '#6366f1',
-      backgroundColour: '#ffffff',
-      textColour: '#111827',
-      font: 'inter',
-      cornerStyle: 'rounded',
-      spacing: 16,
-      theme: 'dark',
+      global: {
+        template: 'professional',
+        accentColour: '#6366f1',
+        backgroundColour: '#ffffff',
+        textColour: '#111827',
+        font: 'inter',
+        cornerStyle: 'rounded',
+        spacing: 16,
+        theme: 'dark',
+      },
     };
 
     it('returns 200 with saved appearance on valid full payload', async () => {
@@ -554,7 +572,7 @@ describe('ProfileController (integration)', () => {
     });
 
     it('returns 200 with partial payload (single field)', async () => {
-      const partial = { theme: 'light' };
+      const partial = { global: { theme: 'light' } };
       mockProfileService.updateAppearance.mockResolvedValue({
         status: 'success',
         appearance: partial,
@@ -572,7 +590,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for invalid template', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ template: 'unknown' })
+        .send({ global: { template: 'unknown' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
@@ -584,7 +602,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for hex colour missing # prefix', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ accentColour: '6366f1' })
+        .send({ global: { accentColour: '6366f1' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
@@ -596,7 +614,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for short hex colour', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ accentColour: '#fff' })
+        .send({ global: { accentColour: '#fff' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
@@ -608,7 +626,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for backgroundColour missing # prefix', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ backgroundColour: 'ffffff' })
+        .send({ global: { backgroundColour: 'ffffff' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
@@ -620,7 +638,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for short backgroundColour hex', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ backgroundColour: '#fff' })
+        .send({ global: { backgroundColour: '#fff' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
@@ -632,7 +650,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for textColour missing # prefix', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ textColour: '111827' })
+        .send({ global: { textColour: '111827' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
@@ -644,7 +662,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for short textColour hex', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ textColour: '#fff' })
+        .send({ global: { textColour: '#fff' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain(
@@ -656,7 +674,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for invalid font', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ font: 'comic-sans' })
+        .send({ global: { font: 'comic-sans' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain('Invalid font selection');
@@ -666,7 +684,7 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for invalid cornerStyle', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ cornerStyle: 'extreme' })
+        .send({ global: { cornerStyle: 'extreme' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain('Invalid corner style');
@@ -676,21 +694,21 @@ describe('ProfileController (integration)', () => {
     it('returns 422 for spacing below 0', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ spacing: -1 })
+        .send({ global: { spacing: -1 } })
         .expect(422);
     });
 
     it('returns 422 for spacing above 40', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ spacing: 41 })
+        .send({ global: { spacing: 41 } })
         .expect(422);
     });
 
     it('returns 422 for invalid theme', async () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
-        .send({ theme: 'neon' })
+        .send({ global: { theme: 'neon' } })
         .expect(422)
         .expect((res) => {
           expect(res.body.message[0].error).toContain('Invalid theme');

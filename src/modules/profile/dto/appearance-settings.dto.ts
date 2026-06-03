@@ -1,4 +1,5 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsIn,
   IsNumber,
@@ -7,9 +8,10 @@ import {
   Matches,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
-export class AppearanceSettingsDto {
+export class AppearanceStyleDto {
   @ApiPropertyOptional({
     enum: ['professional', 'creator', 'portfolio', 'default'],
   })
@@ -76,4 +78,44 @@ export class AppearanceSettingsDto {
     message: 'Invalid theme.',
   })
   theme?: 'light' | 'dark';
+}
+
+export class AppearanceComponentsDto {
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  bio?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  links?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  projects?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  cta?: AppearanceStyleDto;
+}
+
+export class AppearanceSettingsDto {
+  @ApiProperty({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  global?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceComponentsDto })
+  @ValidateNested()
+  @Type(() => AppearanceComponentsDto)
+  @IsOptional()
+  components?: AppearanceComponentsDto;
 }
