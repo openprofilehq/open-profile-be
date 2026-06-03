@@ -33,6 +33,7 @@ import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
 import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 import { LinkItemDto } from './dto/profile-content.dto';
 import { SectionType } from './dto/profile-content.dto';
+import { isValidPhoneNumber } from 'libphonenumber-js';
 import {
   sanitizeUrl,
   isValidUrl,
@@ -153,7 +154,10 @@ export class ProfileService {
     if (cached) {
       const parsed = JSON.parse(cached) as PublicProfileResponseDto;
       if (parsed['__notFound']) {
-        throw new NotFoundException({ error: 'not_found' });
+        throw new NotFoundException({
+          error: 'not_found',
+          message: 'Profile not found',
+        });
       }
       const etag = this.computeEtag(cached);
       return { data: parsed, etag, fromCache: true };
@@ -183,7 +187,10 @@ export class ProfileService {
           JSON.stringify({ __notFound: true }),
           CACHE_404_TTL_SECONDS,
         );
-        throw new NotFoundException({ error: 'not_found' });
+        throw new NotFoundException({
+          error: 'not_found',
+          message: 'Profile not found',
+        });
       }
 
       const responseData = this.serialize(profile);
@@ -635,7 +642,7 @@ export class ProfileService {
   }
 
   private validateCtaContent(cta: Partial<CtaDto>): void {
-    if (!cta.visible) return;
+    if (cta.visible === false) return;
 
     const effectiveType = cta.type ?? CtaType.LINK;
 
@@ -645,6 +652,21 @@ export class ProfileService {
         throw new UnprocessableEntityException({
           error: 'INVALID_CTA',
           message: 'CTA email must be a valid email address.',
+        });
+      }
+    } else if (
+      effectiveType === CtaType.PHONE ||
+      effectiveType === CtaType.WHATSAPP
+    ) {
+      if (
+        !cta.value ||
+        cta.value !== cta.value.trim() ||
+        !isValidPhoneNumber(cta.value)
+      ) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA',
+          message:
+            'CTA phone number must be a valid international phone number (e.g. +2348012345678).',
         });
       }
     } else {
@@ -795,6 +817,11 @@ export class ProfileService {
       await this.validateLinkItems(dto.content.links.items);
     }
 
+    // Validate CTA before saving to draft
+    if (dto.content?.cta) {
+      this.validateCtaContent(dto.content.cta);
+    }
+
     const saved = await this.dataSource.transaction(async (manager) => {
       const draftRepo = manager.getRepository(ProfileDraft);
       await manager
@@ -902,22 +929,32 @@ export class ProfileService {
     }
 
     const existing = profile.appearance ?? {};
+    const mergedGlobal = {
+      ...(existing.global ?? {}),
+      ...(dto.global ?? {}),
+    };
+    const mergedComponents = {
+      bio: {
+        ...(existing.components?.bio ?? {}),
+        ...(dto.components?.bio ?? {}),
+      },
+      links: {
+        ...(existing.components?.links ?? {}),
+        ...(dto.components?.links ?? {}),
+      },
+      projects: {
+        ...(existing.components?.projects ?? {}),
+        ...(dto.components?.projects ?? {}),
+      },
+      cta: {
+        ...(existing.components?.cta ?? {}),
+        ...(dto.components?.cta ?? {}),
+      },
+    };
+
     profile.appearance = {
-      ...existing,
-      ...(dto.template !== undefined && { template: dto.template }),
-      ...(dto.accentColour !== undefined && {
-        accentColour: dto.accentColour,
-      }),
-      ...(dto.backgroundColour !== undefined && {
-        backgroundColour: dto.backgroundColour,
-      }),
-      ...(dto.textColour !== undefined && {
-        textColour: dto.textColour,
-      }),
-      ...(dto.font !== undefined && { font: dto.font }),
-      ...(dto.cornerStyle !== undefined && { cornerStyle: dto.cornerStyle }),
-      ...(dto.spacing !== undefined && { spacing: dto.spacing }),
-      ...(dto.theme !== undefined && { theme: dto.theme }),
+      global: mergedGlobal,
+      components: mergedComponents,
     };
 
     profile.hasUnpublishedChanges = true;
@@ -958,12 +995,34 @@ export class ProfileService {
       'manrope',
     ]);
 
+    const saved = profile.appearance ?? {};
     const appearance: AppearanceSettingsDto = {
-      ...DEFAULT_APPEARANCE,
-      ...(profile.appearance ?? {}),
+      global: {
+        ...DEFAULT_APPEARANCE.global,
+        ...(saved.global ?? {}),
+      },
+      components: {
+        bio: {
+          ...DEFAULT_APPEARANCE.components!.bio,
+          ...(saved.components?.bio ?? {}),
+        },
+        links: {
+          ...DEFAULT_APPEARANCE.components!.links,
+          ...(saved.components?.links ?? {}),
+        },
+        projects: {
+          ...DEFAULT_APPEARANCE.components!.projects,
+          ...(saved.components?.projects ?? {}),
+        },
+        cta: {
+          ...DEFAULT_APPEARANCE.components!.cta,
+          ...(saved.components?.cta ?? {}),
+        },
+      },
     };
-    if (!appearance.font || !VALID_FONTS.has(appearance.font)) {
-      appearance.font = DEFAULT_APPEARANCE.font;
+
+    if (!appearance.global!.font || !VALID_FONTS.has(appearance.global!.font)) {
+      appearance.global!.font = DEFAULT_APPEARANCE.global!.font;
     }
 
     return {
