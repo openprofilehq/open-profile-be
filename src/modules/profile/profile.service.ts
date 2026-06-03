@@ -635,7 +635,7 @@ export class ProfileService {
   }
 
   private validateCtaContent(cta: Partial<CtaDto>): void {
-    if (!cta.visible) return;
+    if (cta.visible === false) return;
 
     const effectiveType = cta.type ?? CtaType.LINK;
 
@@ -652,7 +652,11 @@ export class ProfileService {
       effectiveType === CtaType.WHATSAPP
     ) {
       const phoneRegex = /^\+?[1-9]\d{6,14}$/;
-      if (!cta.value || !phoneRegex.test(cta.value.trim())) {
+      if (
+        !cta.value ||
+        cta.value !== cta.value.trim() ||
+        !phoneRegex.test(cta.value)
+      ) {
         throw new UnprocessableEntityException({
           error: 'INVALID_CTA',
           message:

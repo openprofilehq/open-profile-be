@@ -1085,6 +1085,155 @@ describe('ProfileService', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // validateCtaContent (for PHONE and WHATSAPP CTA types)
+  // ---------------------------------------------------------------------------
+  describe('validateCtaContent', () => {
+    it('accepts valid email CTA', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.EMAIL,
+        label: 'Email Me',
+        value: 'test@example.com',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).not.toThrow();
+    });
+
+    it('rejects invalid email format', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.EMAIL,
+        label: 'Email Me',
+        value: 'not-an-email',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('accepts valid phone number CTA with E.164 format', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.PHONE,
+        label: 'Call Me',
+        value: '+2348012345678',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).not.toThrow();
+    });
+
+    it('accepts valid phone number without leading +', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.PHONE,
+        label: 'Call Me',
+        value: '2348012345678',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).not.toThrow();
+    });
+
+    it('rejects invalid phone number (too short)', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.PHONE,
+        label: 'Call Me',
+        value: '+123',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('rejects phone number starting with 0', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.PHONE,
+        label: 'Call Me',
+        value: '+0348012345678',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('accepts valid WhatsApp number CTA', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.WHATSAPP,
+        label: 'Message Me',
+        value: '+2348012345678',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).not.toThrow();
+    });
+
+    it('rejects invalid WhatsApp number', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.WHATSAPP,
+        label: 'Message Me',
+        value: 'invalid-number',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('accepts valid link CTA', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.LINK,
+        label: 'Visit Me',
+        value: 'https://example.com',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).not.toThrow();
+    });
+
+    it('skips validation when CTA is not visible', () => {
+      const cta = {
+        visible: false,
+        type: CtaType.PHONE,
+        label: 'Call Me',
+        value: 'invalid',
+      };
+
+      expect(() => service['validateCtaContent'](cta)).not.toThrow();
+    });
+
+    it('throws when phone CTA has no value', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.PHONE,
+        label: 'Call Me',
+        value: null,
+      };
+
+      expect(() => service['validateCtaContent'](cta)).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+
+    it('throws when email CTA has no value', () => {
+      const cta = {
+        visible: true,
+        type: CtaType.EMAIL,
+        label: 'Email Me',
+        value: null,
+      };
+
+      expect(() => service['validateCtaContent'](cta)).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // updateAppearance
   // ---------------------------------------------------------------------------
   describe('updateAppearance', () => {
