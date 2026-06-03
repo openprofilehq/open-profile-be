@@ -647,6 +647,18 @@ export class ProfileService {
           message: 'CTA email must be a valid email address.',
         });
       }
+    } else if (
+      effectiveType === CtaType.PHONE ||
+      effectiveType === CtaType.WHATSAPP
+    ) {
+      const phoneRegex = /^\+?[1-9]\d{6,14}$/;
+      if (!cta.value || !phoneRegex.test(cta.value.trim())) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA',
+          message:
+            'CTA phone number must be a valid international phone number (e.g. +2348012345678).',
+        });
+      }
     } else {
       if (!cta.value) return;
       let parsed: URL;
@@ -793,6 +805,11 @@ export class ProfileService {
     // Validate visible link items before saving
     if (dto.content?.links?.items?.length) {
       await this.validateLinkItems(dto.content.links.items);
+    }
+
+    // Validate CTA before saving to draft
+    if (dto.content?.cta) {
+      this.validateCtaContent(dto.content.cta);
     }
 
     const saved = await this.dataSource.transaction(async (manager) => {
