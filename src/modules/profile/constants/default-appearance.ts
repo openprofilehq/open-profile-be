@@ -1,6 +1,7 @@
 import { AppearanceSettingsDto } from '../dto/appearance-settings.dto';
+import { AppearanceStyleDto } from '../dto/appearance-settings.dto';
 
-export const DEFAULT_APPEARANCE: AppearanceSettingsDto = {
+const DEFAULT_STYLE: AppearanceStyleDto = {
   template: 'professional',
   accentColour: '#0EA5E9',
   backgroundColour: '#ffffff',
@@ -9,4 +10,14 @@ export const DEFAULT_APPEARANCE: AppearanceSettingsDto = {
   cornerStyle: 'rounded',
   spacing: 20,
   theme: 'light',
+};
+
+export const DEFAULT_APPEARANCE: AppearanceSettingsDto = {
+  global: { ...DEFAULT_STYLE },
+  components: {
+    bio: { ...DEFAULT_STYLE },
+    links: { ...DEFAULT_STYLE },
+    projects: { ...DEFAULT_STYLE },
+    cta: { ...DEFAULT_STYLE },
+  },
 };

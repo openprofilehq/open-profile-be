@@ -471,7 +471,7 @@ describe('ProfileService', () => {
   // getAppearance
   // ---------------------------------------------------------------------------
   describe('getAppearance', () => {
-    const defaultAppearance = {
+    const defaultStyle = {
       template: 'professional',
       accentColour: '#0EA5E9',
       backgroundColour: '#ffffff',
@@ -482,18 +482,38 @@ describe('ProfileService', () => {
       theme: 'light',
     };
 
+    const defaultAppearance = {
+      global: { ...defaultStyle },
+      components: {
+        bio: { ...defaultStyle },
+        links: { ...defaultStyle },
+        projects: { ...defaultStyle },
+        cta: { ...defaultStyle },
+      },
+    };
+
     it('returns saved appearance when profile has appearance', async () => {
+      const savedStyle = {
+        template: 'creator',
+        accentColour: '#6366f1',
+        backgroundColour: '#ffffff',
+        textColour: '#111827',
+        font: 'serif',
+        cornerStyle: 'pill',
+        spacing: 16,
+        theme: 'dark',
+      };
+
       profileRepo.findOne.mockResolvedValue({
         ...mockProfile,
         appearance: {
-          template: 'creator',
-          accentColour: '#6366f1',
-          backgroundColour: '#ffffff',
-          textColour: '#111827',
-          font: 'serif',
-          cornerStyle: 'pill',
-          spacing: 16,
-          theme: 'dark',
+          global: { ...savedStyle },
+          components: {
+            bio: { ...savedStyle },
+            links: { ...savedStyle },
+            projects: { ...savedStyle },
+            cta: { ...savedStyle },
+          },
         },
       });
 
@@ -510,14 +530,13 @@ describe('ProfileService', () => {
 
       expect(result.status).toBe('success');
       expect(result.appearance).toEqual({
-        template: 'creator',
-        accentColour: '#6366f1',
-        backgroundColour: '#ffffff',
-        textColour: '#111827',
-        font: 'serif',
-        cornerStyle: 'pill',
-        spacing: 16,
-        theme: 'dark',
+        global: { ...savedStyle },
+        components: {
+          bio: { ...savedStyle },
+          links: { ...savedStyle },
+          projects: { ...savedStyle },
+          cta: { ...savedStyle },
+        },
       });
     });
 
@@ -1088,15 +1107,17 @@ describe('ProfileService', () => {
   // updateAppearance
   // ---------------------------------------------------------------------------
   describe('updateAppearance', () => {
-    const appearanceDto = {
-      template: 'professional' as const,
-      accentColour: '#6366f1',
-      backgroundColour: '#ffffff',
-      textColour: '#111827',
-      font: 'inter' as const,
-      cornerStyle: 'rounded' as const,
-      spacing: 16,
-      theme: 'dark' as const,
+    const appearanceDto: any = {
+      global: {
+        template: 'professional',
+        accentColour: '#6366f1',
+        backgroundColour: '#ffffff',
+        textColour: '#111827',
+        font: 'inter',
+        cornerStyle: 'rounded',
+        spacing: 16,
+        theme: 'dark',
+      },
     };
 
     it('saves appearance, sets hasUnpublishedChanges, and invalidates cache', async () => {
@@ -1113,7 +1134,10 @@ describe('ProfileService', () => {
       expect(result.appearance).toEqual(appearanceDto);
       expect(profileRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          appearance: appearanceDto,
+          appearance: expect.objectContaining({
+            global: expect.objectContaining(appearanceDto.global),
+            components: expect.any(Object),
+          }),
           hasUnpublishedChanges: true,
         }),
       );
@@ -1129,37 +1153,47 @@ describe('ProfileService', () => {
     });
 
     it('merges partial payload with existing appearance fields', async () => {
-      const existingAppearance = {
-        template: 'portfolio' as const,
+      const existingStyle = {
+        template: 'portfolio',
         accentColour: '#ff0000',
         backgroundColour: '#000000',
         textColour: '#111827',
-        font: 'serif' as const,
-        cornerStyle: 'sharp' as const,
+        font: 'serif',
+        cornerStyle: 'sharp',
         spacing: 8,
-        theme: 'light' as const,
+        theme: 'light',
       };
 
       profileRepo.findOne.mockResolvedValue({
         ...mockProfile,
-        appearance: existingAppearance,
+        appearance: {
+          global: { ...existingStyle },
+          components: {
+            bio: { ...existingStyle },
+            links: { ...existingStyle },
+            projects: { ...existingStyle },
+            cta: { ...existingStyle },
+          },
+        },
       });
       profileRepo.save.mockImplementation((p: Profile) => Promise.resolve(p));
 
-      const partial = { theme: 'dark' as const };
+      const partial = { global: { theme: 'dark' as const } };
       await service.updateAppearance(USER_ID, partial);
 
       expect(profileRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           appearance: expect.objectContaining({
-            template: 'portfolio',
-            accentColour: '#ff0000',
-            backgroundColour: '#000000',
-            textColour: '#111827',
-            font: 'serif',
-            cornerStyle: 'sharp',
-            spacing: 8,
-            theme: 'dark',
+            global: expect.objectContaining({
+              template: 'portfolio',
+              accentColour: '#ff0000',
+              backgroundColour: '#000000',
+              textColour: '#111827',
+              font: 'serif',
+              cornerStyle: 'sharp',
+              spacing: 8,
+              theme: 'dark',
+            }),
           }),
         }),
       );

@@ -908,22 +908,32 @@ export class ProfileService {
     }
 
     const existing = profile.appearance ?? {};
+    const mergedGlobal = {
+      ...(existing.global ?? {}),
+      ...(dto.global ?? {}),
+    };
+    const mergedComponents = {
+      bio: {
+        ...(existing.components?.bio ?? {}),
+        ...(dto.components?.bio ?? {}),
+      },
+      links: {
+        ...(existing.components?.links ?? {}),
+        ...(dto.components?.links ?? {}),
+      },
+      projects: {
+        ...(existing.components?.projects ?? {}),
+        ...(dto.components?.projects ?? {}),
+      },
+      cta: {
+        ...(existing.components?.cta ?? {}),
+        ...(dto.components?.cta ?? {}),
+      },
+    };
+
     profile.appearance = {
-      ...existing,
-      ...(dto.template !== undefined && { template: dto.template }),
-      ...(dto.accentColour !== undefined && {
-        accentColour: dto.accentColour,
-      }),
-      ...(dto.backgroundColour !== undefined && {
-        backgroundColour: dto.backgroundColour,
-      }),
-      ...(dto.textColour !== undefined && {
-        textColour: dto.textColour,
-      }),
-      ...(dto.font !== undefined && { font: dto.font }),
-      ...(dto.cornerStyle !== undefined && { cornerStyle: dto.cornerStyle }),
-      ...(dto.spacing !== undefined && { spacing: dto.spacing }),
-      ...(dto.theme !== undefined && { theme: dto.theme }),
+      global: mergedGlobal,
+      components: mergedComponents,
     };
 
     profile.hasUnpublishedChanges = true;
@@ -964,12 +974,34 @@ export class ProfileService {
       'manrope',
     ]);
 
+    const saved = profile.appearance ?? {};
     const appearance: AppearanceSettingsDto = {
-      ...DEFAULT_APPEARANCE,
-      ...(profile.appearance ?? {}),
+      global: {
+        ...DEFAULT_APPEARANCE.global,
+        ...(saved.global ?? {}),
+      },
+      components: {
+        bio: {
+          ...DEFAULT_APPEARANCE.components!.bio,
+          ...(saved.components?.bio ?? {}),
+        },
+        links: {
+          ...DEFAULT_APPEARANCE.components!.links,
+          ...(saved.components?.links ?? {}),
+        },
+        projects: {
+          ...DEFAULT_APPEARANCE.components!.projects,
+          ...(saved.components?.projects ?? {}),
+        },
+        cta: {
+          ...DEFAULT_APPEARANCE.components!.cta,
+          ...(saved.components?.cta ?? {}),
+        },
+      },
     };
-    if (!appearance.font || !VALID_FONTS.has(appearance.font)) {
-      appearance.font = DEFAULT_APPEARANCE.font;
+
+    if (!appearance.global!.font || !VALID_FONTS.has(appearance.global!.font)) {
+      appearance.global!.font = DEFAULT_APPEARANCE.global!.font;
     }
 
     return {
