@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
+import * as crypto from 'crypto';
 import type { Request, Response } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { TokenService } from '../services/token.service';
@@ -92,17 +93,20 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       });
     }
 
-    // For silent refresh, acquire Redis lock to prevent concurrent rotations
-    if (isSilent && options?.userId) {
-      const lockAcquired = await this.redisLockService.acquireLock(
-        options.userId,
-      );
-      if (!lockAcquired) {
-        this.logger.log(
-          `Silent refresh skipped (lock busy): userId=${options.userId}`,
-        );
-        return true;
-      }
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawRefreshToken)
+      .digest('hex');
+
+    // Acquire Redis lock on token hash to prevent concurrent rotations
+    const lockAcquired = await this.redisLockService.acquireLock(tokenHash);
+    if (!lockAcquired) {
+      this.logger.log(`Refresh skipped (lock busy) [${reason}]`);
+      if (isSilent) return true;
+      throw new UnauthorizedException({
+        error: 'SESSION_EXPIRED',
+        message: 'Your session has expired. Please log in again.',
+      });
     }
 
     try {
@@ -122,15 +126,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         return true;
       }
       this.logger.warn(`Refresh failed [${reason}]`, err);
-      this.tokenService.clearTokenCookies(res);
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     } finally {
-      if (isSilent && options?.userId) {
-        await this.redisLockService.releaseLock(options.userId);
-      }
+      await this.redisLockService.releaseLock(tokenHash);
     }
   }
 }
