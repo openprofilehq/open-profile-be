@@ -33,6 +33,7 @@ import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
 import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 import { LinkItemDto } from './dto/profile-content.dto';
 import { SectionType } from './dto/profile-content.dto';
+import { isValidPhoneNumber } from 'libphonenumber-js';
 import {
   sanitizeUrl,
   isValidUrl,
@@ -641,7 +642,7 @@ export class ProfileService {
   }
 
   private validateCtaContent(cta: Partial<CtaDto>): void {
-    if (!cta.visible) return;
+    if (cta.visible === false) return;
 
     const effectiveType = cta.type ?? CtaType.LINK;
 
@@ -651,6 +652,21 @@ export class ProfileService {
         throw new UnprocessableEntityException({
           error: 'INVALID_CTA',
           message: 'CTA email must be a valid email address.',
+        });
+      }
+    } else if (
+      effectiveType === CtaType.PHONE ||
+      effectiveType === CtaType.WHATSAPP
+    ) {
+      if (
+        !cta.value ||
+        cta.value !== cta.value.trim() ||
+        !isValidPhoneNumber(cta.value)
+      ) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_CTA',
+          message:
+            'CTA phone number must be a valid international phone number (e.g. +2348012345678).',
         });
       }
     } else {
@@ -799,6 +815,11 @@ export class ProfileService {
     // Validate visible link items before saving
     if (dto.content?.links?.items?.length) {
       await this.validateLinkItems(dto.content.links.items);
+    }
+
+    // Validate CTA before saving to draft
+    if (dto.content?.cta) {
+      this.validateCtaContent(dto.content.cta);
     }
 
     const saved = await this.dataSource.transaction(async (manager) => {
