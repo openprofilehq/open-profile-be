@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsIn,
@@ -107,7 +107,7 @@ export class AppearanceComponentsDto {
 }
 
 export class AppearanceSettingsDto {
-  @ApiProperty({ type: () => AppearanceStyleDto })
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
   @ValidateNested()
   @Type(() => AppearanceStyleDto)
   @IsOptional()
