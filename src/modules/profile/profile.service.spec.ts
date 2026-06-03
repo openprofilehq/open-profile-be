@@ -1123,7 +1123,7 @@ describe('ProfileService', () => {
       expect(() => service['validateCtaContent'](cta)).not.toThrow();
     });
 
-    it('accepts valid phone number without leading +', () => {
+    it('rejects phone number without leading +', () => {
       const cta = {
         visible: true,
         type: CtaType.PHONE,
@@ -1131,7 +1131,9 @@ describe('ProfileService', () => {
         value: '2348012345678',
       };
 
-      expect(() => service['validateCtaContent'](cta)).not.toThrow();
+      expect(() => service['validateCtaContent'](cta)).toThrow(
+        UnprocessableEntityException,
+      );
     });
 
     it('rejects invalid phone number (too short)', () => {
