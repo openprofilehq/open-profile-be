@@ -33,6 +33,7 @@ import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
 import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 import { LinkItemDto } from './dto/profile-content.dto';
 import { SectionType } from './dto/profile-content.dto';
+import { isValidPhoneNumber } from 'libphonenumber-js';
 import {
   sanitizeUrl,
   isValidUrl,
@@ -651,11 +652,10 @@ export class ProfileService {
       effectiveType === CtaType.PHONE ||
       effectiveType === CtaType.WHATSAPP
     ) {
-      const phoneRegex = /^\+?[1-9]\d{6,14}$/;
       if (
         !cta.value ||
         cta.value !== cta.value.trim() ||
-        !phoneRegex.test(cta.value)
+        !isValidPhoneNumber(cta.value)
       ) {
         throw new UnprocessableEntityException({
           error: 'INVALID_CTA',
