@@ -153,7 +153,10 @@ export class ProfileService {
     if (cached) {
       const parsed = JSON.parse(cached) as PublicProfileResponseDto;
       if (parsed['__notFound']) {
-        throw new NotFoundException({ error: 'not_found' });
+        throw new NotFoundException({
+          error: 'not_found',
+          message: 'Profile not found',
+        });
       }
       const etag = this.computeEtag(cached);
       return { data: parsed, etag, fromCache: true };
@@ -183,7 +186,10 @@ export class ProfileService {
           JSON.stringify({ __notFound: true }),
           CACHE_404_TTL_SECONDS,
         );
-        throw new NotFoundException({ error: 'not_found' });
+        throw new NotFoundException({
+          error: 'not_found',
+          message: 'Profile not found',
+        });
       }
 
       const responseData = this.serialize(profile);

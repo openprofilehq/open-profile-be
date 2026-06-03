@@ -206,6 +206,28 @@ export class ProfileController {
     return this.profileService.updateAppearance(userId, dto);
   }
 
+  @Get('dashboard')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Get full current profile data for the authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    type: DashboardProfileResponseDto,
+    description: 'Profile returned successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 404,
+    description: 'Profile not found. Please complete your profile setup.',
+  })
+  async getDashboardProfile(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ) {
+    return this.profileService.getDashboardProfile(userId);
+  }
+
   @Post('publish')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
@@ -256,31 +278,8 @@ export class ProfileController {
     return this.profileService.updateProfile(username, dto, userId);
   }
 
-  @Get('dashboard')
-  @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('JWT')
-  @ApiOperation({
-    summary: 'Get full current profile data for the authenticated user',
-  })
-  @ApiResponse({
-    status: 200,
-    type: DashboardProfileResponseDto,
-    description: 'Profile returned successfully',
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({
-    status: 404,
-    description: 'Profile not found. Please complete your profile setup.',
-  })
-  async getDashboardProfile(
-    @currentUserDecorator.CurrentUser('sub') userId: string,
-  ) {
-    return this.profileService.getDashboardProfile(userId);
-  }
-
   @Public()
   @Get(':username')
-  @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @UseGuards(ThrottlerGuard)
   @ApiOperation({ summary: 'Get a public profile by username' })
