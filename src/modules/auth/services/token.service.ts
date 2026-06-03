@@ -10,6 +10,7 @@ import { env } from '../../../config/env';
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../../users/entities/user.entity';
 import { JwtPayload } from '../strategies/jwt.strategy';
+import { RedisLockService } from './redis-lock.service';
 import { resolveAuthCookieOptions } from '../utils/auth-cookie-policy';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
@@ -29,6 +30,7 @@ export class TokenService {
     private readonly jwtService: JwtService,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
+    private readonly redisLockService: RedisLockService,
   ) {}
 
   // ─── Access Token ────────────────────────────────────────────────────────────
@@ -85,75 +87,87 @@ export class TokenService {
       .update(rawRefreshToken)
       .digest('hex');
 
-    this.logger.debug(
-      `[rotateTokens] tokenHash=${hashedToken.slice(0, 16)}...`,
-    );
-
-    const matchedRecord = await this.refreshTokenRepo.findOne({
-      where: { tokenHash: hashedToken },
-      relations: ['user'],
-    });
-
-    if (!matchedRecord) {
-      this.logger.warn(
-        `[rotateTokens] No matching record found tokenHash=${hashedToken.slice(0, 16)}...`,
-      );
+    const lockAcquired = await this.redisLockService.acquireLock(hashedToken);
+    if (!lockAcquired) {
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
     }
 
-    this.logger.debug(
-      `[rotateTokens] Found record id=${matchedRecord.id} userId=${matchedRecord.userId} expiresAt=${matchedRecord.expiresAt.toISOString()}`,
-    );
-
-    if (new Date() > matchedRecord.expiresAt) {
-      this.logger.warn(
-        `[rotateTokens] Token expired id=${matchedRecord.id} expiresAt=${matchedRecord.expiresAt.toISOString()}`,
+    try {
+      this.logger.debug(
+        `[rotateTokens] tokenHash=${hashedToken.slice(0, 16)}...`,
       );
-      await this.refreshTokenRepo.delete({ id: matchedRecord.id });
-      throw new UnauthorizedException({
-        error: 'SESSION_EXPIRED',
-        message: 'Your session has expired. Please log in again.',
+
+      const matchedRecord = await this.refreshTokenRepo.findOne({
+        where: { tokenHash: hashedToken },
+        relations: ['user'],
       });
-    }
 
-    const deleteResult = await this.refreshTokenRepo.delete({
-      id: matchedRecord.id,
-    });
+      if (!matchedRecord) {
+        this.logger.warn(
+          `[rotateTokens] No matching record found tokenHash=${hashedToken.slice(0, 16)}...`,
+        );
+        throw new UnauthorizedException({
+          error: 'SESSION_EXPIRED',
+          message: 'Your session has expired. Please log in again.',
+        });
+      }
 
-    if (deleteResult.affected === 0) {
-      this.logger.warn(
-        `[rotateTokens] Delete failed id=${matchedRecord.id} affected=0`,
+      this.logger.debug(
+        `[rotateTokens] Found record id=${matchedRecord.id} userId=${matchedRecord.userId} expiresAt=${matchedRecord.expiresAt.toISOString()}`,
       );
-      throw new UnauthorizedException({
-        error: 'SESSION_EXPIRED',
-        message: 'Session has expired. Please try again.',
+
+      if (new Date() > matchedRecord.expiresAt) {
+        this.logger.warn(
+          `[rotateTokens] Token expired id=${matchedRecord.id} expiresAt=${matchedRecord.expiresAt.toISOString()}`,
+        );
+        await this.refreshTokenRepo.delete({ id: matchedRecord.id });
+        throw new UnauthorizedException({
+          error: 'SESSION_EXPIRED',
+          message: 'Your session has expired. Please log in again.',
+        });
+      }
+
+      const deleteResult = await this.refreshTokenRepo.delete({
+        id: matchedRecord.id,
       });
+
+      if (deleteResult.affected === 0) {
+        this.logger.warn(
+          `[rotateTokens] Delete failed id=${matchedRecord.id} affected=0`,
+        );
+        throw new UnauthorizedException({
+          error: 'SESSION_EXPIRED',
+          message: 'Session has expired. Please try again.',
+        });
+      }
+
+      this.logger.debug(
+        `[rotateTokens] Old record deleted id=${matchedRecord.id}`,
+      );
+
+      const user = matchedRecord.user;
+
+      const { record: newRecord, rawToken: newRawRefreshToken } =
+        this.createRefreshTokenRecord(user.id);
+
+      await this.refreshTokenRepo.save(newRecord);
+
+      this.logger.debug(
+        `[rotateTokens] New token created and saved for userId=${user.id}`,
+      );
+
+      const accessToken = await this.generateAccessToken(user);
+
+      return {
+        accessToken,
+        refreshToken: newRawRefreshToken,
+      };
+    } finally {
+      await this.redisLockService.releaseLock(hashedToken);
     }
-
-    this.logger.debug(
-      `[rotateTokens] Old record deleted id=${matchedRecord.id}`,
-    );
-
-    const user = matchedRecord.user;
-
-    const { record: newRecord, rawToken: newRawRefreshToken } =
-      this.createRefreshTokenRecord(user.id);
-
-    await this.refreshTokenRepo.save(newRecord);
-
-    this.logger.debug(
-      `[rotateTokens] New token created and saved for userId=${user.id}`,
-    );
-
-    const accessToken = await this.generateAccessToken(user);
-
-    return {
-      accessToken,
-      refreshToken: newRawRefreshToken,
-    };
   }
 
   // ─── Silent Refresh ──────────────────────────────────────────────────────────

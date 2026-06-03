@@ -6,11 +6,9 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
-import * as crypto from 'crypto';
 import type { Request, Response } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { TokenService } from '../services/token.service';
-import { RedisLockService } from '../services/redis-lock.service';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
 @Injectable()
@@ -20,7 +18,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokenService: TokenService,
-    private readonly redisLockService: RedisLockService,
   ) {
     super();
   }
@@ -87,22 +84,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     if (!rawRefreshToken) {
       if (isSilent) return true;
-      throw new UnauthorizedException({
-        error: 'SESSION_EXPIRED',
-        message: 'Your session has expired. Please log in again.',
-      });
-    }
-
-    const tokenHash = crypto
-      .createHash('sha256')
-      .update(rawRefreshToken)
-      .digest('hex');
-
-    // Acquire Redis lock on token hash to prevent concurrent rotations
-    const lockAcquired = await this.redisLockService.acquireLock(tokenHash);
-    if (!lockAcquired) {
-      this.logger.log(`Refresh skipped (lock busy) [${reason}]`);
-      if (isSilent) return true;
+      this.tokenService.clearTokenCookies(res);
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
@@ -125,13 +107,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         this.logger.warn(`Silent refresh failed [${reason}]`, err);
         return true;
       }
+      this.tokenService.clearTokenCookies(res);
       this.logger.warn(`Refresh failed [${reason}]`, err);
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
-    } finally {
-      await this.redisLockService.releaseLock(tokenHash);
     }
   }
 }
