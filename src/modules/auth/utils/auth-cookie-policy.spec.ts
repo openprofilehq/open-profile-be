@@ -12,13 +12,14 @@ describe('resolveAuthCookieOptions', () => {
     });
   });
 
-  it('omits domain and uses none SameSite in staging for cross-origin frontends', () => {
+  it('uses shared domain and none SameSite in staging for cross-origin frontends', () => {
     expect(
       resolveAuthCookieOptions('staging', 'staging.open-profile.hng14.com'),
     ).toEqual({
       secure: true,
       sameSite: 'none',
       path: '/',
+      domain: 'staging.open-profile.hng14.com',
     });
   });
 

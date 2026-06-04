@@ -9,7 +9,6 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request, Response } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { TokenService } from '../services/token.service';
-import { RedisLockService } from '../services/redis-lock.service';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
 @Injectable()
@@ -19,7 +18,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokenService: TokenService,
-    private readonly redisLockService: RedisLockService,
   ) {
     super();
   }
@@ -86,23 +84,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     if (!rawRefreshToken) {
       if (isSilent) return true;
+      this.tokenService.clearTokenCookies(res);
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
-    }
-
-    // For silent refresh, acquire Redis lock to prevent concurrent rotations
-    if (isSilent && options?.userId) {
-      const lockAcquired = await this.redisLockService.acquireLock(
-        options.userId,
-      );
-      if (!lockAcquired) {
-        this.logger.log(
-          `Silent refresh skipped (lock busy): userId=${options.userId}`,
-        );
-        return true;
-      }
     }
 
     try {
@@ -121,16 +107,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         this.logger.warn(`Silent refresh failed [${reason}]`, err);
         return true;
       }
-      this.logger.warn(`Refresh failed [${reason}]`, err);
       this.tokenService.clearTokenCookies(res);
+      this.logger.warn(`Refresh failed [${reason}]`, err);
       throw new UnauthorizedException({
         error: 'SESSION_EXPIRED',
         message: 'Your session has expired. Please log in again.',
       });
-    } finally {
-      if (isSilent && options?.userId) {
-        await this.redisLockService.releaseLock(options.userId);
-      }
     }
   }
 }
