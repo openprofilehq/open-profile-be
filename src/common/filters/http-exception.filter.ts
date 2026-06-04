@@ -70,8 +70,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       if (this.metricsService) {
         const route: string =
           (request.route as { path?: string } | undefined)?.path ??
-          request.url?.split('?')[0] ??
-          '/';
+          '/unmatched';
         this.metricsService.httpRequestsTotal.inc({
           method: request.method,
           route,

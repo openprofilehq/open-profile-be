@@ -18,9 +18,7 @@ export class HttpMetricsInterceptor implements NestInterceptor {
 
     const method = request.method;
     const route: string =
-      (request.route as { path?: string } | undefined)?.path ??
-      request.url?.split('?')[0] ??
-      '/';
+      (request.route as { path?: string } | undefined)?.path ?? '/unmatched';
 
     const start = process.hrtime.bigint();
 
@@ -52,20 +50,10 @@ export class HttpMetricsInterceptor implements NestInterceptor {
           const statusCode = response.statusCode || 500;
           const durationSeconds = this.secondsSince(start);
 
-          this.metricsService.httpRequestsTotal.inc({
-            method,
-            route,
-            status_code: statusCode,
-          });
           this.metricsService.httpRequestDurationSeconds.observe(
             { method, route, status_code: statusCode },
             durationSeconds,
           );
-          this.metricsService.httpErrorsTotal.inc({
-            method,
-            route,
-            status_code: statusCode,
-          });
         },
       }),
     );
