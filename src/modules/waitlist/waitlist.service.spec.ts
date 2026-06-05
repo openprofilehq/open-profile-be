@@ -77,8 +77,6 @@ describe('WaitlistService', () => {
     waitlistRepository.create.mockResolvedValue(entry);
     waitlistEmailQueue.add.mockRejectedValue(new Error('queue failure'));
 
-    waitlistRepository.findByEmail.mockResolvedValue(null);
-
     await expect(service.addToWaitlist('tester@example.com')).rejects.toThrow(
       'queue failure',
     );
