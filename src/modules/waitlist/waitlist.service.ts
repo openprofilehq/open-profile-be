@@ -15,10 +15,16 @@ export class WaitlistService {
 
   async addToWaitlist(email: string): Promise<Waitlist> {
     const entry = await this.waitlistRepository.create(email);
-    await this.waitlistEmailQueue.add(
-      QUEUE_JOB_NAMES.EMAIL.SEND_WAITLIST_EMAIL,
-      { email: entry.email },
-    );
+    try {
+      await this.waitlistEmailQueue.add(
+        QUEUE_JOB_NAMES.EMAIL.SEND_WAITLIST_EMAIL,
+        { email: entry.email },
+      );
+    } catch (error) {
+      // Compensate so client retry cleanly (or replace with outbox pattern).
+      await this.waitlistRepository.deleteById(entry.id);
+      throw error;
+    }
     return entry;
   }
 

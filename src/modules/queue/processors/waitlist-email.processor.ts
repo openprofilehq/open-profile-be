@@ -16,14 +16,19 @@ export class WaitlistEmailProcessor extends WorkerHost {
     super();
   }
 
+  private maskEmail(email: string): string {
+    const [local, domain] = email.split('@');
+    return `${local[0]}***@${domain}`;
+  }
+
   async process(job: Job): Promise<{ success: boolean; email: string }> {
     try {
       const { email } = job.data as { email: string };
-      this.logger.log(`Processing waitlist email for ${email}`);
+      this.logger.log(`Processing waitlist email for ${this.maskEmail(email)}`);
 
       const entry = await this.waitlistRepository.findByEmail(email);
       if (!entry) {
-        throw new Error(`Waitlist entry with email ${email} not found`);
+        throw new Error(`Waitlist entry not found for job ${job.id}`);
       }
 
       const result = await this.emailService.sendWaitlistEmail(entry.email);
@@ -31,9 +36,11 @@ export class WaitlistEmailProcessor extends WorkerHost {
         throw new Error(`Failed to send email: ${result.error}`);
       }
 
-      this.logger.log(`[EMAIL] Waitlist email sent to: ${entry.email}`);
+      this.logger.log(
+        `[EMAIL] Waitlist email sent to: ${this.maskEmail(entry.email)}`,
+      );
       await this.waitlistRepository.markEmailSent(entry.id);
-      this.logger.log(`Waitlist email marked as sent for entry ${email}`);
+      this.logger.log(`Waitlist email marked as sent for job ${job.id}`);
 
       return { success: true, email: entry.email };
     } catch (err: unknown) {

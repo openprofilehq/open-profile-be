@@ -63,4 +63,8 @@ export class WaitlistRepository {
     entry.emailSent = true;
     return this.repository.save(entry);
   }
+
+  async deleteById(id: string): Promise<void> {
+    await this.repository.delete(id);
+  }
 }

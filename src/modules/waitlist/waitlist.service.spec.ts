@@ -6,13 +6,18 @@ import { QUEUE_JOB_NAMES } from '../queue/config/queue-names.constant';
 
 describe('WaitlistService', () => {
   let service: WaitlistService;
-  let waitlistRepository: { create: jest.Mock; getAll: jest.Mock };
+  let waitlistRepository: {
+    create: jest.Mock;
+    getAll: jest.Mock;
+    deleteById: jest.Mock;
+  };
   let waitlistEmailQueue: { add: jest.Mock };
 
   beforeEach(async () => {
     waitlistRepository = {
       create: jest.fn(),
       getAll: jest.fn(),
+      deleteById: jest.fn(),
     };
 
     waitlistEmailQueue = {
@@ -54,6 +59,32 @@ describe('WaitlistService', () => {
       { email: 'tester@example.com' },
     );
     expect(result).toEqual(entry);
+  });
+
+  it('removes the entry if email queue enqueue fails', async () => {
+    const entry = {
+      id: 'waitlist-1',
+      email: 'tester@example.com',
+      emailSent: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any;
+
+    waitlistRepository.create.mockResolvedValue(entry);
+    waitlistEmailQueue.add.mockRejectedValue(new Error('queue failure'));
+
+    await expect(service.addToWaitlist('tester@example.com')).rejects.toThrow(
+      'queue failure',
+    );
+
+    expect(waitlistRepository.create).toHaveBeenCalledWith(
+      'tester@example.com',
+    );
+    expect(waitlistEmailQueue.add).toHaveBeenCalledWith(
+      QUEUE_JOB_NAMES.EMAIL.SEND_WAITLIST_EMAIL,
+      { email: 'tester@example.com' },
+    );
+    expect(waitlistRepository.deleteById).toHaveBeenCalledWith(entry.id);
   });
 
   it('delegates getAllWaitlist to the repository', async () => {
