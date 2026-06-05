@@ -10,6 +10,7 @@ describe('WaitlistService', () => {
     create: jest.Mock;
     getAll: jest.Mock;
     deleteById: jest.Mock;
+    findByEmail: jest.Mock;
   };
   let waitlistEmailQueue: { add: jest.Mock };
 
@@ -18,6 +19,7 @@ describe('WaitlistService', () => {
       create: jest.fn(),
       getAll: jest.fn(),
       deleteById: jest.fn(),
+      findByEmail: jest.fn(),
     };
 
     waitlistEmailQueue = {
@@ -47,6 +49,7 @@ describe('WaitlistService', () => {
       updatedAt: new Date(),
     } as any;
 
+    waitlistRepository.findByEmail.mockResolvedValue(null);
     waitlistRepository.create.mockResolvedValue(entry);
 
     const result = await service.addToWaitlist('tester@example.com');
@@ -70,8 +73,11 @@ describe('WaitlistService', () => {
       updatedAt: new Date(),
     } as any;
 
+    waitlistRepository.findByEmail.mockResolvedValue(null);
     waitlistRepository.create.mockResolvedValue(entry);
     waitlistEmailQueue.add.mockRejectedValue(new Error('queue failure'));
+
+    waitlistRepository.findByEmail.mockResolvedValue(null);
 
     await expect(service.addToWaitlist('tester@example.com')).rejects.toThrow(
       'queue failure',
@@ -85,6 +91,25 @@ describe('WaitlistService', () => {
       { email: 'tester@example.com' },
     );
     expect(waitlistRepository.deleteById).toHaveBeenCalledWith(entry.id);
+  });
+
+  it('returns the existing waitlist entry when email already exists', async () => {
+    const entry = {
+      id: 'waitlist-1',
+      email: 'tester@example.com',
+      emailSent: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any;
+
+    waitlistRepository.findByEmail.mockResolvedValue(entry);
+
+    const result = await service.addToWaitlist('tester@example.com');
+
+    expect(result).toEqual(entry);
+    expect(waitlistRepository.create).not.toHaveBeenCalled();
+    expect(waitlistEmailQueue.add).not.toHaveBeenCalled();
+    expect(waitlistRepository.deleteById).not.toHaveBeenCalled();
   });
 
   it('delegates getAllWaitlist to the repository', async () => {

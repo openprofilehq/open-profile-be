@@ -14,6 +14,9 @@ export class WaitlistService {
   ) {}
 
   async addToWaitlist(email: string): Promise<Waitlist> {
+    const existing = await this.waitlistRepository.findByEmail(email);
+    if (existing) return existing;
+
     const entry = await this.waitlistRepository.create(email);
     try {
       await this.waitlistEmailQueue.add(
@@ -21,7 +24,6 @@ export class WaitlistService {
         { email: entry.email },
       );
     } catch (error) {
-      // Compensate so client retry cleanly (or replace with outbox pattern).
       await this.waitlistRepository.deleteById(entry.id);
       throw error;
     }
