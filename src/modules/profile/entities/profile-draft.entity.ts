@@ -46,6 +46,14 @@ export class ProfileDraft {
   @Column({ name: 'theme_settings', nullable: true, type: 'jsonb' })
   themeSettings: ThemeSettings | null;
 
+  @Column({ type: 'varchar', name: 'template_type', nullable: true })
+  templateType: string | null;
+
+  @Column({ type: 'varchar', name: 'cta_label', nullable: true })
+  ctaLabel: string | null;
+
+  @Column({ type: 'varchar', name: 'cta_url', nullable: true })
+  ctaUrl: string | null;
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
