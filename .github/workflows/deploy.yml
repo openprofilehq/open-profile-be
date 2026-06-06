@@ -119,6 +119,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Clean stale source files on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            rm -rf /var/www/openprofile-be/staging/src
+
       - name: Copy files to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -183,6 +192,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Clean stale source files on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            rm -rf /var/www/openprofile-be/main/src
 
       - name: Copy files to server
         uses: appleboy/scp-action@v0.1.7
