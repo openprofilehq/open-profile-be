@@ -204,6 +204,12 @@ export class TokenService {
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
       ...base,
     });
+
+    res.cookie('auth', '1', {
+      httpOnly: false,
+      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+      ...base,
+    });
   }
 
   clearTokenCookies(res: Response): void {
@@ -211,6 +217,7 @@ export class TokenService {
 
     res.clearCookie(ACCESS_TOKEN_COOKIE, base);
     res.clearCookie(REFRESH_TOKEN_COOKIE, base);
+    res.clearCookie('auth', base);
   }
 
   // ─── Logout ──────────────────────────────────────────────────────────────────

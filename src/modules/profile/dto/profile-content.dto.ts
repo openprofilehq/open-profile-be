@@ -247,6 +247,15 @@ export class CtaDto {
   @IsOptional()
   @IsString()
   iconLabel?: string | null;
+
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() iconColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingTop?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
 export class ProfileContentDto {

@@ -2,73 +2,57 @@ import {
   Controller,
   Post,
   Body,
-  HttpException,
   HttpStatus,
   HttpCode,
   Get,
   Query,
-  ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { CreateWaitlistDto } from './dto/create-waitlist.dto';
-import { WaitListService } from './waitList.service';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { WaitlistService } from './waitlist.service';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRole } from '../users/entities/user.entity';
 
 @ApiTags('waitlist')
 @Controller({ path: 'waitlist', version: '1' })
 export class WaitlistController {
-  constructor(private readonly waitListService: WaitListService) {}
+  constructor(private readonly waitlistService: WaitlistService) {}
+
   @Public()
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Add email to wait list' })
+  @ApiOperation({ summary: 'Add email to waitlist' })
   async addToWaitlist(@Body() dto: CreateWaitlistDto) {
-    try {
-      const result = await this.waitListService.addToWaitlist(dto.email);
-      return {
-        success: true,
-        message: 'Email added to waitlist successfully',
-        data: result,
-      };
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to add to waitlist';
-
-      throw new HttpException({ message }, HttpStatus.CONFLICT);
-    }
+    const result = await this.waitlistService.addToWaitlist(dto.email);
+    return {
+      success: true,
+      message: 'Email added to waitlist successfully',
+      data: result,
+    };
   }
 
   @Get()
-  @Public()
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get all waitlist entries with pagination' })
-  async getAllWaitList(
-    @Query(
-      'page',
-      new ParseIntPipe({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
-    )
-    page: number = 1,
-    @Query(
-      'limit',
-      new ParseIntPipe({ errorHttpStatusCode: HttpStatus.BAD_REQUEST }),
-    )
-    limit: number = 100,
-  ) {
-    try {
-      const result = await this.waitListService.getAllWaitList(page, limit);
-      return {
-        success: true,
-        data: result.data,
-        pagination: {
-          total: result.total,
-          page: result.page,
-          limit: result.limit,
-          totalPages: result.totalPages,
-        },
-      };
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to fetch waitlist';
-      throw new HttpException({ message }, HttpStatus.BAD_REQUEST);
-    }
+  async getAllWaitlist(@Query() query: PaginationQueryDto) {
+    const result = await this.waitlistService.getAllWaitlist(
+      query.page,
+      query.limit,
+    );
+    return {
+      success: true,
+      data: result.data,
+      pagination: {
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages,
+      },
+    };
   }
 }
