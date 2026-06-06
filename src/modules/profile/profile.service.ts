@@ -957,6 +957,10 @@ export class ProfileService {
       components: mergedComponents,
     };
 
+    if (dto.global?.template) {
+      profile.templateType = dto.global.template;
+    }
+
     profile.hasUnpublishedChanges = true;
 
     const saved = await this.profileRepo.save(profile);
