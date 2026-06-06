@@ -38,15 +38,6 @@ export class Profile {
   @Column({ nullable: true, type: 'text' })
   bio: string | null;
 
-  @Column({
-    type: 'text',
-    array: true,
-    name: 'skills',
-    nullable: false,
-    default: [],
-  })
-  skills: string[];
-
   @Column({ type: 'varchar', name: 'photo_url', nullable: true })
   photoUrl: string | null;
 
