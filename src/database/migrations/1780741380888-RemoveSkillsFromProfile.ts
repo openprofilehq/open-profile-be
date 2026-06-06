@@ -10,7 +10,7 @@ export class RemoveSkillsFromProfile1780741380888 implements MigrationInterface 
   }
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "profiles" ADD "skills" text array NOT NULL DEFAULT '{}'`,
+      `ALTER TABLE "profiles" ADD "skills" text[] NOT NULL DEFAULT '{}'`,
     );
   }
 }
