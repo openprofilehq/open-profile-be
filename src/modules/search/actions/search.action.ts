@@ -8,6 +8,8 @@ const SEARCH_MIN_LENGTH = 3;
 const SEARCH_DEFAULT_LIMIT = 5;
 const SEARCH_MAX_LIMIT = 20;
 const BIO_TRUNCATE_LENGTH = 120;
+const SIMILARITY_THRESHOLD = 0.4;
+const WORD_SIMILARITY_THRESHOLD = 0.5;
 
 type SearchProfileRow = {
   username: string;
@@ -63,9 +65,11 @@ export class SearchAction extends AbstractModelAction<Profile> {
       .andWhere('p.deleted_at IS NULL')
       .andWhere(
         `(
-          p.full_name % :q
-          OR p.username % :q
-        )`,
+    similarity(p.full_name, :q) > ${SIMILARITY_THRESHOLD}
+    OR similarity(p.username, :q) > ${SIMILARITY_THRESHOLD}
+    OR word_similarity(:q, p.full_name) > ${WORD_SIMILARITY_THRESHOLD}
+    OR word_similarity(:q, p.username) > ${WORD_SIMILARITY_THRESHOLD}
+  )`,
       )
       .setParameter('q', normalizedQ);
 
