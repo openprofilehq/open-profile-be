@@ -63,8 +63,10 @@ export class SearchAction extends AbstractModelAction<Profile> {
       .andWhere('p.deleted_at IS NULL')
       .andWhere(
         `(
-          p.full_name % :q
-          OR p.username % :q
+          similarity(p.full_name, :q) > 0.4
+          OR similarity(p.username, :q) > 0.4
+          OR word_similarity(:q, p.full_name) > 0.5
+          OR word_similarity(:q, p.username) > 0.5
         )`,
       )
       .setParameter('q', normalizedQ);
