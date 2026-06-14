@@ -10,6 +10,7 @@ import {
 import { Type } from 'class-transformer';
 import { ProfileContentDto } from './profile-content.dto';
 import { ThemeSettings } from './theme-settings.dto';
+import { AppearanceSettingsDto } from './appearance-settings.dto';
 
 export class UpsertDraftDto {
   @ApiPropertyOptional({
@@ -51,4 +52,15 @@ export class UpsertDraftDto {
   @ValidateNested()
   @Type(() => ThemeSettings)
   themeSettings?: ThemeSettings;
+
+  @ApiPropertyOptional({
+    description:
+      'Appearance/theme settings for the profile. Stored in draft and applied on publish.',
+    type: () => AppearanceSettingsDto,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AppearanceSettingsDto)
+  appearance?: AppearanceSettingsDto;
 }

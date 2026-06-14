@@ -1282,17 +1282,27 @@ describe('ProfileService', () => {
       const result = await service.updateAppearance(USER_ID, appearanceDto);
 
       expect(result.status).toBe('success');
-      expect(result.appearance).toEqual(appearanceDto);
-      expect(profileRepo.save).toHaveBeenCalledWith(
+      // The service merges the provided global appearance into a full
+      // AppearanceSettingsDto and returns that merged structure.
+      expect(result.appearance.global).toEqual(
+        expect.objectContaining(appearanceDto.global),
+      );
+      expect(result.appearance.components).toBeDefined();
+
+      // Appearance is persisted to the draft store; profile is only marked
+      // as having unpublished changes and saved. Ensure that behavior.
+      expect(draftRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          profileId: PROFILE_ID,
           appearance: expect.objectContaining({
             global: expect.objectContaining(appearanceDto.global),
-            components: expect.any(Object),
           }),
-          hasUnpublishedChanges: true,
         }),
       );
-      expect(redisService.del).toHaveBeenCalledWith(`profile:${USERNAME}`);
+      expect(draftRepo.save).toHaveBeenCalled();
+      expect(profileRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ hasUnpublishedChanges: true }),
+      );
     });
 
     it('throws NotFoundException when profile does not exist', async () => {
@@ -1332,8 +1342,11 @@ describe('ProfileService', () => {
       const partial = { global: { theme: 'dark' as const } };
       await service.updateAppearance(USER_ID, partial);
 
-      expect(profileRepo.save).toHaveBeenCalledWith(
+      // Ensure the draft was saved with merged appearance values (global
+      // properties merged from the existing profile and the partial payload).
+      expect(draftRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          profileId: PROFILE_ID,
           appearance: expect.objectContaining({
             global: expect.objectContaining({
               template: 'portfolio',

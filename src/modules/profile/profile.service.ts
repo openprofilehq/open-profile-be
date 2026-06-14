@@ -636,6 +636,7 @@ export class ProfileService {
       photoUrl: draft?.photoUrl ?? profile.photoUrl ?? null,
       content,
       themeSettings: draft?.themeSettings ?? profile.themeSettings ?? null,
+      appearance: draft?.appearance ?? profile.appearance ?? null,
       source: draft ? 'draft' : 'published',
       updatedAt: draft?.updatedAt ?? profile.updatedAt,
     };
@@ -866,6 +867,11 @@ export class ProfileService {
           dto.themeSettings !== undefined
             ? dto.themeSettings
             : (existingDraft?.themeSettings ?? null),
+
+        appearance:
+          dto.appearance !== undefined
+            ? dto.appearance
+            : (existingDraft?.appearance ?? null),
       });
 
       return draftRepo.save(draft);
@@ -877,6 +883,7 @@ export class ProfileService {
       photoUrl: saved.photoUrl,
       content: saved.content,
       themeSettings: saved.themeSettings,
+      appearance: saved.appearance,
       source: 'draft',
       updatedAt: saved.updatedAt,
     };
@@ -928,49 +935,58 @@ export class ProfileService {
       );
     }
 
-    const existing = profile.appearance ?? {};
-    const mergedGlobal = {
-      ...(existing.global ?? {}),
-      ...(dto.global ?? {}),
-    };
-    const mergedComponents = {
-      bio: {
-        ...(existing.components?.bio ?? {}),
-        ...(dto.components?.bio ?? {}),
+    const existingDraft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+    });
+
+    const existingAppearance =
+      existingDraft?.appearance ?? profile.appearance ?? {};
+
+    const merged: AppearanceSettingsDto = {
+      global: {
+        ...(existingAppearance.global ?? {}),
+        ...(dto.global ?? {}),
       },
-      links: {
-        ...(existing.components?.links ?? {}),
-        ...(dto.components?.links ?? {}),
-      },
-      projects: {
-        ...(existing.components?.projects ?? {}),
-        ...(dto.components?.projects ?? {}),
-      },
-      cta: {
-        ...(existing.components?.cta ?? {}),
-        ...(dto.components?.cta ?? {}),
+      components: {
+        bio: {
+          ...(existingAppearance.components?.bio ?? {}),
+          ...(dto.components?.bio ?? {}),
+        },
+        links: {
+          ...(existingAppearance.components?.links ?? {}),
+          ...(dto.components?.links ?? {}),
+        },
+        projects: {
+          ...(existingAppearance.components?.projects ?? {}),
+          ...(dto.components?.projects ?? {}),
+        },
+        cta: {
+          ...(existingAppearance.components?.cta ?? {}),
+          ...(dto.components?.cta ?? {}),
+        },
       },
     };
 
-    profile.appearance = {
-      global: mergedGlobal,
-      components: mergedComponents,
-    };
+    const draft = this.profileDraftRepo.create({
+      ...(existingDraft ? { id: existingDraft.id } : {}),
+      profileId: profile.id,
+      bio: existingDraft?.bio ?? null,
+      photoUrl: existingDraft?.photoUrl ?? null,
+      content: existingDraft?.content ?? null,
+      themeSettings: existingDraft?.themeSettings ?? null,
+      appearance: merged,
+    });
+
+    await this.profileDraftRepo.save(draft);
 
     if (dto.global?.template) {
       profile.templateType = dto.global.template;
     }
 
     profile.hasUnpublishedChanges = true;
+    await this.profileRepo.save(profile);
 
-    const saved = await this.profileRepo.save(profile);
-
-    await this.invalidateCache(saved.username);
-
-    return {
-      status: 'success',
-      appearance: dto,
-    };
+    return { status: 'success', appearance: merged };
   }
 
   async getAppearance(userId: string): Promise<{
