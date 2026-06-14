@@ -636,6 +636,7 @@ export class ProfileService {
       photoUrl: draft?.photoUrl ?? profile.photoUrl ?? null,
       content,
       themeSettings: draft?.themeSettings ?? profile.themeSettings ?? null,
+      appearance: draft?.appearance ?? profile.appearance ?? null,
       source: draft ? 'draft' : 'published',
       updatedAt: draft?.updatedAt ?? profile.updatedAt,
     };
@@ -736,11 +737,21 @@ export class ProfileService {
           }
 
           // 2. SSRF protection via DNS lookup
-          const { address } = await dns.lookup(hostname);
+          const lookupResult = await dns.lookup(hostname);
+          const address =
+            lookupResult && typeof lookupResult === 'object'
+              ? ((lookupResult as { address?: string }).address ?? '')
+              : typeof lookupResult === 'string'
+                ? lookupResult
+                : '';
 
-          const ipv4MappedMatch = address.match(
-            /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i,
-          );
+          const addr = String(address ?? '');
+
+          if (!addr) {
+            return `"${item.label}" has an invalid URL`;
+          }
+
+          const ipv4MappedMatch = addr.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
           if (ipv4MappedMatch) {
             const mappedIp = ipv4MappedMatch[1];
             const mappedParts = mappedIp.split('.').map(Number);
@@ -757,20 +768,20 @@ export class ProfileService {
             }
           }
 
-          const ipParts = address.split('.').map(Number);
+          const ipParts = addr.split('.').map(Number);
 
           const isPrivateIpv6 =
-            address === '::1' ||
-            /^fe80:/i.test(address) ||
-            /^fc[0-9a-f]{2}:/i.test(address) ||
-            /^fd[0-9a-f]{2}:/i.test(address);
+            addr === '::1' ||
+            /^fe80:/i.test(addr) ||
+            /^fc[0-9a-f]{2}:/i.test(addr) ||
+            /^fd[0-9a-f]{2}:/i.test(addr);
 
           const isPrivate =
             isPrivateIpv6 ||
-            address.startsWith('127.') ||
-            address.startsWith('10.') ||
-            address.startsWith('192.168.') ||
-            address.startsWith('169.254.') ||
+            addr.startsWith('127.') ||
+            addr.startsWith('10.') ||
+            addr.startsWith('192.168.') ||
+            addr.startsWith('169.254.') ||
             (ipParts[0] === 172 && ipParts[1] >= 16 && ipParts[1] <= 31);
 
           if (isPrivate) {
@@ -866,6 +877,11 @@ export class ProfileService {
           dto.themeSettings !== undefined
             ? dto.themeSettings
             : (existingDraft?.themeSettings ?? null),
+
+        appearance:
+          dto.appearance !== undefined
+            ? dto.appearance
+            : (existingDraft?.appearance ?? null),
       });
 
       return draftRepo.save(draft);
@@ -877,6 +893,7 @@ export class ProfileService {
       photoUrl: saved.photoUrl,
       content: saved.content,
       themeSettings: saved.themeSettings,
+      appearance: saved.appearance,
       source: 'draft',
       updatedAt: saved.updatedAt,
     };
@@ -928,49 +945,65 @@ export class ProfileService {
       );
     }
 
-    const existing = profile.appearance ?? {};
-    const mergedGlobal = {
-      ...(existing.global ?? {}),
-      ...(dto.global ?? {}),
-    };
-    const mergedComponents = {
-      bio: {
-        ...(existing.components?.bio ?? {}),
-        ...(dto.components?.bio ?? {}),
-      },
-      links: {
-        ...(existing.components?.links ?? {}),
-        ...(dto.components?.links ?? {}),
-      },
-      projects: {
-        ...(existing.components?.projects ?? {}),
-        ...(dto.components?.projects ?? {}),
-      },
-      cta: {
-        ...(existing.components?.cta ?? {}),
-        ...(dto.components?.cta ?? {}),
-      },
-    };
+    const merged = await this.dataSource.transaction(async (manager) => {
+      const txProfileRepo = manager.getRepository(Profile);
+      const txDraftRepo = manager.getRepository(ProfileDraft);
 
-    profile.appearance = {
-      global: mergedGlobal,
-      components: mergedComponents,
-    };
+      const lockedProfile = await txProfileRepo
+        .createQueryBuilder('p')
+        .where('p.id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getOneOrFail();
 
-    if (dto.global?.template) {
-      profile.templateType = dto.global.template;
-    }
+      const existingDraft = await txDraftRepo
+        .createQueryBuilder('d')
+        .where('d.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getOne();
 
-    profile.hasUnpublishedChanges = true;
+      const existingAppearance =
+        existingDraft?.appearance ?? lockedProfile.appearance ?? {};
 
-    const saved = await this.profileRepo.save(profile);
+      const mergedAppearance: AppearanceSettingsDto = {
+        global: {
+          ...(existingAppearance.global ?? {}),
+          ...(dto.global ?? {}),
+        },
+        components: {
+          bio: {
+            ...(existingAppearance.components?.bio ?? {}),
+            ...(dto.components?.bio ?? {}),
+          },
+          links: {
+            ...(existingAppearance.components?.links ?? {}),
+            ...(dto.components?.links ?? {}),
+          },
+          projects: {
+            ...(existingAppearance.components?.projects ?? {}),
+            ...(dto.components?.projects ?? {}),
+          },
+          cta: {
+            ...(existingAppearance.components?.cta ?? {}),
+            ...(dto.components?.cta ?? {}),
+          },
+        },
+      };
 
-    await this.invalidateCache(saved.username);
+      await txDraftRepo.save({
+        ...(existingDraft ? { id: existingDraft.id } : {}),
+        profileId: lockedProfile.id,
+        appearance: mergedAppearance,
+      });
 
-    return {
-      status: 'success',
-      appearance: dto,
-    };
+      if (dto.global?.template)
+        lockedProfile.templateType = dto.global.template;
+      lockedProfile.hasUnpublishedChanges = true;
+      await txProfileRepo.save(lockedProfile);
+
+      return mergedAppearance;
+    });
+
+    return { status: 'success', appearance: merged };
   }
 
   async getAppearance(userId: string): Promise<{
