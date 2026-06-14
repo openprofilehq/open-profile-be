@@ -935,56 +935,63 @@ export class ProfileService {
       );
     }
 
-    const existingDraft = await this.profileDraftRepo.findOne({
-      where: { profileId: profile.id },
+    const merged = await this.dataSource.transaction(async (manager) => {
+      const txProfileRepo = manager.getRepository(Profile);
+      const txDraftRepo = manager.getRepository(ProfileDraft);
+
+      const lockedProfile = await txProfileRepo
+        .createQueryBuilder('p')
+        .where('p.id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getOneOrFail();
+
+      const existingDraft = await txDraftRepo
+        .createQueryBuilder('d')
+        .where('d.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getOne();
+
+      const existingAppearance =
+        existingDraft?.appearance ?? lockedProfile.appearance ?? {};
+
+      const mergedAppearance: AppearanceSettingsDto = {
+        global: {
+          ...(existingAppearance.global ?? {}),
+          ...(dto.global ?? {}),
+        },
+        components: {
+          bio: {
+            ...(existingAppearance.components?.bio ?? {}),
+            ...(dto.components?.bio ?? {}),
+          },
+          links: {
+            ...(existingAppearance.components?.links ?? {}),
+            ...(dto.components?.links ?? {}),
+          },
+          projects: {
+            ...(existingAppearance.components?.projects ?? {}),
+            ...(dto.components?.projects ?? {}),
+          },
+          cta: {
+            ...(existingAppearance.components?.cta ?? {}),
+            ...(dto.components?.cta ?? {}),
+          },
+        },
+      };
+
+      await txDraftRepo.save({
+        ...(existingDraft ? { id: existingDraft.id } : {}),
+        profileId: lockedProfile.id,
+        appearance: mergedAppearance,
+      });
+
+      if (dto.global?.template)
+        lockedProfile.templateType = dto.global.template;
+      lockedProfile.hasUnpublishedChanges = true;
+      await txProfileRepo.save(lockedProfile);
+
+      return mergedAppearance;
     });
-
-    const existingAppearance =
-      existingDraft?.appearance ?? profile.appearance ?? {};
-
-    const merged: AppearanceSettingsDto = {
-      global: {
-        ...(existingAppearance.global ?? {}),
-        ...(dto.global ?? {}),
-      },
-      components: {
-        bio: {
-          ...(existingAppearance.components?.bio ?? {}),
-          ...(dto.components?.bio ?? {}),
-        },
-        links: {
-          ...(existingAppearance.components?.links ?? {}),
-          ...(dto.components?.links ?? {}),
-        },
-        projects: {
-          ...(existingAppearance.components?.projects ?? {}),
-          ...(dto.components?.projects ?? {}),
-        },
-        cta: {
-          ...(existingAppearance.components?.cta ?? {}),
-          ...(dto.components?.cta ?? {}),
-        },
-      },
-    };
-
-    const draft = this.profileDraftRepo.create({
-      ...(existingDraft ? { id: existingDraft.id } : {}),
-      profileId: profile.id,
-      bio: existingDraft?.bio ?? null,
-      photoUrl: existingDraft?.photoUrl ?? null,
-      content: existingDraft?.content ?? null,
-      themeSettings: existingDraft?.themeSettings ?? null,
-      appearance: merged,
-    });
-
-    await this.profileDraftRepo.save(draft);
-
-    if (dto.global?.template) {
-      profile.templateType = dto.global.template;
-    }
-
-    profile.hasUnpublishedChanges = true;
-    await this.profileRepo.save(profile);
 
     return { status: 'success', appearance: merged };
   }
