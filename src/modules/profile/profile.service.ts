@@ -737,11 +737,21 @@ export class ProfileService {
           }
 
           // 2. SSRF protection via DNS lookup
-          const { address } = await dns.lookup(hostname);
+          const lookupResult = await dns.lookup(hostname);
+          const address =
+            lookupResult && typeof lookupResult === 'object'
+              ? ((lookupResult as { address?: string }).address ?? '')
+              : typeof lookupResult === 'string'
+                ? lookupResult
+                : '';
 
-          const ipv4MappedMatch = address.match(
-            /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i,
-          );
+          const addr = String(address ?? '');
+
+          if (!addr) {
+            return `"${item.label}" has an invalid URL`;
+          }
+
+          const ipv4MappedMatch = addr.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
           if (ipv4MappedMatch) {
             const mappedIp = ipv4MappedMatch[1];
             const mappedParts = mappedIp.split('.').map(Number);
@@ -758,20 +768,20 @@ export class ProfileService {
             }
           }
 
-          const ipParts = address.split('.').map(Number);
+          const ipParts = addr.split('.').map(Number);
 
           const isPrivateIpv6 =
-            address === '::1' ||
-            /^fe80:/i.test(address) ||
-            /^fc[0-9a-f]{2}:/i.test(address) ||
-            /^fd[0-9a-f]{2}:/i.test(address);
+            addr === '::1' ||
+            /^fe80:/i.test(addr) ||
+            /^fc[0-9a-f]{2}:/i.test(addr) ||
+            /^fd[0-9a-f]{2}:/i.test(addr);
 
           const isPrivate =
             isPrivateIpv6 ||
-            address.startsWith('127.') ||
-            address.startsWith('10.') ||
-            address.startsWith('192.168.') ||
-            address.startsWith('169.254.') ||
+            addr.startsWith('127.') ||
+            addr.startsWith('10.') ||
+            addr.startsWith('192.168.') ||
+            addr.startsWith('169.254.') ||
             (ipParts[0] === 172 && ipParts[1] >= 16 && ipParts[1] <= 31);
 
           if (isPrivate) {

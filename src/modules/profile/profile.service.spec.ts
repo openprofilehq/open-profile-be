@@ -1279,6 +1279,24 @@ describe('ProfileService', () => {
         hasUnpublishedChanges: true,
       });
 
+      // transaction-level query builder mocks for pessimistic locking
+      const txProfileRepo = txManager.getRepository(Profile);
+      const lockedProfile = { ...mockProfile };
+      const profileQb = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOneOrFail: jest.fn().mockResolvedValue(lockedProfile),
+      } as any;
+      txProfileRepo.createQueryBuilder.mockReturnValue(profileQb);
+
+      const txDraftRepo = txManager.getRepository(ProfileDraft);
+      const draftQb = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      } as any;
+      txDraftRepo.createQueryBuilder.mockReturnValue(draftQb);
+
       const result = await service.updateAppearance(USER_ID, appearanceDto);
 
       expect(result.status).toBe('success');
@@ -1291,7 +1309,8 @@ describe('ProfileService', () => {
 
       // Appearance is persisted to the draft store; profile is only marked
       // as having unpublished changes and saved. Ensure that behavior.
-      expect(draftRepo.create).toHaveBeenCalledWith(
+      const txDraftRepoCalled = txManager.getRepository(ProfileDraft);
+      expect(txDraftRepoCalled.save).toHaveBeenCalledWith(
         expect.objectContaining({
           profileId: PROFILE_ID,
           appearance: expect.objectContaining({
@@ -1299,8 +1318,8 @@ describe('ProfileService', () => {
           }),
         }),
       );
-      expect(draftRepo.save).toHaveBeenCalled();
-      expect(profileRepo.save).toHaveBeenCalledWith(
+      const txProfileRepoCalled = txManager.getRepository(Profile);
+      expect(txProfileRepoCalled.save).toHaveBeenCalledWith(
         expect.objectContaining({ hasUnpublishedChanges: true }),
       );
     });
@@ -1337,6 +1356,34 @@ describe('ProfileService', () => {
           },
         },
       });
+      // transaction-level query builder mocks for pessimistic locking
+      const txProfileRepo2 = txManager.getRepository(Profile);
+      const lockedProfile2 = {
+        ...mockProfile,
+        appearance: {
+          global: { ...existingStyle },
+          components: {
+            bio: { ...existingStyle },
+            links: { ...existingStyle },
+            projects: { ...existingStyle },
+            cta: { ...existingStyle },
+          },
+        },
+      };
+      const profileQb2 = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOneOrFail: jest.fn().mockResolvedValue(lockedProfile2),
+      } as any;
+      txProfileRepo2.createQueryBuilder.mockReturnValue(profileQb2);
+
+      const txDraftRepo2 = txManager.getRepository(ProfileDraft);
+      const draftQb2 = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      } as any;
+      txDraftRepo2.createQueryBuilder.mockReturnValue(draftQb2);
       profileRepo.save.mockImplementation((p: Profile) => Promise.resolve(p));
 
       const partial = { global: { theme: 'dark' as const } };
@@ -1344,7 +1391,8 @@ describe('ProfileService', () => {
 
       // Ensure the draft was saved with merged appearance values (global
       // properties merged from the existing profile and the partial payload).
-      expect(draftRepo.create).toHaveBeenCalledWith(
+      const txDraftRepoCalled2 = txManager.getRepository(ProfileDraft);
+      expect(txDraftRepoCalled2.save).toHaveBeenCalledWith(
         expect.objectContaining({
           profileId: PROFILE_ID,
           appearance: expect.objectContaining({
