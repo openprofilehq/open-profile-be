@@ -1279,20 +1279,49 @@ describe('ProfileService', () => {
         hasUnpublishedChanges: true,
       });
 
+      // transaction-level query builder mocks for pessimistic locking
+      const txProfileRepo = txManager.getRepository(Profile);
+      const lockedProfile = { ...mockProfile };
+      const profileQb = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOneOrFail: jest.fn().mockResolvedValue(lockedProfile),
+      } as any;
+      txProfileRepo.createQueryBuilder.mockReturnValue(profileQb);
+
+      const txDraftRepo = txManager.getRepository(ProfileDraft);
+      const draftQb = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      } as any;
+      txDraftRepo.createQueryBuilder.mockReturnValue(draftQb);
+
       const result = await service.updateAppearance(USER_ID, appearanceDto);
 
       expect(result.status).toBe('success');
-      expect(result.appearance).toEqual(appearanceDto);
-      expect(profileRepo.save).toHaveBeenCalledWith(
+      // The service merges the provided global appearance into a full
+      // AppearanceSettingsDto and returns that merged structure.
+      expect(result.appearance.global).toEqual(
+        expect.objectContaining(appearanceDto.global),
+      );
+      expect(result.appearance.components).toBeDefined();
+
+      // Appearance is persisted to the draft store; profile is only marked
+      // as having unpublished changes and saved. Ensure that behavior.
+      const txDraftRepoCalled = txManager.getRepository(ProfileDraft);
+      expect(txDraftRepoCalled.save).toHaveBeenCalledWith(
         expect.objectContaining({
+          profileId: PROFILE_ID,
           appearance: expect.objectContaining({
             global: expect.objectContaining(appearanceDto.global),
-            components: expect.any(Object),
           }),
-          hasUnpublishedChanges: true,
         }),
       );
-      expect(redisService.del).toHaveBeenCalledWith(`profile:${USERNAME}`);
+      const txProfileRepoCalled = txManager.getRepository(Profile);
+      expect(txProfileRepoCalled.save).toHaveBeenCalledWith(
+        expect.objectContaining({ hasUnpublishedChanges: true }),
+      );
     });
 
     it('throws NotFoundException when profile does not exist', async () => {
@@ -1327,13 +1356,45 @@ describe('ProfileService', () => {
           },
         },
       });
+      // transaction-level query builder mocks for pessimistic locking
+      const txProfileRepo2 = txManager.getRepository(Profile);
+      const lockedProfile2 = {
+        ...mockProfile,
+        appearance: {
+          global: { ...existingStyle },
+          components: {
+            bio: { ...existingStyle },
+            links: { ...existingStyle },
+            projects: { ...existingStyle },
+            cta: { ...existingStyle },
+          },
+        },
+      };
+      const profileQb2 = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOneOrFail: jest.fn().mockResolvedValue(lockedProfile2),
+      } as any;
+      txProfileRepo2.createQueryBuilder.mockReturnValue(profileQb2);
+
+      const txDraftRepo2 = txManager.getRepository(ProfileDraft);
+      const draftQb2 = {
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      } as any;
+      txDraftRepo2.createQueryBuilder.mockReturnValue(draftQb2);
       profileRepo.save.mockImplementation((p: Profile) => Promise.resolve(p));
 
       const partial = { global: { theme: 'dark' as const } };
       await service.updateAppearance(USER_ID, partial);
 
-      expect(profileRepo.save).toHaveBeenCalledWith(
+      // Ensure the draft was saved with merged appearance values (global
+      // properties merged from the existing profile and the partial payload).
+      const txDraftRepoCalled2 = txManager.getRepository(ProfileDraft);
+      expect(txDraftRepoCalled2.save).toHaveBeenCalledWith(
         expect.objectContaining({
+          profileId: PROFILE_ID,
           appearance: expect.objectContaining({
             global: expect.objectContaining({
               template: 'portfolio',
