@@ -472,7 +472,7 @@ describe('ProfileService', () => {
   // ---------------------------------------------------------------------------
   describe('getAppearance', () => {
     const defaultStyle = {
-      template: 'professional',
+      template: 'default',
       accentColour: '#0EA5E9',
       backgroundColour: '#ffffff',
       textColour: '#111827',
@@ -1260,7 +1260,7 @@ describe('ProfileService', () => {
   describe('updateAppearance', () => {
     const appearanceDto: any = {
       global: {
-        template: 'professional',
+        template: 'default',
         accentColour: '#6366f1',
         backgroundColour: '#ffffff',
         textColour: '#111827',
