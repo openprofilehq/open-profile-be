@@ -28,6 +28,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
       return result === 'OK';
     }
+
     await this.client.set(key, value, 'EX', ttlSeconds);
     return true;
   }
