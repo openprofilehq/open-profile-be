@@ -2,7 +2,7 @@ import { AppearanceSettingsDto } from '../dto/appearance-settings.dto';
 import { AppearanceStyleDto } from '../dto/appearance-settings.dto';
 
 const DEFAULT_STYLE: AppearanceStyleDto = {
-  template: 'professional',
+  template: 'default',
   accentColour: '#0EA5E9',
   backgroundColour: '#ffffff',
   textColour: '#111827',
