@@ -10,13 +10,20 @@ export class RedisLockService {
 
   async acquireLock(key: string): Promise<boolean> {
     const lockKey = `lock:refresh:${key}`;
-    const result = await this.redisService.set(
-      lockKey,
-      '1',
-      this.LOCK_TTL_SECONDS,
-      true, // NX — only set if not exists
-    );
-    return result === true;
+    try {
+      const result = await this.redisService.set(
+        lockKey,
+        '1',
+        this.LOCK_TTL_SECONDS,
+        true,
+      );
+      return result === true;
+    } catch (err) {
+      this.logger.error(
+        `[acquireLock] Redis unavailable, failing open: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return true; // fail open — let the refresh proceed
+    }
   }
 
   async releaseLock(key: string): Promise<void> {
