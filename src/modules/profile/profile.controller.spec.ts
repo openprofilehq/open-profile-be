@@ -544,7 +544,7 @@ describe('ProfileController (integration)', () => {
   describe('PATCH /api/v1/profiles/appearance', () => {
     const fullPayload = {
       global: {
-        template: 'professional',
+        template: 'default',
         accentColour: '#6366f1',
         backgroundColour: '#ffffff',
         textColour: '#111827',
