@@ -142,6 +142,8 @@ export class ProfileService {
   }
 
   async getPublicProfile(username: string): Promise<{
+    profileId: string;
+    userId: string;
     data: PublicProfileResponseDto;
     etag: string;
     fromCache: boolean;
@@ -152,7 +154,10 @@ export class ProfileService {
 
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
-      const parsed = JSON.parse(cached) as PublicProfileResponseDto;
+      const parsed = JSON.parse(cached) as PublicProfileResponseDto & {
+        profileId?: string;
+        userId?: string;
+      };
       if (parsed['__notFound']) {
         throw new NotFoundException({
           error: 'not_found',
@@ -160,7 +165,17 @@ export class ProfileService {
         });
       }
       const etag = this.computeEtag(cached);
-      return { data: parsed, etag, fromCache: true };
+
+      // Strip internal fields before returning as the public `data` payload
+      const { profileId, userId, ...publicData } = parsed;
+
+      return {
+        profileId: profileId ?? '',
+        userId: userId ?? '',
+        data: publicData,
+        etag,
+        fromCache: true,
+      };
     }
 
     // Single-flight lock — prevents cache stampede on cold cache.
@@ -194,13 +209,24 @@ export class ProfileService {
       }
 
       const responseData = this.serialize(profile);
-      const serialized = JSON.stringify(responseData);
+      const cachePayload = {
+        profileId: profile.id,
+        userId: profile.userId,
+        ...responseData,
+      };
+      const serialized = JSON.stringify(cachePayload);
 
       this.logger.log(`Cache miss for profile: ${normalizedUsername}`);
       await this.redisService.set(cacheKey, serialized, CACHE_TTL_SECONDS);
       const etag = this.computeEtag(serialized);
 
-      return { data: responseData, etag, fromCache: false };
+      return {
+        profileId: profile.id,
+        userId: profile.userId,
+        data: responseData,
+        etag,
+        fromCache: false,
+      };
     } finally {
       if (lockAcquired) {
         await this.redisService.del(lockKey);

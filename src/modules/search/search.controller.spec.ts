@@ -30,7 +30,11 @@ describe('SearchController', () => {
     };
     searchService.searchProfiles.mockResolvedValue(result);
 
-    await expect(controller.search(dto)).resolves.toEqual(result);
-    expect(searchService.searchProfiles).toHaveBeenCalledWith(dto);
+    await expect(
+      controller.search(dto, {
+        user: { sub: 'user-id' },
+      } as unknown as Request),
+    ).resolves.toEqual(result);
+    expect(searchService.searchProfiles).toHaveBeenCalledWith(dto, 'user-id');
   });
 });

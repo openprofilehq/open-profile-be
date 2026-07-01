@@ -34,6 +34,7 @@ import { UploadModule } from './modules/upload/upload.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { HttpMetricsInterceptor } from './modules/metrics/http-metrics.interceptor';
 import { ValidationError } from 'class-validator';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { ValidationError } from 'class-validator';
     PortfolioModule,
     UploadModule,
     MetricsModule,
+    EventsModule,
   ],
   providers: [
     {
