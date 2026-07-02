@@ -27,7 +27,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) return true;
 
     const req = context.switchToHttp().getRequest<Request>();
     const res = context.switchToHttp().getResponse<Response>();
@@ -39,8 +38,30 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       (req.headers.authorization?.startsWith('Bearer ')
         ? req.headers.authorization.slice(7)
         : undefined);
-
     const rawRefreshToken = cookies?.['refreshToken'];
+
+    // Public route: identify the requester if a valid token is present,
+    // but never reject the request either way.
+    if (isPublic) {
+      if (!accessToken) return true;
+      try {
+        const payload = await this.tokenService.verifyAccessToken(accessToken);
+        req['user'] = payload;
+      } catch {
+        // invalid/expired token on a public route — try silent refresh,
+        // then proceed anonymously if refresh is unavailable/invalid.
+        await this.attemptRefresh(
+          rawRefreshToken,
+          req,
+          res,
+          'invalid_access_token',
+          {
+            isSilent: true,
+          },
+        );
+      }
+      return true;
+    }
 
     // No access token — attempt refresh before rejecting
     if (!accessToken) {

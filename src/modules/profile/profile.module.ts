@@ -9,6 +9,7 @@ import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
 import { UsersModule } from '../users/users.module';
 import { UsernamesModule } from '../usernames/usernames.module';
+import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { UsernamesModule } from '../usernames/usernames.module';
     RedisModule,
     UsersModule,
     UsernamesModule,
+    EventsModule,
   ],
   controllers: [ProfileController],
   providers: [ProfileService],
