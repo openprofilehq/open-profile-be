@@ -171,6 +171,18 @@ describe('EventsService', () => {
       ).resolves.toBe(true);
     });
 
+    it('falls back to string normalization for non-parseable values', async () => {
+      profileRepository.findOne.mockResolvedValue({
+        content: {
+          links: { items: [{ url: '/Relative/Path/' }] },
+        },
+      });
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, '/relative/path'),
+      ).resolves.toBe(true);
+    });
+
     it('returns true for project repository and live URLs', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
