@@ -1,4 +1,11 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { EventsService } from './events.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { RecordLinkClickDto } from './dto/record-link-click.dto';
@@ -11,6 +18,7 @@ export class EventsController {
 
   @Public()
   @Post('link-click')
+  @HttpCode(HttpStatus.NO_CONTENT)
   async recordLinkClick(
     @Body() dto: RecordLinkClickDto,
     @Req() req: Request & { user?: { sub: string } },

@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -49,6 +50,8 @@ import { EventType } from '../events/entities/event.entity';
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
 export class ProfileController {
+  private readonly logger = new Logger(ProfileController.name);
+
   constructor(
     private readonly profileService: ProfileService,
     private readonly eventsService: EventsService,
@@ -336,10 +339,12 @@ export class ProfileController {
       void this.eventsService
         .recordEvent({
           eventType: EventType.PROFILE_VIEWED,
-          profileId: profileId ?? undefined,
+          profileId: profileId || undefined,
           actorId: actorId ?? undefined,
         })
-        .catch(() => {});
+        .catch((err) =>
+          this.logger?.warn?.(`Failed to record PROFILE_VIEWED event: ${err}`),
+        );
     }
 
     return data;

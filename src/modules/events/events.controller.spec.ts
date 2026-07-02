@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 import { EventType } from './entities/event.entity';
@@ -34,6 +35,12 @@ describe('EventsController', () => {
     }).compile();
 
     controller = module.get<EventsController>(EventsController);
+  });
+
+  it('responds with 204 No Content for link-click tracking requests', () => {
+    expect(
+      Reflect.getMetadata(HTTP_CODE_METADATA, controller.recordLinkClick),
+    ).toBe(204);
   });
 
   it('records a link-click event when the link belongs to the profile', async () => {

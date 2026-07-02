@@ -28,6 +28,7 @@ export class SearchService {
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
         this.logger.debug(`Cache hit: ${cacheKey}`);
+        const result = JSON.parse(cached) as PaginatedSearchResult;
         // fire-and-forget even on cache hit
         void this.eventsService
           .recordEvent({
@@ -36,7 +37,7 @@ export class SearchService {
             metadata: { query: dto.q },
           })
           .catch(() => {});
-        return JSON.parse(cached) as PaginatedSearchResult;
+        return result;
       }
     } catch (error) {
       this.logger.warn(

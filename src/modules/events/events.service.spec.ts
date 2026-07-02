@@ -119,6 +119,58 @@ describe('EventsService', () => {
       ).resolves.toBe(true);
     });
 
+    it('normalizes case and trailing slashes before comparing URLs', async () => {
+      profileRepository.findOne.mockResolvedValue({
+        content: {
+          links: {
+            items: [{ url: 'HTTPS://Example.com/Link/' }],
+          },
+          projects: {
+            items: [
+              {
+                repoUrl: 'HTTPS://GitHub.com/Example/Project/',
+                liveUrl: 'HTTPS://Project.Example.com/',
+              },
+            ],
+          },
+          cta: {
+            type: 'link',
+            value: 'HTTPS://CTA.Example.com/',
+          },
+        },
+      });
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(
+          PROFILE_ID,
+          'https://github.com/example/project',
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://project.example.com'),
+      ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
+      ).resolves.toBe(true);
+    });
+
+    it('normalizes non-URL values by lowercasing and trimming a trailing slash', async () => {
+      profileRepository.findOne.mockResolvedValue({
+        content: {
+          links: {
+            items: [{ url: 'mailto:Hello@Example.com/' }],
+          },
+        },
+      });
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'mailto:hello@example.com'),
+      ).resolves.toBe(true);
+    });
+
     it('returns true for project repository and live URLs', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
