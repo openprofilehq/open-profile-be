@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Patch,
   Post,
   Req,
   Res,
@@ -13,12 +14,18 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { env } from '../../config/env';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -139,6 +146,37 @@ export class AuthController {
   })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @ApiBearerAuth('JWT')
+  @Patch('password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseGuards(ThrottlerGuard)
+  @ApiOperation({
+    summary: 'Change password for the authenticated user',
+    description:
+      'Verifies the current password, then updates it. All refresh tokens ' +
+      'are revoked (every other session is logged out); the access token ' +
+      'used for this request remains valid until it naturally expires.',
+  })
+  @ApiResponse({ status: 200, description: 'Password changed successfully' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'New password matches current password, current password is ' +
+      'incorrect, or the account was created with an external sign-in ' +
+      'provider',
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'New password fails strength requirements',
+  })
+  changePassword(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(userId, dto);
   }
 
   @Public()

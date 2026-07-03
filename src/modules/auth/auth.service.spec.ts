@@ -8,12 +8,17 @@ jest.mock('../../config/env', () => ({
 
 jest.mock('argon2', () => ({
   hash: jest.fn().mockResolvedValue('mocked-argon2-hash'),
+  verify: jest.fn(),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import * as argon2 from 'argon2';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 import { AuthService } from './auth.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { UsersService } from '../users/users.service';
 import { QueueService } from '../queue/queue.service';
 import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
@@ -24,7 +29,7 @@ import {
   QUEUE_NAMES,
   QUEUE_JOB_NAMES,
 } from '../queue/config/queue-names.constant';
-import { User } from '../users/entities/user.entity';
+import { AuthProvider, User } from '../users/entities/user.entity';
 
 const mockUser = {
   id: '550e8400-e29b-41d4-a716-446655440000',
@@ -42,6 +47,7 @@ describe('AuthService', () => {
   let service: AuthService;
   let usersService: Record<string, jest.Mock>;
   let queueService: Record<string, jest.Mock>;
+  let tokenService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     const mockUsersService = {
@@ -49,10 +55,16 @@ describe('AuthService', () => {
       storeOtpHash: jest.fn(),
       findByEmail: jest.fn(),
       clearOtp: jest.fn(),
+      findOne: jest.fn(),
+      updatePassword: jest.fn(),
     };
 
     const mockQueueService = {
       addJob: jest.fn(),
+    };
+
+    const mockTokenService = {
+      invalidateAllRefreshTokens: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -64,13 +76,14 @@ describe('AuthService', () => {
         { provide: RateLimiterService, useValue: {} },
         { provide: MailService, useValue: {} },
         { provide: RedisService, useValue: {} },
-        { provide: TokenService, useValue: {} },
+        { provide: TokenService, useValue: mockTokenService },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
     usersService = module.get(UsersService);
     queueService = module.get(QueueService);
+    tokenService = module.get(TokenService);
     jest.clearAllMocks();
   });
 
@@ -121,6 +134,162 @@ describe('AuthService', () => {
 
       expect(usersService.storeOtpHash).not.toHaveBeenCalled();
       expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changePassword', () => {
+    const userId = mockUser.id;
+    const dto = { currentPassword: 'OldPass1!', newPassword: 'NewPass1!' };
+
+    const emailUser = {
+      ...mockUser,
+      password: 'stored-hash',
+      authProvider: AuthProvider.EMAIL,
+    } as User;
+
+    const googleUser = {
+      ...mockUser,
+      password: 'unusable-random-hash',
+      authProvider: AuthProvider.GOOGLE,
+    } as User;
+
+    it('updates the password, revokes all refresh tokens, then queues the email, in that order', async () => {
+      usersService.findOne.mockResolvedValue(emailUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      usersService.updatePassword.mockResolvedValue(undefined);
+      tokenService.invalidateAllRefreshTokens.mockResolvedValue(undefined);
+      queueService.addJob.mockResolvedValue(undefined);
+
+      const result = await service.changePassword(userId, dto);
+
+      expect(argon2.verify).toHaveBeenCalledWith(
+        emailUser.password,
+        dto.currentPassword,
+      );
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        userId,
+        dto.newPassword,
+      );
+      expect(tokenService.invalidateAllRefreshTokens).toHaveBeenCalledWith(
+        userId,
+      );
+      expect(queueService.addJob).toHaveBeenCalledWith(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
+        { to: emailUser.email },
+      );
+
+      const updateOrder =
+        usersService.updatePassword.mock.invocationCallOrder[0];
+      const invalidateOrder =
+        tokenService.invalidateAllRefreshTokens.mock.invocationCallOrder[0];
+      const emailOrder = queueService.addJob.mock.invocationCallOrder[0];
+
+      expect(updateOrder).toBeLessThan(invalidateOrder);
+      expect(invalidateOrder).toBeLessThan(emailOrder);
+
+      expect(result).toEqual({
+        status: 'success',
+        message:
+          'Your password has been changed. You have been logged out of all other sessions.',
+      });
+    });
+
+    it('rejects a GOOGLE-provider account with 400/WRONG_PROVIDER before verifying any password', async () => {
+      usersService.findOne.mockResolvedValue(googleUser);
+
+      const error = await service
+        .changePassword(userId, dto)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        error: 'WRONG_PROVIDER',
+      });
+
+      expect(argon2.verify).not.toHaveBeenCalled();
+      expect(usersService.updatePassword).not.toHaveBeenCalled();
+      expect(tokenService.invalidateAllRefreshTokens).not.toHaveBeenCalled();
+      expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+
+    it('rejects with 400/CURRENT_PASSWORD_INCORRECT when the current password does not match, with no side effects', async () => {
+      usersService.findOne.mockResolvedValue(emailUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      const error = await service
+        .changePassword(userId, dto)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        error: 'CURRENT_PASSWORD_INCORRECT',
+      });
+
+      expect(usersService.updatePassword).not.toHaveBeenCalled();
+      expect(tokenService.invalidateAllRefreshTokens).not.toHaveBeenCalled();
+      expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+
+    it('rejects with 400/PASSWORD_UNCHANGED when newPassword equals currentPassword, with no side effects', async () => {
+      usersService.findOne.mockResolvedValue(emailUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      const sameDto = {
+        currentPassword: 'SamePass1!',
+        newPassword: 'SamePass1!',
+      };
+
+      const error = await service
+        .changePassword(userId, sameDto)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        error: 'PASSWORD_UNCHANGED',
+      });
+
+      expect(usersService.updatePassword).not.toHaveBeenCalled();
+      expect(tokenService.invalidateAllRefreshTokens).not.toHaveBeenCalled();
+      expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ChangePasswordDto validation', () => {
+    const validate422 = (payload: Record<string, unknown>) =>
+      validate(plainToInstance(ChangePasswordDto, payload));
+
+    it('accepts a strong password with no violations', async () => {
+      const errors = await validate422({
+        currentPassword: 'OldPass1!',
+        newPassword: 'NewPass1!',
+      });
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it('rejects a newPassword shorter than 8 characters', async () => {
+      const errors = await validate422({
+        currentPassword: 'OldPass1!',
+        newPassword: 'Sh0rt!',
+      });
+
+      const newPasswordErrors = errors.find(
+        (e) => e.property === 'newPassword',
+      );
+      expect(newPasswordErrors?.constraints).toHaveProperty('minLength');
+    });
+
+    it('rejects a newPassword missing complexity requirements', async () => {
+      const errors = await validate422({
+        currentPassword: 'OldPass1!',
+        newPassword: 'alllowercase',
+      });
+
+      const newPasswordErrors = errors.find(
+        (e) => e.property === 'newPassword',
+      );
+      expect(newPasswordErrors?.constraints).toHaveProperty('matches');
     });
   });
 });
