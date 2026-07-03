@@ -10,6 +10,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { SanitizePipe } from './common/pipes/sanitize.pipe';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { RedisModule } from './common/redis/redis.module';
 import { appConfig } from './config/app.config';
@@ -78,6 +79,9 @@ import { ValidationError } from 'class-validator';
     MetricsModule,
   ],
   providers: [
+    // Must stay registered before the ValidationPipe: global pipes run in
+    // provider order, and validation must see sanitized input.
+    { provide: APP_PIPE, useClass: SanitizePipe },
     {
       provide: APP_PIPE,
       useValue: new ValidationPipe({
