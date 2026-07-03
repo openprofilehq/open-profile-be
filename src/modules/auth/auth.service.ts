@@ -158,20 +158,7 @@ export class AuthService {
       });
     }
 
-    if (user.authProvider !== AuthProvider.EMAIL) {
-      throw new BadRequestException({
-        error: 'WRONG_PROVIDER',
-        message: `This account was created with ${
-          user.authProvider === AuthProvider.GOOGLE
-            ? 'Google'
-            : user.authProvider
-        }. Please use the Continue with ${
-          user.authProvider === AuthProvider.GOOGLE
-            ? 'Google'
-            : user.authProvider
-        } button.`,
-      });
-    }
+    this.assertEmailProvider(user);
 
     if (!user.isVerified) {
       await this.usersService.clearOtp(user.id);
@@ -469,11 +456,18 @@ export class AuthService {
 
     await this.tokenService.invalidateAllRefreshTokens(user.id);
 
-    await this.queueService.addJob<PasswordChangedEmailData>(
-      QUEUE_NAMES.EMAIL,
-      QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
-      { to: user.email },
-    );
+    try {
+      await this.queueService.addJob<PasswordChangedEmailData>(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
+        { to: user.email },
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue password-changed email for user ${user.id}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
 
     return {
       status: 'success',
@@ -482,12 +476,7 @@ export class AuthService {
     };
   }
 
-  async changePassword(
-    userId: string,
-    dto: ChangePasswordDto,
-  ): Promise<{ status: string; message: string }> {
-    const user = await this.usersService.findOne(userId);
-
+  private assertEmailProvider(user: User): void {
     if (user.authProvider !== AuthProvider.EMAIL) {
       throw new BadRequestException({
         error: 'WRONG_PROVIDER',
@@ -502,6 +491,15 @@ export class AuthService {
         } button.`,
       });
     }
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ status: string; message: string }> {
+    const user = await this.usersService.findOne(userId);
+
+    this.assertEmailProvider(user);
 
     const valid = await argon2.verify(user.password, dto.currentPassword);
     if (!valid) {
@@ -523,11 +521,18 @@ export class AuthService {
 
     await this.tokenService.invalidateAllRefreshTokens(user.id);
 
-    await this.queueService.addJob<PasswordChangedEmailData>(
-      QUEUE_NAMES.EMAIL,
-      QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
-      { to: user.email },
-    );
+    try {
+      await this.queueService.addJob<PasswordChangedEmailData>(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
+        { to: user.email },
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue password-changed email for user ${user.id}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
 
     return {
       status: 'success',

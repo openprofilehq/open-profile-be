@@ -12,7 +12,7 @@ jest.mock('argon2', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { validate } from 'class-validator';
@@ -48,6 +48,7 @@ describe('AuthService', () => {
   let usersService: Record<string, jest.Mock>;
   let queueService: Record<string, jest.Mock>;
   let tokenService: Record<string, jest.Mock>;
+  let jwtService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     const mockUsersService = {
@@ -67,11 +68,15 @@ describe('AuthService', () => {
       invalidateAllRefreshTokens: jest.fn(),
     };
 
+    const mockJwtService = {
+      verifyAsync: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
         { provide: UsersService, useValue: mockUsersService },
-        { provide: JwtService, useValue: {} },
+        { provide: JwtService, useValue: mockJwtService },
         { provide: QueueService, useValue: mockQueueService },
         { provide: RateLimiterService, useValue: {} },
         { provide: MailService, useValue: {} },
@@ -84,6 +89,7 @@ describe('AuthService', () => {
     usersService = module.get(UsersService);
     queueService = module.get(QueueService);
     tokenService = module.get(TokenService);
+    jwtService = module.get(JwtService);
     jest.clearAllMocks();
   });
 
@@ -195,6 +201,54 @@ describe('AuthService', () => {
       });
     });
 
+    it('still returns success and logs when the password-changed email fails to enqueue', async () => {
+      usersService.findOne.mockResolvedValue(emailUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      usersService.updatePassword.mockResolvedValue(undefined);
+      tokenService.invalidateAllRefreshTokens.mockResolvedValue(undefined);
+      queueService.addJob.mockRejectedValue(new Error('queue unavailable'));
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const result = await service.changePassword(userId, dto);
+
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        userId,
+        dto.newPassword,
+      );
+      expect(tokenService.invalidateAllRefreshTokens).toHaveBeenCalledWith(
+        userId,
+      );
+      expect(errorSpy).toHaveBeenCalled();
+      expect(result).toEqual({
+        status: 'success',
+        message:
+          'Your password has been changed. You have been logged out of all other sessions.',
+      });
+
+      errorSpy.mockRestore();
+    });
+
+    it('lets a refresh-token revocation failure bubble, after the write but before the email is queued', async () => {
+      usersService.findOne.mockResolvedValue(emailUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      usersService.updatePassword.mockResolvedValue(undefined);
+      tokenService.invalidateAllRefreshTokens.mockRejectedValue(
+        new Error('revocation failed'),
+      );
+
+      await expect(service.changePassword(userId, dto)).rejects.toThrow(
+        'revocation failed',
+      );
+
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        userId,
+        dto.newPassword,
+      );
+      expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+
     it('rejects a GOOGLE-provider account with 400/WRONG_PROVIDER before verifying any password', async () => {
       usersService.findOne.mockResolvedValue(googleUser);
 
@@ -255,6 +309,72 @@ describe('AuthService', () => {
     });
   });
 
+  describe('resetPassword', () => {
+    const resetDto = {
+      resetToken: 'valid-reset-token',
+      newPassword: 'NewPass1!',
+    };
+    const emailUser = {
+      ...mockUser,
+      password: 'stored-hash',
+      authProvider: AuthProvider.EMAIL,
+    } as User;
+
+    it('still returns success and logs when the password-changed email fails to enqueue', async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: emailUser.id,
+        purpose: 'password_reset',
+      });
+      usersService.findOne.mockResolvedValue(emailUser);
+      usersService.updatePassword.mockResolvedValue(undefined);
+      tokenService.invalidateAllRefreshTokens.mockResolvedValue(undefined);
+      queueService.addJob.mockRejectedValue(new Error('queue unavailable'));
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const result = await service.resetPassword(resetDto);
+
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        emailUser.id,
+        resetDto.newPassword,
+      );
+      expect(tokenService.invalidateAllRefreshTokens).toHaveBeenCalledWith(
+        emailUser.id,
+      );
+      expect(errorSpy).toHaveBeenCalled();
+      expect(result).toEqual({
+        status: 'success',
+        message:
+          'Your password has been updated. Please log in with your new password.',
+      });
+
+      errorSpy.mockRestore();
+    });
+
+    it('lets a refresh-token revocation failure bubble, after the write but before the email is queued', async () => {
+      jwtService.verifyAsync.mockResolvedValue({
+        sub: emailUser.id,
+        purpose: 'password_reset',
+      });
+      usersService.findOne.mockResolvedValue(emailUser);
+      usersService.updatePassword.mockResolvedValue(undefined);
+      tokenService.invalidateAllRefreshTokens.mockRejectedValue(
+        new Error('revocation failed'),
+      );
+
+      await expect(service.resetPassword(resetDto)).rejects.toThrow(
+        'revocation failed',
+      );
+
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        emailUser.id,
+        resetDto.newPassword,
+      );
+      expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+  });
+
   describe('ChangePasswordDto validation', () => {
     const validate422 = (payload: Record<string, unknown>) =>
       validate(plainToInstance(ChangePasswordDto, payload));
@@ -290,6 +410,18 @@ describe('AuthService', () => {
         (e) => e.property === 'newPassword',
       );
       expect(newPasswordErrors?.constraints).toHaveProperty('matches');
+    });
+
+    it('rejects a currentPassword longer than 128 characters', async () => {
+      const errors = await validate422({
+        currentPassword: 'a'.repeat(129),
+        newPassword: 'NewPass1!',
+      });
+
+      const currentPasswordErrors = errors.find(
+        (e) => e.property === 'currentPassword',
+      );
+      expect(currentPasswordErrors?.constraints).toHaveProperty('maxLength');
     });
   });
 });

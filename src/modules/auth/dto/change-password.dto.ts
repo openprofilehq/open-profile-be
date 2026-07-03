@@ -11,6 +11,9 @@ export class ChangePasswordDto {
   @ApiProperty({ description: "The account's current password" })
   @IsNotEmpty({ message: 'Current password is required.' })
   @IsString({ message: 'Current password must be a string.' })
+  @MaxLength(128, {
+    message: 'Current password must be at most 128 characters long.',
+  })
   currentPassword: string;
 
   @ApiProperty({
