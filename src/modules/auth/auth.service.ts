@@ -537,7 +537,7 @@ export class AuthService {
     return {
       status: 'success',
       message:
-        'Your password has been changed. You have been logged out of all other sessions.',
+        'Your password has been changed. All sessions have been signed out and will require logging in again.',
     };
   }
 

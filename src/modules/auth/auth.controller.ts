@@ -156,9 +156,9 @@ export class AuthController {
   @ApiOperation({
     summary: 'Change password for the authenticated user',
     description:
-      'Verifies the current password, then updates it. All refresh tokens ' +
-      'are revoked (every other session is logged out); the access token ' +
-      'used for this request remains valid until it naturally expires.',
+      'Verifies the current password, then updates it. All refresh ' +
+      'tokens are revoked — every session, including this one, ' +
+      'requires logging in again once its access token expires.',
   })
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({
