@@ -20,6 +20,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -157,20 +158,7 @@ export class AuthService {
       });
     }
 
-    if (user.authProvider !== AuthProvider.EMAIL) {
-      throw new BadRequestException({
-        error: 'WRONG_PROVIDER',
-        message: `This account was created with ${
-          user.authProvider === AuthProvider.GOOGLE
-            ? 'Google'
-            : user.authProvider
-        }. Please use the Continue with ${
-          user.authProvider === AuthProvider.GOOGLE
-            ? 'Google'
-            : user.authProvider
-        } button.`,
-      });
-    }
+    this.assertEmailProvider(user);
 
     if (!user.isVerified) {
       await this.usersService.clearOtp(user.id);
@@ -468,16 +456,88 @@ export class AuthService {
 
     await this.tokenService.invalidateAllRefreshTokens(user.id);
 
-    await this.queueService.addJob<PasswordChangedEmailData>(
-      QUEUE_NAMES.EMAIL,
-      QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
-      { to: user.email },
-    );
+    try {
+      await this.queueService.addJob<PasswordChangedEmailData>(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
+        { to: user.email },
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue password-changed email for user ${user.id}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
 
     return {
       status: 'success',
       message:
         'Your password has been updated. Please log in with your new password.',
+    };
+  }
+
+  private assertEmailProvider(user: User): void {
+    if (user.authProvider !== AuthProvider.EMAIL) {
+      throw new BadRequestException({
+        error: 'WRONG_PROVIDER',
+        message: `This account was created with ${
+          user.authProvider === AuthProvider.GOOGLE
+            ? 'Google'
+            : user.authProvider
+        }. Please use the Continue with ${
+          user.authProvider === AuthProvider.GOOGLE
+            ? 'Google'
+            : user.authProvider
+        } button.`,
+      });
+    }
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ status: string; message: string }> {
+    const user = await this.usersService.findOne(userId);
+
+    this.assertEmailProvider(user);
+
+    const valid = await argon2.verify(user.password, dto.currentPassword);
+    if (!valid) {
+      throw new BadRequestException({
+        error: 'CURRENT_PASSWORD_INCORRECT',
+        message: 'Your current password is incorrect.',
+      });
+    }
+
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException({
+        error: 'PASSWORD_UNCHANGED',
+        message:
+          'Your new password must be different from your current password.',
+      });
+    }
+
+    await this.usersService.updatePassword(user.id, dto.newPassword);
+
+    await this.tokenService.invalidateAllRefreshTokens(user.id);
+
+    try {
+      await this.queueService.addJob<PasswordChangedEmailData>(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
+        { to: user.email },
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue password-changed email for user ${user.id}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
+
+    return {
+      status: 'success',
+      message:
+        'Your password has been changed. All sessions have been signed out and will require logging in again.',
     };
   }
 
