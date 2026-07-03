@@ -14,7 +14,8 @@ const SANITIZED_TYPES = new Set<ArgumentMetadata['type']>([
 // Credential values must reach services byte-for-byte: trimming or stripping
 // a password or opaque token corrupts it and locks the user out.
 // Exemption matches by key name at any depth, so a future non-credential
-// field literally named e.g. `password` would silently skip sanitization.
+// field literally named e.g. `password` would silently skip string
+// sanitization (the depth cap still applies to exempt values).
 const EXEMPT_FIELDS = new Set([
   'password',
   'newpassword',
@@ -48,7 +49,7 @@ export class SanitizePipe implements PipeTransform {
   transform(value: unknown, metadata: ArgumentMetadata): unknown {
     if (!SANITIZED_TYPES.has(metadata.type)) return value;
     if (metadata.data && EXEMPT_FIELDS.has(metadata.data.toLowerCase())) {
-      return value;
+      return this.assertStructureWithinDepth(value, 0);
     }
     return this.sanitize(value, 0);
   }
@@ -65,7 +66,7 @@ export class SanitizePipe implements PipeTransform {
       for (const key of Object.keys(value)) {
         if (UNSAFE_KEYS.has(key)) continue;
         result[key] = EXEMPT_FIELDS.has(key.toLowerCase())
-          ? value[key]
+          ? this.assertStructureWithinDepth(value[key], depth + 1)
           : this.sanitize(value[key], depth + 1);
       }
       return result;
@@ -79,6 +80,24 @@ export class SanitizePipe implements PipeTransform {
     if (depth >= MAX_DEPTH) {
       throw new BadRequestException('Payload nesting too deep');
     }
+  }
+
+  // Exempt values skip string mutation, not the depth cap: walk their
+  // containers depth-checking only and return the value untouched, so an
+  // over-deep structure can't ride an exempt key past the cap.
+  private assertStructureWithinDepth(value: unknown, depth: number): unknown {
+    if (Array.isArray(value)) {
+      this.assertWithinDepth(depth);
+      for (const item of value) {
+        this.assertStructureWithinDepth(item, depth + 1);
+      }
+    } else if (this.isPlainObject(value)) {
+      this.assertWithinDepth(depth);
+      for (const key of Object.keys(value)) {
+        this.assertStructureWithinDepth(value[key], depth + 1);
+      }
+    }
+    return value;
   }
 
   private sanitizeString(value: string): string {

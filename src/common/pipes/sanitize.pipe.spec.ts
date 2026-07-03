@@ -216,6 +216,28 @@ describe('SanitizePipe', () => {
       }
       expect(node.leaf).toBe('safe');
     });
+
+    it('rejects an over-deep container under an exempt key', () => {
+      const payload = { password: nest(MAX_DEPTH + 1, 'x') };
+      expect(() => pipe.transform(payload, bodyMeta)).toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('rejects an over-deep exempt single-argument value', () => {
+      const meta: ArgumentMetadata = { type: 'body', data: 'password' };
+      expect(() => pipe.transform(nest(MAX_DEPTH + 1, 'x'), meta)).toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('leaves a shallow structure under an exempt key unmutated', () => {
+      const inner = ' <b>x</b> ';
+      const result = pipe.transform({ password: { inner } }, bodyMeta) as {
+        password: { inner: string };
+      };
+      expect(result.password.inner).toBe(inner);
+    });
   });
 
   describe('prototype pollution safety', () => {
