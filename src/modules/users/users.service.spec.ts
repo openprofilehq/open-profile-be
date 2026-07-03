@@ -5,8 +5,10 @@ jest.mock('uuid', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { QueryFailedError } from 'typeorm';
 import { UsersService, EMAIL_ALREADY_EXISTS } from './users.service';
 import { UserModelAction } from './actions/user.action';
 import { ResetPasswordModelAction } from './actions/reset-password.action';
@@ -19,9 +21,11 @@ jest.mock('argon2', () => ({
 const baseUser = {
   id: '550e8400-e29b-41d4-a716-446655440000',
   email: 'test@example.com',
+  username: 'testuser',
   fullName: 'Test User',
   authProvider: AuthProvider.EMAIL,
   isVerified: false,
+  onboardingComplete: false,
   role: null,
   otpHash: null,
   otpExpiresAt: null,
@@ -164,6 +168,140 @@ describe('UsersService', () => {
       await expect(service.createEmailUser(dto)).rejects.toThrow(
         InternalServerErrorException,
       );
+    });
+  });
+
+  describe('getSettings', () => {
+    it('returns only the v1 settings fields, excluding sensitive data', async () => {
+      action.get.mockResolvedValue({
+        ...baseUser,
+        password: 'hashed-password',
+        otpHash: 'some-otp-hash',
+        otpExpiresAt: new Date(),
+        lastLoginIp: '127.0.0.1',
+      });
+
+      const result = await service.getSettings(baseUser.id);
+
+      expect(result).toEqual({
+        email: baseUser.email,
+        username: baseUser.username,
+        fullName: baseUser.fullName,
+        isVerified: baseUser.isVerified,
+        authProvider: baseUser.authProvider,
+        onboardingComplete: baseUser.onboardingComplete,
+      });
+      expect(Object.keys(result)).toEqual([
+        'email',
+        'username',
+        'fullName',
+        'isVerified',
+        'authProvider',
+        'onboardingComplete',
+      ]);
+      expect(result).not.toHaveProperty('password');
+      expect(result).not.toHaveProperty('otpHash');
+      expect(result).not.toHaveProperty('otpExpiresAt');
+      expect(result).not.toHaveProperty('lastLoginIp');
+    });
+
+    it('throws NotFoundException when the user no longer exists', async () => {
+      action.get.mockResolvedValue(null);
+
+      await expect(service.getSettings(baseUser.id)).rejects.toThrow(
+        `User ${baseUser.id} not found`,
+      );
+    });
+  });
+
+  describe('updateEmail', () => {
+    const newEmailDto = { email: 'new@example.com' };
+
+    it('updates the email and returns the new value', async () => {
+      action.get.mockResolvedValue(baseUser);
+      action.findByEmail.mockResolvedValue(null);
+      action.update.mockResolvedValue({
+        ...baseUser,
+        email: newEmailDto.email,
+      });
+
+      const result = await service.updateEmail(baseUser.id, newEmailDto);
+
+      expect(action.findByEmail).toHaveBeenCalledWith(newEmailDto.email);
+      expect(action.update).toHaveBeenCalledWith({
+        identifierOptions: { id: baseUser.id },
+        updatePayload: { email: newEmailDto.email },
+        transactionOptions: { useTransaction: false as const },
+      });
+      expect(result).toEqual({ email: newEmailDto.email });
+    });
+
+    it('is a no-op and returns the current email when unchanged', async () => {
+      action.get.mockResolvedValue(baseUser);
+
+      const result = await service.updateEmail(baseUser.id, {
+        email: baseUser.email,
+      });
+
+      expect(result).toEqual({ email: baseUser.email });
+      expect(action.findByEmail).not.toHaveBeenCalled();
+      expect(action.update).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when the email is already taken (pre-check)', async () => {
+      action.get.mockResolvedValue(baseUser);
+      action.findByEmail.mockResolvedValue({
+        ...baseUser,
+        id: 'other-user-id',
+        email: newEmailDto.email,
+      });
+
+      await expect(
+        service.updateEmail(baseUser.id, newEmailDto),
+      ).rejects.toMatchObject({
+        response: { error: EMAIL_ALREADY_EXISTS },
+      });
+      expect(action.update).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException on a unique-constraint race from a concurrent update', async () => {
+      action.get.mockResolvedValue(baseUser);
+      action.findByEmail.mockResolvedValue(null);
+      const driverError = Object.assign(
+        new QueryFailedError('query', [], new Error('duplicate key')),
+        { code: '23505' },
+      );
+      action.update.mockRejectedValue(driverError);
+
+      await expect(
+        service.updateEmail(baseUser.id, newEmailDto),
+      ).rejects.toMatchObject({
+        response: { error: EMAIL_ALREADY_EXISTS },
+      });
+    });
+
+    it('rethrows non-constraint errors from update unchanged', async () => {
+      action.get.mockResolvedValue(baseUser);
+      action.findByEmail.mockResolvedValue(null);
+      const unrelatedError = new Error('connection lost');
+      action.update.mockRejectedValue(unrelatedError);
+
+      await expect(service.updateEmail(baseUser.id, newEmailDto)).rejects.toBe(
+        unrelatedError,
+      );
+    });
+
+    it('throws ForbiddenException for a GOOGLE-provider account', async () => {
+      action.get.mockResolvedValue({
+        ...baseUser,
+        authProvider: AuthProvider.GOOGLE,
+      });
+
+      await expect(
+        service.updateEmail(baseUser.id, newEmailDto),
+      ).rejects.toThrow(ForbiddenException);
+      expect(action.findByEmail).not.toHaveBeenCalled();
+      expect(action.update).not.toHaveBeenCalled();
     });
   });
 });

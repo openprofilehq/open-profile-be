@@ -1,17 +1,22 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
+import { QueryFailedError } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 import { UserModelAction } from './actions/user.action';
 import { ResetPasswordModelAction } from './actions/reset-password.action';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginationDto } from './dto/pagination.dto';
+import { UpdateEmailDto } from './dto/update-email.dto';
+import { UpdateEmailResponseDto } from './dto/update-email-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UserSettingsResponseDto } from './dto/user-settings-response.dto';
 import { AuthProvider, User } from './entities/user.entity';
 import { ResetPassword } from '../auth/entities/reset-password.entity';
 
@@ -289,5 +294,66 @@ export class UsersService {
 
   async findByUsername(username: string): Promise<User | null> {
     return await this.userModelAction.findByUsername(username);
+  }
+
+  async getSettings(userId: string): Promise<UserSettingsResponseDto> {
+    const user = await this.findOne(userId);
+    return {
+      email: user.email,
+      username: user.username,
+      fullName: user.fullName,
+      isVerified: user.isVerified,
+      authProvider: user.authProvider,
+      onboardingComplete: user.onboardingComplete,
+    };
+  }
+
+  async updateEmail(
+    userId: string,
+    dto: UpdateEmailDto,
+  ): Promise<UpdateEmailResponseDto> {
+    const user = await this.findOne(userId);
+
+    if (user.authProvider !== AuthProvider.EMAIL) {
+      throw new ForbiddenException({
+        error: 'EMAIL_MANAGED_BY_PROVIDER',
+        message: 'Email is managed by your sign-in provider.',
+      });
+    }
+
+    if (user.email === dto.email) {
+      return { email: user.email };
+    }
+
+    const existing = await this.userModelAction.findByEmail(dto.email);
+    if (existing) {
+      throw new ConflictException({
+        error: EMAIL_ALREADY_EXISTS,
+        message: 'An account with this email already exists.',
+      });
+    }
+
+    try {
+      const updated = await this.userModelAction.update({
+        ...NO_TRANSACTION,
+        identifierOptions: { id: userId },
+        updatePayload: { email: dto.email },
+      });
+      if (!updated) {
+        throw new InternalServerErrorException('Failed to update email');
+      }
+      return { email: updated.email };
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        (error as unknown as { code: string }).code === '23505'
+      ) {
+        throw new ConflictException({
+          error: EMAIL_ALREADY_EXISTS,
+          message: 'An account with this email already exists.',
+        });
+      }
+      throw error;
+    }
   }
 }
