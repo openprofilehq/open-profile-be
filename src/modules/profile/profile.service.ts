@@ -191,6 +191,7 @@ export class ProfileService {
         where: {
           username: normalizedUsername,
           isPublished: true,
+          isPublic: true,
           deletedAt: IsNull(),
         },
         relations: ['user'],
@@ -268,6 +269,27 @@ export class ProfileService {
 
   async invalidateCache(username: string): Promise<void> {
     await this.redisService.del(`profile:${username.toLowerCase()}`);
+  }
+
+  async updateVisibility(
+    userId: string,
+    isPublic: boolean,
+  ): Promise<{ isPublic: boolean }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    profile.isPublic = isPublic;
+    const saved = await this.profileRepo.save(profile);
+    await this.invalidateCache(saved.username);
+
+    return { isPublic: saved.isPublic };
   }
 
   private serialize(profile: Profile): PublicProfileResponseDto {

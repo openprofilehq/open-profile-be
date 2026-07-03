@@ -55,6 +55,7 @@ describe('ProfileController (integration)', () => {
       getDraftState: jest.fn(),
       updateAppearance: jest.fn(),
       getAppearance: jest.fn(),
+      updateVisibility: jest.fn(),
     };
     mockEventsService = {
       recordEvent: jest.fn().mockResolvedValue(undefined),
@@ -752,6 +753,50 @@ describe('ProfileController (integration)', () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
         .send({ unknownField: 'something' })
+        .expect(422);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // PATCH /api/v1/profiles/me/visibility
+  // -----------------------------------------------------------------------
+  describe('PATCH /api/v1/profiles/me/visibility', () => {
+    it('returns 200 with the updated visibility state', async () => {
+      mockProfileService.updateVisibility.mockResolvedValue({
+        isPublic: false,
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: false })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.isPublic).toBe(false);
+        });
+    });
+
+    it('returns 404 when the caller has no profile', async () => {
+      mockProfileService.updateVisibility.mockRejectedValue(
+        new NotFoundException('Profile not found'),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: false })
+        .expect(404);
+    });
+
+    it('returns 422 when isPublic is not a boolean', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: 'yes' })
+        .expect(422);
+    });
+
+    it('returns 422 for unknown fields (forbidNonWhitelisted)', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: false, extra: 'field' })
         .expect(422);
     });
   });
