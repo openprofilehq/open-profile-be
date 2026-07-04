@@ -73,6 +73,9 @@ export class Profile {
   @Column({ type: 'boolean', name: 'is_published', default: false })
   isPublished: boolean;
 
+  @Column({ type: 'boolean', name: 'is_public', default: true })
+  isPublic: boolean;
+
   @Column({
     type: 'boolean',
     name: 'has_unpublished_changes',

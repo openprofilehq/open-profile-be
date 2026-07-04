@@ -42,6 +42,8 @@ import {
 } from './dto/profile-response.dto';
 import { PublishProfileDto } from './dto/publish-profile.dto';
 import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
+import { UpdateVisibilityDto } from './dto/update-visibility.dto';
+import { VisibilityResponseDto } from './dto/visibility-response.dto';
 import { Query } from '@nestjs/common';
 import { ValidateLinkQueryDto } from './dto/validate-link-query.dto';
 import { EventsService } from '../events/events.service';
@@ -377,5 +379,27 @@ export class ProfileController {
   ): Promise<{ components: ProfileComponent[] }> {
     const components = await this.profileService.reorderComponents(userId, dto);
     return { components };
+  }
+
+  @Patch('me/visibility')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Set the authenticated profile public or private',
+    description:
+      'A private profile returns 404 on GET /profiles/:username for every caller, ' +
+      'including the owner, and is excluded from search — effective immediately. ' +
+      "The public route's Cache-Control: public, max-age=60 header still governs " +
+      'downstream/browser caching of a response already served before the change.',
+  })
+  @ApiResponse({ status: 200, type: VisibilityResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'isPublic must be a boolean' })
+  async updateVisibility(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: UpdateVisibilityDto,
+  ): Promise<VisibilityResponseDto> {
+    return this.profileService.updateVisibility(userId, dto.isPublic);
   }
 }

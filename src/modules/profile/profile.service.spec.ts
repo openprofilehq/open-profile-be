@@ -62,6 +62,7 @@ const mockProfile = {
   ctaUrl: null,
   isPublished: true,
   isSearchable: true,
+  isPublic: true,
   isVerified: false,
   hasUnpublishedChanges: false,
   createdAt: NOW,
@@ -426,6 +427,7 @@ describe('ProfileService', () => {
         where: {
           username: USERNAME,
           isPublished: true,
+          isPublic: true,
           deletedAt: IsNull(),
         },
         relations: ['user'],
@@ -464,6 +466,48 @@ describe('ProfileService', () => {
       await service.getPublicProfile(USERNAME);
 
       expect(redisService.del).not.toHaveBeenCalled();
+    });
+
+    it('skips the cache write when a race re-check finds the profile no longer public', async () => {
+      redisService.get.mockResolvedValue(null);
+      redisService.set.mockResolvedValue(true);
+      profileRepo.findOne
+        .mockResolvedValueOnce({ ...mockProfile, user: { id: USER_ID } }) // initial read
+        .mockResolvedValueOnce({
+          isPublished: true,
+          isPublic: false,
+          deletedAt: null,
+        } as Profile); // flags re-check: toggled private mid-flight
+
+      const result = await service.getPublicProfile(USERNAME);
+
+      // Only the single-flight lock was set — the profile cache write itself
+      // was skipped.
+      expect(redisService.set).toHaveBeenCalledTimes(1);
+      expect(result.data.username).toBe(USERNAME);
+      expect(result.fromCache).toBe(false);
+    });
+
+    it('writes the cache when the race re-check confirms the profile is still public', async () => {
+      redisService.get.mockResolvedValue(null);
+      redisService.set.mockResolvedValue(true);
+      profileRepo.findOne
+        .mockResolvedValueOnce({ ...mockProfile, user: { id: USER_ID } }) // initial read
+        .mockResolvedValueOnce({
+          isPublished: true,
+          isPublic: true,
+          deletedAt: null,
+        } as Profile); // flags re-check: still public
+
+      await service.getPublicProfile(USERNAME);
+
+      expect(redisService.set).toHaveBeenCalledTimes(2);
+      expect(redisService.set).toHaveBeenNthCalledWith(
+        2,
+        `profile:${USERNAME}`,
+        expect.any(String),
+        expect.any(Number),
+      );
     });
   });
 
@@ -656,6 +700,82 @@ describe('ProfileService', () => {
       await expect(
         service.patchComponent(USER_ID, COMPONENT_ID, patchDto),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // updateVisibility
+  // ---------------------------------------------------------------------------
+  describe('updateVisibility', () => {
+    it('persists the flag, invalidates cache, and returns the new state', async () => {
+      profileRepo.findOne.mockResolvedValue({ ...mockProfile, isPublic: true });
+      profileRepo.save.mockImplementation((p: Partial<Profile>) =>
+        Promise.resolve(p),
+      );
+
+      const result = await service.updateVisibility(USER_ID, false);
+
+      expect(profileRepo.findOne).toHaveBeenCalledWith({
+        where: { userId: USER_ID, deletedAt: IsNull() },
+      });
+      expect(profileRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ isPublic: false }),
+      );
+      expect(redisService.del).toHaveBeenCalledWith(`profile:${USERNAME}`);
+      expect(result).toEqual({ isPublic: false });
+    });
+
+    it('throws NotFoundException when the caller has no profile', async () => {
+      profileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.updateVisibility(USER_ID, false)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(redisService.del).not.toHaveBeenCalled();
+    });
+
+    it('short-circuits when re-setting the current value: no save, no cache invalidation', async () => {
+      profileRepo.findOne.mockResolvedValue({ ...mockProfile, isPublic: true });
+
+      const result = await service.updateVisibility(USER_ID, true);
+
+      expect(profileRepo.save).not.toHaveBeenCalled();
+      expect(redisService.del).not.toHaveBeenCalled();
+      expect(result).toEqual({ isPublic: true });
+    });
+
+    it('toggling to private makes the next public-route call miss the cache and 404, never serving the stale positive cache', async () => {
+      // A prior request populated the positive cache for this username.
+      profileRepo.findOne.mockResolvedValueOnce({
+        ...mockProfile,
+        isPublic: true,
+      });
+      profileRepo.save.mockImplementation((p: Partial<Profile>) =>
+        Promise.resolve(p),
+      );
+
+      await service.updateVisibility(USER_ID, false);
+      expect(redisService.del).toHaveBeenCalledWith(`profile:${USERNAME}`);
+
+      // Next public-route read: the cache key is gone (deleted above), so
+      // Redis must miss and the DB filter (now isPublic: true) excludes the
+      // now-private row.
+      redisService.get.mockResolvedValue(null);
+      profileRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.getPublicProfile(USERNAME)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(redisService.get).toHaveBeenCalledWith(`profile:${USERNAME}`);
+      expect(profileRepo.findOne).toHaveBeenCalledWith({
+        where: {
+          username: USERNAME,
+          isPublished: true,
+          isPublic: true,
+          deletedAt: IsNull(),
+        },
+        relations: ['user'],
+      });
     });
   });
 

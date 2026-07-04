@@ -63,6 +63,7 @@ export class SearchAction extends AbstractModelAction<Profile> {
       .createQueryBuilder('p')
       .where('p.is_published = true')
       .andWhere('p.deleted_at IS NULL')
+      .andWhere('p.is_public = true')
       .andWhere(
         `(
     similarity(p.full_name, :q) > ${SIMILARITY_THRESHOLD}
