@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 
 @Entity('failed_events')
-@Index(['resolved'])
+@Index('IDX_failed_events_resolved', ['resolved'])
 export class FailedEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;
