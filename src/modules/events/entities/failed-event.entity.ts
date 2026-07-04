@@ -3,9 +3,11 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 
 @Entity('failed_events')
+@Index(['resolved'])
 export class FailedEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;

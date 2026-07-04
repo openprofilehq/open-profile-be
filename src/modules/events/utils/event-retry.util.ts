@@ -3,13 +3,11 @@ import { isRetryableError } from './is-retryable-error.util';
 
 export interface RetryConfig {
   maxRetries: number;
-  /** Base delay in ms for each retry attempt, in order. */
   delaysMs: number[];
-  /** Max jitter in ms, applied as +/- to each delay. */
   jitterMs: number;
 }
 
-// 3 attempts, 100ms -> 200ms -> 400ms, +/-20ms jitter.
+// 3 retries after the initial attempt (4 total attempts), 100ms -> 200ms -> 400ms, +/-20ms jitter.
 export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3,
   delaysMs: [100, 200, 400],
@@ -21,23 +19,43 @@ function delayWithJitter(baseMs: number, jitterMs: number): number {
   return Math.max(0, baseMs + jitter);
 }
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const logger = new Logger('EventRetry');
 
 /**
- * Runs `writeFn` with retry-on-transient-failure.
- * Calls `onExhausted` on a non-retryable error (immediately) or once
- * retries are exhausted — never throws.
+ * Calls onExhausted, guarding against it throwing. onExhausted is the last
+ * line of defense for a failed event write (e.g. persisting to a
+ * dead-letter table) — if THAT fails too, we cannot recover the event, but
+ * we must not let the failure escape and break writeEventWithRetry's
+ * "never throws" guarantee. Best we can do at that point is log it clearly
+ * so the loss is visible rather than silent or crash-inducing.
  */
+async function safeOnExhausted(
+  onExhausted: (err: unknown, attempts: number) => Promise<void>,
+  err: unknown,
+  attempts: number,
+): Promise<void> {
+  try {
+    await onExhausted(err, attempts);
+  } catch (deadLetterErr) {
+    logger.error(
+      `Dead-letter handler failed, event permanently lost: ${
+        (deadLetterErr as Error)?.message
+      }`,
+      { originalError: (err as Error)?.message },
+    );
+  }
+}
+
 export async function writeEventWithRetry<T>(
   writeFn: () => Promise<T>,
   onExhausted: (err: unknown, attempts: number) => Promise<void>,
   config: RetryConfig = DEFAULT_RETRY_CONFIG,
 ): Promise<void> {
-  let attempt = 0; // 0 = first attempt, not yet a "retry"
+  let attempt = 0;
 
   while (true) {
     try {
@@ -51,7 +69,7 @@ export async function writeEventWithRetry<T>(
         logger.error(
           `Non-retryable error, dead-lettering immediately: ${(err as Error)?.message}`,
         );
-        await onExhausted(err, attempt + 1);
+        await safeOnExhausted(onExhausted, err, attempt + 1);
         return;
       }
 
@@ -61,7 +79,7 @@ export async function writeEventWithRetry<T>(
             (err as Error)?.message
           }`,
         );
-        await onExhausted(err, attempt + 1);
+        await safeOnExhausted(onExhausted, err, attempt + 1);
         return;
       }
 

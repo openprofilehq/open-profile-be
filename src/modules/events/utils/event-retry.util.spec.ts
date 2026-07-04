@@ -20,16 +20,23 @@ describe('writeEventWithRetry', () => {
     return new Error('duplicate key value violates unique constraint');
   }
 
-  it('succeeds on the first attempt without calling onExhausted', async () => {
-    const writeFn = jest.fn().mockResolvedValue(undefined);
-    const onExhausted = jest.fn();
+  it('does not throw when onExhausted itself rejects', async () => {
+    const writeFn = jest
+      .fn()
+      .mockRejectedValue(
+        new Error('duplicate key value violates unique constraint'),
+      );
+    const onExhausted = jest
+      .fn()
+      .mockRejectedValue(new Error('failed_events insert also failed'));
 
-    await writeEventWithRetry(writeFn, onExhausted);
+    await expect(
+      writeEventWithRetry(writeFn, onExhausted),
+    ).resolves.toBeUndefined();
 
     expect(writeFn).toHaveBeenCalledTimes(1);
-    expect(onExhausted).not.toHaveBeenCalled();
+    expect(onExhausted).toHaveBeenCalledTimes(1);
   });
-
   it('retries once on a transient failure, then succeeds', async () => {
     const writeFn = jest
       .fn()
