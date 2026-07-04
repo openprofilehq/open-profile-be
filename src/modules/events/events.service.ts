@@ -3,7 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Event, EventType } from './entities/event.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { Repository, IsNull } from 'typeorm';
-import { CtaType } from '../profile/dto/profile-content.dto';
+import { CtaType, ProfileContentDto } from '../profile/dto/profile-content.dto';
+import { RedisService } from '../../common/redis/redis.service';
 
 interface RecordEventParams {
   eventType: EventType;
@@ -14,11 +15,13 @@ interface RecordEventParams {
 
 @Injectable()
 export class EventsService {
+  private readonly LINK_CACHE_TTL = 300; // 5 minutes in seconds
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
     @InjectRepository(Profile)
     private readonly profileRepository: Repository<Profile>,
+    private readonly redisService: RedisService,
   ) {}
 
   async recordEvent(params: RecordEventParams): Promise<void> {
@@ -30,6 +33,25 @@ export class EventsService {
     });
 
     await this.eventRepository.save(event);
+  }
+
+  private buildLinkSet(content: ProfileContentDto): Set<string> {
+    const normalize = (u: string) => this.normalizeUrl(u);
+    const { links, projects, cta } = content;
+
+    const urls: string[] = [
+      ...(links?.items?.map((item) => normalize(item.url)) ?? []),
+      ...(projects?.items ?? []).flatMap((item) => {
+        const u: string[] = [normalize(item.repoUrl)];
+        if (item.liveUrl) u.push(normalize(item.liveUrl));
+        return u;
+      }),
+      ...(cta?.type === CtaType.LINK && cta?.value
+        ? [normalize(cta.value)]
+        : []),
+    ];
+
+    return new Set(urls); // O(1) lookup
   }
 
   private normalizeUrl(url: string): string {
@@ -45,33 +67,56 @@ export class EventsService {
     profileId: string,
     linkUrl: string,
   ): Promise<boolean> {
-    const profile = await this.profileRepository.findOne({
-      where: { id: profileId, isPublished: true, deletedAt: IsNull() },
-      select: ['content'],
-    });
+    const cacheKey = `profile:links:${profileId}`;
+    const lockKey = `profile:links:lock:${profileId}`;
+    const normalizedInput = this.normalizeUrl(linkUrl);
 
-    if (!profile?.content) return false;
+    // 1. Try cache first
+    const cached = await this.redisService.get(cacheKey);
+    if (cached) {
+      const linkSet = new Set<string>(JSON.parse(cached));
+      return linkSet.has(normalizedInput); // O(1)
+    }
 
-    const { links, projects, cta } = profile.content;
-    const normalize = (u: string) => this.normalizeUrl(u);
-    const normalizedInput = normalize(linkUrl);
+    // 2. Single-flight lock — prevent duplicate DB queries on concurrent cache misses
+    const lockAcquired = await this.redisService.set(lockKey, '1', 5, true);
 
-    // Links section
-    const linkUrls = links?.items?.map((item) => normalize(item.url)) ?? [];
+    if (!lockAcquired) {
+      // Another request is already fetching — poll briefly then retry cache
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const retried = await this.redisService.get(cacheKey);
+      if (retried) {
+        const linkSet = new Set<string>(JSON.parse(retried));
+        return linkSet.has(normalizedInput);
+      }
+      return false; // lock expired before cache was populated — safe to drop
+    }
 
-    // Project repo and live URLs
-    const projectUrls = (projects?.items ?? []).flatMap((item) => {
-      const urls: string[] = [normalize(item.repoUrl)];
-      if (item.liveUrl) urls.push(normalize(item.liveUrl));
-      return urls;
-    });
+    try {
+      // 3. Cache miss — fetch from DB
+      const profile = await this.profileRepository.findOne({
+        where: { id: profileId, isPublished: true, deletedAt: IsNull() },
+        select: ['content'],
+      });
 
-    // CTA — only valid if type is LINK
-    const ctaUrls: string[] =
-      cta?.type === CtaType.LINK && cta?.value ? [normalize(cta.value)] : [];
+      if (!profile?.content) {
+        await this.redisService.set(
+          cacheKey,
+          JSON.stringify([]),
+          this.LINK_CACHE_TTL,
+        );
+        return false;
+      }
 
-    const allValidUrls = [...linkUrls, ...projectUrls, ...ctaUrls];
-
-    return allValidUrls.includes(normalizedInput);
+      const linkSet = this.buildLinkSet(profile.content);
+      await this.redisService.set(
+        cacheKey,
+        JSON.stringify([...linkSet]),
+        this.LINK_CACHE_TTL,
+      );
+      return linkSet.has(normalizedInput); // O(1)
+    } finally {
+      await this.redisService.del(lockKey);
+    }
   }
 }

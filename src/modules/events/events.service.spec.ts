@@ -4,6 +4,11 @@ import { IsNull } from 'typeorm';
 import { EventsService } from './events.service';
 import { Event, EventType } from './entities/event.entity';
 import { Profile } from '../profile/entities/profile.entity';
+import { RedisService } from '../../common/redis/redis.service';
+
+jest.mock('../../common/redis/redis.service', () => ({
+  RedisService: class RedisService {},
+}));
 
 const PROFILE_ID = '660e8400-e29b-41d4-a716-446655440001';
 const ACTOR_ID = '770e8400-e29b-41d4-a716-446655440002';
@@ -12,6 +17,7 @@ describe('EventsService', () => {
   let service: EventsService;
   let eventRepository: Record<string, jest.Mock>;
   let profileRepository: Record<string, jest.Mock>;
+  let redisService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     eventRepository = {
@@ -21,6 +27,12 @@ describe('EventsService', () => {
 
     profileRepository = {
       findOne: jest.fn(),
+    };
+
+    redisService = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+      del: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -33,6 +45,10 @@ describe('EventsService', () => {
         {
           provide: getRepositoryToken(Profile),
           useValue: profileRepository,
+        },
+        {
+          provide: RedisService,
+          useValue: redisService,
         },
       ],
     }).compile();
