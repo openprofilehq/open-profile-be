@@ -49,6 +49,9 @@ export class ProfileResponseDto {
   @ApiProperty({ example: false })
   isVerified: boolean;
 
+  @ApiProperty({ example: true })
+  isPublic: boolean;
+
   @ApiProperty()
   createdAt: Date;
 

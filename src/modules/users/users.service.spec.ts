@@ -214,6 +214,24 @@ describe('UsersService', () => {
     });
   });
 
+  describe('getBillingInfo', () => {
+    it('returns the static Free-plan stub for an existing user', async () => {
+      action.get.mockResolvedValue(baseUser);
+
+      const result = await service.getBillingInfo(baseUser.id);
+
+      expect(result).toEqual({ plan: 'Free', nextBillingDate: null });
+    });
+
+    it('throws NotFoundException when the user no longer exists', async () => {
+      action.get.mockResolvedValue(null);
+
+      await expect(service.getBillingInfo(baseUser.id)).rejects.toThrow(
+        `User ${baseUser.id} not found`,
+      );
+    });
+  });
+
   describe('updateEmail', () => {
     const newEmailDto = { email: 'new@example.com' };
 

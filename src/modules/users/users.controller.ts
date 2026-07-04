@@ -23,6 +23,7 @@ import { UpdateEmailDto } from './dto/update-email.dto';
 import { UpdateEmailResponseDto } from './dto/update-email-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserSettingsResponseDto } from './dto/user-settings-response.dto';
+import { BillingInfoResponseDto } from './dto/billing-info-response.dto';
 import { UsersService } from './users.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -79,6 +80,20 @@ export class UsersController {
     @CurrentUser('sub') userId: string,
   ): Promise<UserSettingsResponseDto> {
     return this.usersService.getSettings(userId);
+  }
+
+  @Get('me/billing')
+  @ApiOperation({
+    summary: 'Get billing info for the authenticated user',
+    description:
+      'Read-only. Every account is on the Free plan until the billing framework ships.',
+  })
+  @ApiResponse({ status: 200, type: BillingInfoResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  getBillingInfo(
+    @CurrentUser('sub') userId: string,
+  ): Promise<BillingInfoResponseDto> {
+    return this.usersService.getBillingInfo(userId);
   }
 
   @Patch('me/email')

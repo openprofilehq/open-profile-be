@@ -363,6 +363,7 @@ describe('ProfileController (integration)', () => {
         isPublished: true,
         hasUnpublishedChanges: false,
         isVerified: false,
+        isPublic: true,
         createdAt: NOW,
         updatedAt: NOW,
         components: [],
@@ -373,6 +374,7 @@ describe('ProfileController (integration)', () => {
         .expect(200)
         .expect((res) => {
           expect(res.body.components).toEqual([]);
+          expect(res.body.isPublic).toBe(true);
         });
     });
 
@@ -416,6 +418,7 @@ describe('ProfileController (integration)', () => {
         .expect('X-Cache', 'MISS')
         .expect((res) => {
           expect(res.body.username).toBe(USERNAME);
+          expect(res.body).not.toHaveProperty('isPublic');
         });
 
       expect(mockEventsService.recordEvent).toHaveBeenCalledWith({
