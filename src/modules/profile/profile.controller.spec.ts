@@ -132,6 +132,7 @@ describe('ProfileController (integration)', () => {
         isPublished: true,
         hasUnpublishedChanges: false,
         isVerified: false,
+        isPublic: true,
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -143,6 +144,7 @@ describe('ProfileController (integration)', () => {
         .expect((res) => {
           expect(res.body.username).toBe(USERNAME);
           expect(res.body.isPublished).toBe(true);
+          expect(res.body.isPublic).toBe(true);
         });
     });
 
@@ -318,6 +320,7 @@ describe('ProfileController (integration)', () => {
         isPublished: true,
         hasUnpublishedChanges: true,
         isVerified: false,
+        isPublic: true,
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -328,6 +331,7 @@ describe('ProfileController (integration)', () => {
         .expect(200)
         .expect((res) => {
           expect(res.body.fullName).toBe('Updated Name');
+          expect(res.body.isPublic).toBe(true);
         });
     });
 

@@ -7,6 +7,7 @@ import {
   ConflictException,
   ForbiddenException,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { UsersService, EMAIL_ALREADY_EXISTS } from './users.service';
@@ -226,6 +227,9 @@ describe('UsersService', () => {
     it('throws NotFoundException when the user no longer exists', async () => {
       action.get.mockResolvedValue(null);
 
+      await expect(service.getBillingInfo(baseUser.id)).rejects.toThrow(
+        NotFoundException,
+      );
       await expect(service.getBillingInfo(baseUser.id)).rejects.toThrow(
         `User ${baseUser.id} not found`,
       );

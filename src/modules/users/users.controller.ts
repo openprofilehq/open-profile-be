@@ -90,6 +90,7 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, type: BillingInfoResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'User not found' })
   getBillingInfo(
     @CurrentUser('sub') userId: string,
   ): Promise<BillingInfoResponseDto> {

@@ -5,6 +5,6 @@ export class BillingInfoResponseDto {
   @ApiProperty({ example: 'Free' })
   plan: string;
 
-  @ApiProperty({ example: null, nullable: true })
+  @ApiProperty({ type: String, example: null, nullable: true })
   nextBillingDate: string | null;
 }
