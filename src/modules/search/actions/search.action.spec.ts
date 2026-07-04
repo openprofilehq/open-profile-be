@@ -82,6 +82,7 @@ describe('SearchAction', () => {
     expect(repo.createQueryBuilder).toHaveBeenCalledWith('p');
     expect(qb.where).toHaveBeenCalledWith('p.is_published = true');
     expect(qb.andWhere).toHaveBeenCalledWith('p.deleted_at IS NULL');
+    expect(qb.andWhere).toHaveBeenCalledWith('p.is_public = true');
     expect(qb.setParameter).toHaveBeenCalledWith('q', 'ada');
     expect(qb.limit).toHaveBeenCalledWith(4);
     expect(qb.offset).toHaveBeenCalledWith(4);

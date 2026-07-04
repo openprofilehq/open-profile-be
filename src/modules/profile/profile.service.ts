@@ -142,6 +142,8 @@ export class ProfileService {
   }
 
   async getPublicProfile(username: string): Promise<{
+    profileId: string;
+    userId: string;
     data: PublicProfileResponseDto;
     etag: string;
     fromCache: boolean;
@@ -152,7 +154,10 @@ export class ProfileService {
 
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
-      const parsed = JSON.parse(cached) as PublicProfileResponseDto;
+      const parsed = JSON.parse(cached) as PublicProfileResponseDto & {
+        profileId?: string;
+        userId?: string;
+      };
       if (parsed['__notFound']) {
         throw new NotFoundException({
           error: 'not_found',
@@ -160,7 +165,17 @@ export class ProfileService {
         });
       }
       const etag = this.computeEtag(cached);
-      return { data: parsed, etag, fromCache: true };
+
+      // Strip internal fields before returning as the public `data` payload
+      const { profileId, userId, ...publicData } = parsed;
+
+      return {
+        profileId: profileId ?? '',
+        userId: userId ?? '',
+        data: publicData,
+        etag,
+        fromCache: true,
+      };
     }
 
     // Single-flight lock — prevents cache stampede on cold cache.
@@ -176,6 +191,7 @@ export class ProfileService {
         where: {
           username: normalizedUsername,
           isPublished: true,
+          isPublic: true,
           deletedAt: IsNull(),
         },
         relations: ['user'],
@@ -194,13 +210,44 @@ export class ProfileService {
       }
 
       const responseData = this.serialize(profile);
-      const serialized = JSON.stringify(responseData);
+      const cachePayload = {
+        profileId: profile.id,
+        userId: profile.userId,
+        ...responseData,
+      };
+      const serialized = JSON.stringify(cachePayload);
 
       this.logger.log(`Cache miss for profile: ${normalizedUsername}`);
-      await this.redisService.set(cacheKey, serialized, CACHE_TTL_SECONDS);
+
+      // Re-check visibility flags immediately before writing the cache. If a
+      // toggle-to-private (save + invalidateCache) lands between the read
+      // above and here, this prevents writing back a stale public payload
+      // that would outlive the invalidation for up to CACHE_TTL_SECONDS. The
+      // in-flight response below was built from a legitimately-public read
+      // and is still returned — only the cache write is skipped.
+      const currentFlags = await this.profileRepo.findOne({
+        where: { id: profile.id },
+        select: ['isPublished', 'isPublic', 'deletedAt'],
+      });
+      const stillPublic =
+        !!currentFlags &&
+        currentFlags.isPublished &&
+        currentFlags.isPublic &&
+        !currentFlags.deletedAt;
+
+      if (stillPublic) {
+        await this.redisService.set(cacheKey, serialized, CACHE_TTL_SECONDS);
+      }
+
       const etag = this.computeEtag(serialized);
 
-      return { data: responseData, etag, fromCache: false };
+      return {
+        profileId: profile.id,
+        userId: profile.userId,
+        data: responseData,
+        etag,
+        fromCache: false,
+      };
     } finally {
       if (lockAcquired) {
         await this.redisService.del(lockKey);
@@ -242,6 +289,31 @@ export class ProfileService {
 
   async invalidateCache(username: string): Promise<void> {
     await this.redisService.del(`profile:${username.toLowerCase()}`);
+  }
+
+  async updateVisibility(
+    userId: string,
+    isPublic: boolean,
+  ): Promise<{ isPublic: boolean }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    if (profile.isPublic === isPublic) {
+      return { isPublic };
+    }
+
+    profile.isPublic = isPublic;
+    const saved = await this.profileRepo.save(profile);
+    await this.invalidateCache(saved.username);
+
+    return { isPublic: saved.isPublic };
   }
 
   private serialize(profile: Profile): PublicProfileResponseDto {
