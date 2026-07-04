@@ -77,17 +77,14 @@ export class EventsService {
     const normalize = (u: string) => this.normalizeUrl(u);
     const normalizedInput = normalize(linkUrl);
 
-    // Links section
     const linkUrls = links?.items?.map((item) => normalize(item.url)) ?? [];
 
-    // Project repo and live URLs
     const projectUrls = (projects?.items ?? []).flatMap((item) => {
       const urls: string[] = [normalize(item.repoUrl)];
       if (item.liveUrl) urls.push(normalize(item.liveUrl));
       return urls;
     });
 
-    // CTA — only valid if type is LINK
     const ctaUrls: string[] =
       cta?.type === CtaType.LINK && cta?.value ? [normalize(cta.value)] : [];
 
