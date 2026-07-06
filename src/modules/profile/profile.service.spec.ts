@@ -437,6 +437,7 @@ describe('ProfileService', () => {
       expect(result.data.username).toBe(USERNAME);
       expect(result.fromCache).toBe(false);
       expect(result.etag).toBeTruthy();
+      expect(result.data).not.toHaveProperty('isPublic');
     });
 
     it('caches 404 on cache miss when profile not found', async () => {
@@ -644,6 +645,18 @@ describe('ProfileService', () => {
       await expect(service.getDashboardProfile(USER_ID)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('exposes isPublic on the owner-facing dashboard response', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        isPublic: false,
+      });
+      componentRepo.find.mockResolvedValue([]);
+
+      const result = await service.getDashboardProfile(USER_ID);
+
+      expect(result.isPublic).toBe(false);
     });
   });
 

@@ -73,6 +73,7 @@ export class ProfileService {
       isPublished: profile.isPublished,
       hasUnpublishedChanges: profile.hasUnpublishedChanges,
       isVerified: profile.isVerified,
+      isPublic: profile.isPublic,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt,
     };
