@@ -631,6 +631,7 @@ export class ProfileService {
     });
 
     await this.invalidateCache(profile.username);
+    await this.redisService.del(`profile:links:${profile.id}`);
 
     return result;
   }

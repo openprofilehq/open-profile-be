@@ -5,6 +5,10 @@ import { EventsService } from './events.service';
 import { EventType } from './entities/event.entity';
 import type { Request } from 'express';
 
+jest.mock('../../common/redis/redis.service', () => ({
+  RedisService: class RedisService {},
+}));
+
 const PROFILE_ID = '660e8400-e29b-41d4-a716-446655440001';
 const ACTOR_ID = '770e8400-e29b-41d4-a716-446655440002';
 const LINK_URL = 'https://example.com/link';
