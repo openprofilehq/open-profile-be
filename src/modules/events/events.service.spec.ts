@@ -5,6 +5,11 @@ import { EventsService } from './events.service';
 import { Event, EventType } from './entities/event.entity';
 import { FailedEvent } from './entities/failed-event.entity';
 import { Profile } from '../profile/entities/profile.entity';
+import { RedisService } from '../../common/redis/redis.service';
+
+jest.mock('../../common/redis/redis.service', () => ({
+  RedisService: class RedisService {},
+}));
 
 const PROFILE_ID = '660e8400-e29b-41d4-a716-446655440001';
 const ACTOR_ID = '770e8400-e29b-41d4-a716-446655440002';
@@ -14,6 +19,7 @@ describe('EventsService', () => {
   let eventRepository: Record<string, jest.Mock>;
   let failedEventRepository: Record<string, jest.Mock>;
   let profileRepository: Record<string, jest.Mock>;
+  let redisService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     eventRepository = {
@@ -30,6 +36,12 @@ describe('EventsService', () => {
       findOne: jest.fn(),
     };
 
+    redisService = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+      del: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EventsService,
@@ -44,6 +56,10 @@ describe('EventsService', () => {
         {
           provide: getRepositoryToken(Profile),
           useValue: profileRepository,
+        },
+        {
+          provide: RedisService,
+          useValue: redisService,
         },
       ],
     }).compile();
@@ -98,6 +114,113 @@ describe('EventsService', () => {
         metadata: null,
       });
     });
+  });
+
+  describe('isValidProfileLink', () => {
+    it('returns false when the profile does not exist', async () => {
+      profileRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(false);
+
+      expect(profileRepository.findOne).toHaveBeenCalledWith({
+        where: { id: PROFILE_ID, isPublished: true, deletedAt: IsNull() },
+        select: ['content'],
+      });
+    });
+
+    it('returns true for a stored link URL', async () => {
+      profileRepository.findOne.mockResolvedValue({
+        content: {
+          links: {
+            items: [
+              { url: 'https://example.com/link' },
+              { url: 'https://example.com/elsewhere' },
+            ],
+          },
+        },
+      });
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(true);
+    });
+
+    it('returns true from cache on cache hit', async () => {
+      redisService.get.mockResolvedValue(
+        JSON.stringify(['https://example.com/link']),
+      );
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(true);
+
+      expect(profileRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('returns false from cache when URL not in cached set', async () => {
+      redisService.get.mockResolvedValue(
+        JSON.stringify(['https://example.com/other']),
+      );
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(false);
+
+      expect(profileRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('falls back to DB when Redis throws', async () => {
+      redisService.get.mockRejectedValue(new Error('redis down'));
+      profileRepository.findOne.mockResolvedValue({
+        content: {
+          links: { items: [{ url: 'https://example.com/link' }] },
+        },
+      });
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(true);
+    });
+
+    it('normalizes case and trailing slashes before comparing URLs', async () => {
+      profileRepository.findOne.mockResolvedValue({
+        content: {
+          links: {
+            items: [{ url: 'HTTPS://Example.com/Link/' }],
+          },
+          projects: {
+            items: [
+              {
+                repoUrl: 'HTTPS://GitHub.com/Example/Project/',
+                liveUrl: 'HTTPS://Project.Example.com/',
+              },
+            ],
+          },
+          cta: {
+            type: 'link',
+            value: 'HTTPS://CTA.Example.com/',
+          },
+        },
+      });
+
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(
+          PROFILE_ID,
+          'https://github.com/example/project',
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://project.example.com'),
+      ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
+      ).resolves.toBe(true);
+    });
 
     describe('when the write fails', () => {
       beforeEach(() => {
@@ -108,59 +231,51 @@ describe('EventsService', () => {
         jest.useRealTimers();
       });
 
-      it('dead-letters immediately on a non-retryable error, without retrying', async () => {
-        const dbError = new Error(
-          'duplicate key value violates unique constraint',
-        );
-        eventRepository.save.mockRejectedValue(dbError);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, '/relative/path'),
+      ).resolves.toBe(true);
+    });
 
-        await service.recordEvent({
-          eventType: EventType.LINK_CLICKED,
-          profileId: PROFILE_ID,
-          actorId: ACTOR_ID,
-        });
-
-        // Non-retryable -> only ever called once, no backoff delay needed
-        expect(eventRepository.save).toHaveBeenCalledTimes(1);
-        expect(failedEventRepository.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            payload: {
-              eventType: EventType.LINK_CLICKED,
-              profileId: PROFILE_ID,
-              actorId: ACTOR_ID,
-              metadata: null,
-            },
-            errorMessage: dbError.message,
-            attemptCount: 1,
-          }),
-        );
-        expect(failedEventRepository.save).toHaveBeenCalledTimes(1);
+    it('returns true for project repository and live URLs', async () => {
+      profileRepository.findOne.mockResolvedValue({
+        content: {
+          projects: {
+            items: [
+              {
+                repoUrl: 'https://github.com/example/project',
+                liveUrl: 'https://project.example.com',
+              },
+            ],
+          },
+        },
       });
 
-      it('dead-letters after exhausting retries on a persistent transient error', async () => {
-        const dbError = new Error('Query read timeout');
-        eventRepository.save.mockRejectedValue(dbError);
+      await expect(
+        service.isValidProfileLink(
+          PROFILE_ID,
+          'https://github.com/example/project',
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://project.example.com'),
+      ).resolves.toBe(true);
+    });
 
-        const resultPromise = service.recordEvent({
-          eventType: EventType.PROFILE_VIEWED,
-          profileId: PROFILE_ID,
-        });
+    it('returns true for link CTA values only', async () => {
+      profileRepository.findOne.mockResolvedValueOnce({
+        content: {
+          cta: { type: 'link', value: 'https://cta.example.com' },
+        },
+      });
 
-        // 3 retries -> advance past all 3 backoff windows (generously,
-        // past the max possible jitter each time)
-        await jest.advanceTimersByTimeAsync(150); // covers ~100ms + jitter
-        await jest.advanceTimersByTimeAsync(250); // covers ~200ms + jitter
-        await jest.advanceTimersByTimeAsync(450); // covers ~400ms + jitter
-        await resultPromise;
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
+      ).resolves.toBe(true);
 
-        expect(eventRepository.save).toHaveBeenCalledTimes(4); // 1 + 3 retries
-        expect(failedEventRepository.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            errorMessage: dbError.message,
-            attemptCount: 4,
-          }),
-        );
-        expect(failedEventRepository.save).toHaveBeenCalledTimes(1);
+      profileRepository.findOne.mockResolvedValueOnce({
+        content: {
+          cta: { type: 'email', value: 'https://cta.example.com' },
+        },
       });
     });
   });

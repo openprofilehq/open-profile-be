@@ -6,6 +6,7 @@ import {
   ConflictException,
   ForbiddenException,
   INestApplication,
+  NotFoundException,
   UnprocessableEntityException,
   ValidationPipe,
   VersioningType,
@@ -35,6 +36,7 @@ describe('UsersController (integration)', () => {
       remove: jest.fn(),
       markOnboardingComplete: jest.fn(),
       getSettings: jest.fn(),
+      getBillingInfo: jest.fn(),
       updateEmail: jest.fn(),
     };
 
@@ -132,6 +134,39 @@ describe('UsersController (integration)', () => {
   });
 
   // -----------------------------------------------------------------------
+  // GET /api/v1/users/me/billing
+  // -----------------------------------------------------------------------
+  describe('GET /api/v1/users/me/billing', () => {
+    it('returns 200 with the static Free-plan shape, scoped to the caller', async () => {
+      mockUsersService.getBillingInfo.mockResolvedValue({
+        plan: 'Free',
+        nextBillingDate: null,
+      });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/users/me/billing')
+        .expect(200)
+        .expect((res) => {
+          expect(mockUsersService.getBillingInfo).toHaveBeenCalledWith(USER_ID);
+          expect(Object.keys(res.body).sort()).toEqual(
+            ['plan', 'nextBillingDate'].sort(),
+          );
+          expect(res.body).toEqual({ plan: 'Free', nextBillingDate: null });
+        });
+    });
+
+    it('returns 404 when the user no longer exists', async () => {
+      mockUsersService.getBillingInfo.mockRejectedValue(
+        new NotFoundException(`User ${USER_ID} not found`),
+      );
+
+      await request(app.getHttpServer())
+        .get('/api/v1/users/me/billing')
+        .expect(404);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // PATCH /api/v1/users/me/email
   // -----------------------------------------------------------------------
   describe('PATCH /api/v1/users/me/email', () => {
@@ -214,11 +249,15 @@ describe('UsersController (integration)', () => {
   // enforcement, so in the real app JwtAuthGuard will run for both.
   // -----------------------------------------------------------------------
   describe('guard enforcement (decorator audit)', () => {
-    it('does not mark me/settings or me/email as public', () => {
+    it('does not mark me/settings, me/billing, or me/email as public', () => {
       const reflector = new Reflector();
       const isSettingsPublic = reflector.get(
         IS_PUBLIC_KEY,
         UsersController.prototype.getSettings,
+      );
+      const isBillingPublic = reflector.get(
+        IS_PUBLIC_KEY,
+        UsersController.prototype.getBillingInfo,
       );
       const isEmailPublic = reflector.get(
         IS_PUBLIC_KEY,
@@ -226,6 +265,7 @@ describe('UsersController (integration)', () => {
       );
 
       expect(isSettingsPublic).toBeUndefined();
+      expect(isBillingPublic).toBeUndefined();
       expect(isEmailPublic).toBeUndefined();
     });
   });

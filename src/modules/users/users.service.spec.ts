@@ -7,6 +7,7 @@ import {
   ConflictException,
   ForbiddenException,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { UsersService, EMAIL_ALREADY_EXISTS } from './users.service';
@@ -209,6 +210,27 @@ describe('UsersService', () => {
       action.get.mockResolvedValue(null);
 
       await expect(service.getSettings(baseUser.id)).rejects.toThrow(
+        `User ${baseUser.id} not found`,
+      );
+    });
+  });
+
+  describe('getBillingInfo', () => {
+    it('returns the static Free-plan stub for an existing user', async () => {
+      action.get.mockResolvedValue(baseUser);
+
+      const result = await service.getBillingInfo(baseUser.id);
+
+      expect(result).toEqual({ plan: 'Free', nextBillingDate: null });
+    });
+
+    it('throws NotFoundException when the user no longer exists', async () => {
+      action.get.mockResolvedValue(null);
+
+      await expect(service.getBillingInfo(baseUser.id)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.getBillingInfo(baseUser.id)).rejects.toThrow(
         `User ${baseUser.id} not found`,
       );
     });
