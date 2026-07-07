@@ -3,8 +3,10 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { IsNull } from 'typeorm';
 import { EventsService } from './events.service';
 import { Event, EventType } from './entities/event.entity';
+import { FailedEvent } from './entities/failed-event.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { RedisService } from '../../common/redis/redis.service';
+import { DEFAULT_RETRY_CONFIG } from './utils/event-retry.util';
 
 jest.mock('../../common/redis/redis.service', () => ({
   RedisService: class RedisService {},
@@ -16,11 +18,17 @@ const ACTOR_ID = '770e8400-e29b-41d4-a716-446655440002';
 describe('EventsService', () => {
   let service: EventsService;
   let eventRepository: Record<string, jest.Mock>;
+  let failedEventRepository: Record<string, jest.Mock>;
   let profileRepository: Record<string, jest.Mock>;
   let redisService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     eventRepository = {
+      create: jest.fn((event) => event),
+      save: jest.fn(),
+    };
+
+    failedEventRepository = {
       create: jest.fn((event) => event),
       save: jest.fn(),
     };
@@ -41,6 +49,10 @@ describe('EventsService', () => {
         {
           provide: getRepositoryToken(Event),
           useValue: eventRepository,
+        },
+        {
+          provide: getRepositoryToken(FailedEvent),
+          useValue: failedEventRepository,
         },
         {
           provide: getRepositoryToken(Profile),
@@ -80,6 +92,7 @@ describe('EventsService', () => {
         actorId: ACTOR_ID,
         metadata,
       });
+      expect(failedEventRepository.save).not.toHaveBeenCalled();
     });
 
     it('normalizes omitted optional values to null', async () => {
@@ -100,6 +113,76 @@ describe('EventsService', () => {
         profileId: null,
         actorId: null,
         metadata: null,
+      });
+    });
+
+    describe('when the write fails', () => {
+      beforeEach(() => {
+        jest.useFakeTimers();
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('dead-letters immediately on a non-retryable error, without retrying', async () => {
+        const dbError = new Error(
+          'duplicate key value violates unique constraint',
+        );
+        eventRepository.save.mockRejectedValue(dbError);
+
+        await service.recordEvent({
+          eventType: EventType.LINK_CLICKED,
+          profileId: PROFILE_ID,
+          actorId: ACTOR_ID,
+        });
+
+        expect(eventRepository.save).toHaveBeenCalledTimes(1);
+        expect(failedEventRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: {
+              eventType: EventType.LINK_CLICKED,
+              profileId: PROFILE_ID,
+              actorId: ACTOR_ID,
+              metadata: null,
+            },
+            errorMessage: dbError.message,
+            attemptCount: 1,
+          }),
+        );
+        expect(failedEventRepository.save).toHaveBeenCalledTimes(1);
+      });
+
+      it('dead-letters after exhausting retries on a persistent transient error', async () => {
+        const dbError = new Error('Query read timeout');
+        eventRepository.save.mockRejectedValue(dbError);
+
+        const resultPromise = service.recordEvent({
+          eventType: EventType.PROFILE_VIEWED,
+          profileId: PROFILE_ID,
+        });
+
+        await jest.advanceTimersByTimeAsync(
+          DEFAULT_RETRY_CONFIG.delaysMs[0] + DEFAULT_RETRY_CONFIG.jitterMs,
+        );
+        await jest.advanceTimersByTimeAsync(
+          DEFAULT_RETRY_CONFIG.delaysMs[1] + DEFAULT_RETRY_CONFIG.jitterMs,
+        );
+        await jest.advanceTimersByTimeAsync(
+          DEFAULT_RETRY_CONFIG.delaysMs[2] + DEFAULT_RETRY_CONFIG.jitterMs,
+        );
+        await resultPromise;
+
+        expect(eventRepository.save).toHaveBeenCalledTimes(
+          DEFAULT_RETRY_CONFIG.maxRetries + 1,
+        );
+        expect(failedEventRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            errorMessage: dbError.message,
+            attemptCount: DEFAULT_RETRY_CONFIG.maxRetries + 1,
+          }),
+        );
+        expect(failedEventRepository.save).toHaveBeenCalledTimes(1);
       });
     });
   });

@@ -1,10 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Event, EventType } from './entities/event.entity';
+import { FailedEvent } from './entities/failed-event.entity';
 import { Profile } from '../profile/entities/profile.entity';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, QueryFailedError } from 'typeorm';
 import { CtaType, ProfileContentDto } from '../profile/dto/profile-content.dto';
 import { RedisService } from '../../common/redis/redis.service';
+import { writeEventWithRetry } from './utils/event-retry.util';
 
 interface RecordEventParams {
   eventType: EventType;
@@ -21,19 +23,39 @@ export class EventsService {
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @InjectRepository(FailedEvent)
+    private readonly failedEventRepository: Repository<FailedEvent>,
     @InjectRepository(Profile)
     private readonly profileRepository: Repository<Profile>,
     private readonly redisService: RedisService,
   ) {}
 
   async recordEvent(params: RecordEventParams): Promise<void> {
-    const event = this.eventRepository.create({
+    const payload = {
       eventType: params.eventType,
       profileId: params.profileId ?? null,
       actorId: params.actorId ?? null,
       metadata: params.metadata ?? null,
-    });
-    await this.eventRepository.save(event);
+    };
+
+    await writeEventWithRetry(
+      () => this.eventRepository.save(this.eventRepository.create(payload)),
+      async (err, attempts) => {
+        const errorCode =
+          err instanceof QueryFailedError
+            ? (err as unknown as { driverError?: { code?: string } })
+                .driverError?.code
+            : undefined;
+
+        const failedEvent = this.failedEventRepository.create({
+          payload,
+          errorMessage: (err as Error)?.message ?? 'unknown error',
+          errorCode: errorCode ?? null,
+          attemptCount: attempts,
+        });
+        await this.failedEventRepository.save(failedEvent);
+      },
+    );
   }
 
   private buildLinkSet(content: ProfileContentDto): Set<string> {
@@ -73,18 +95,15 @@ export class EventsService {
     const normalizedInput = this.normalizeUrl(linkUrl);
 
     try {
-      // 1. Try cache first
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
         const linkSet = new Set<string>(JSON.parse(cached));
-        return linkSet.has(normalizedInput); // O(1)
+        return linkSet.has(normalizedInput);
       }
 
-      // 2. Single-flight lock — prevent duplicate DB queries on concurrent cache misses
       const lockAcquired = await this.redisService.set(lockKey, '1', 5, true);
 
       if (!lockAcquired) {
-        // Another request is already fetching — retry up to 3 times with 100ms gaps
         for (let attempt = 0; attempt < 3; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 100));
           const retried = await this.redisService.get(cacheKey);
@@ -93,7 +112,6 @@ export class EventsService {
             return linkSet.has(normalizedInput);
           }
         }
-        // Cache still not populated after retries — fall back to direct DB read
         const fallbackProfile = await this.profileRepository.findOne({
           where: { id: profileId, isPublished: true, deletedAt: IsNull() },
           select: ['content'],
@@ -105,7 +123,6 @@ export class EventsService {
       }
 
       try {
-        // 3. Cache miss — fetch from DB
         const profile = await this.profileRepository.findOne({
           where: { id: profileId, isPublished: true, deletedAt: IsNull() },
           select: ['content'],
@@ -126,12 +143,11 @@ export class EventsService {
           JSON.stringify([...linkSet]),
           this.LINK_CACHE_TTL,
         );
-        return linkSet.has(normalizedInput); // O(1)
+        return linkSet.has(normalizedInput);
       } finally {
         await this.redisService.del(lockKey);
       }
     } catch (err) {
-      // Redis unavailable — degrade to direct DB read rather than hard failure
       this.logger.warn(
         `[isValidProfileLink] Redis error, falling back to DB: ${err instanceof Error ? err.message : String(err)}`,
       );
