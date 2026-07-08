@@ -353,7 +353,7 @@ export class ProfileController {
             : undefined,
         })
         .catch((err) =>
-          this.logger?.warn?.(`Failed to record PROFILE_VIEWED event: ${err}`),
+          this.logger?.warn(`Failed to record PROFILE_VIEWED event: ${err}`),
         );
     }
     return data;
