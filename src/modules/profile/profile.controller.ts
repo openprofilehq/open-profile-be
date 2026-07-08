@@ -15,7 +15,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -48,6 +48,7 @@ import { Query } from '@nestjs/common';
 import { ValidateLinkQueryDto } from './dto/validate-link-query.dto';
 import { EventsService } from '../events/events.service';
 import { EventType } from '../events/entities/event.entity';
+import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -333,22 +334,28 @@ export class ProfileController {
       res.status(HttpStatus.NOT_MODIFIED);
       return;
     }
-
     const actorId = (req as Request & { user?: { sub: string } }).user?.sub;
     const isOwner = !!actorId && actorId === userId;
 
     if (!isOwner) {
+      const anonymousId = actorId ? undefined : getOrSetAnonymousId(req, res);
+
+      const dedupIdentifier = actorId ?? anonymousId;
+
       void this.eventsService
         .recordEvent({
           eventType: EventType.PROFILE_VIEWED,
           profileId: profileId || undefined,
           actorId: actorId ?? undefined,
+          anonymousId,
+          dedupKey: dedupIdentifier
+            ? `event-dedup:PROFILE_VIEWED:${profileId}:${dedupIdentifier}`
+            : undefined,
         })
         .catch((err) =>
           this.logger?.warn?.(`Failed to record PROFILE_VIEWED event: ${err}`),
         );
     }
-
     return data;
   }
 

@@ -424,11 +424,12 @@ describe('ProfileController (integration)', () => {
           expect(res.body.username).toBe(USERNAME);
           expect(res.body).not.toHaveProperty('isPublic');
         });
-
       expect(mockEventsService.recordEvent).toHaveBeenCalledWith({
         eventType: EventType.PROFILE_VIEWED,
         profileId: UUID_V1,
         actorId: undefined,
+        anonymousId: expect.any(String),
+        dedupKey: expect.any(String),
       });
     });
 

@@ -17,6 +17,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UsersService } from '../users/users.service';
@@ -25,11 +26,13 @@ import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
 import { MailService } from '../mail/mail.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { TokenService } from './services/token.service';
+import { EventsService } from '../events/events.service';
+import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
 import {
   QUEUE_NAMES,
   QUEUE_JOB_NAMES,
 } from '../queue/config/queue-names.constant';
-import { AuthProvider, User } from '../users/entities/user.entity';
+import { AuthProvider, User, UserRole } from '../users/entities/user.entity';
 
 const mockUser = {
   id: '550e8400-e29b-41d4-a716-446655440000',
@@ -49,6 +52,8 @@ describe('AuthService', () => {
   let queueService: Record<string, jest.Mock>;
   let tokenService: Record<string, jest.Mock>;
   let jwtService: Record<string, jest.Mock>;
+  let redisService: Record<string, jest.Mock>;
+  let eventsService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     const mockUsersService = {
@@ -56,8 +61,10 @@ describe('AuthService', () => {
       storeOtpHash: jest.fn(),
       findByEmail: jest.fn(),
       clearOtp: jest.fn(),
+      clearOtpOnly: jest.fn(),
       findOne: jest.fn(),
       updatePassword: jest.fn(),
+      updateLastLoginIp: jest.fn(),
     };
 
     const mockQueueService = {
@@ -66,10 +73,24 @@ describe('AuthService', () => {
 
     const mockTokenService = {
       invalidateAllRefreshTokens: jest.fn(),
+      generateAccessToken: jest.fn(),
+      generateRefreshToken: jest.fn(),
+      setTokenCookies: jest.fn(),
     };
 
     const mockJwtService = {
       verifyAsync: jest.fn(),
+    };
+
+    const mockRedisService = {
+      increment: jest.fn(),
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    };
+
+    const mockEventsService = {
+      mergeAnonymousEvents: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -80,8 +101,9 @@ describe('AuthService', () => {
         { provide: QueueService, useValue: mockQueueService },
         { provide: RateLimiterService, useValue: {} },
         { provide: MailService, useValue: {} },
-        { provide: RedisService, useValue: {} },
+        { provide: RedisService, useValue: mockRedisService },
         { provide: TokenService, useValue: mockTokenService },
+        { provide: EventsService, useValue: mockEventsService },
       ],
     }).compile();
 
@@ -90,7 +112,78 @@ describe('AuthService', () => {
     queueService = module.get(QueueService);
     tokenService = module.get(TokenService);
     jwtService = module.get(JwtService);
+    redisService = module.get(RedisService);
+    eventsService = module.get(EventsService);
     jest.clearAllMocks();
+  });
+
+  describe('login', () => {
+    const loginDto = { email: 'test@example.com', password: 'StrongPass1!' };
+    const ip = '203.0.113.5';
+
+    const verifiedUser = {
+      ...mockUser,
+      password: 'stored-hash',
+      authProvider: AuthProvider.EMAIL,
+      isVerified: true,
+      role: UserRole.USER,
+      onboardingComplete: true,
+      lastLoginIp: ip, // matches `ip` so the "new IP" email branch is skipped
+    } as User;
+
+    function buildReqRes(cookies: Record<string, string> = {}) {
+      const req = { cookies } as unknown as Request;
+      const res = {} as unknown as Response;
+      return { req, res };
+    }
+
+    beforeEach(() => {
+      redisService.increment.mockResolvedValue(1); // under IP rate limit
+      redisService.get.mockResolvedValue(null); // account not locked
+      redisService.del.mockResolvedValue(undefined);
+      usersService.findByEmail.mockResolvedValue(verifiedUser);
+      usersService.updateLastLoginIp.mockResolvedValue(undefined);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      tokenService.generateAccessToken.mockResolvedValue('access-token');
+      tokenService.generateRefreshToken.mockResolvedValue('refresh-token');
+      tokenService.setTokenCookies.mockReturnValue(undefined);
+    });
+
+    it('merges anonymous events when an anonymous_id cookie is present', async () => {
+      const { req, res } = buildReqRes({
+        [ANONYMOUS_ID_COOKIE]: 'anon-uuid-123',
+      });
+
+      await service.login(loginDto, ip, req, res);
+
+      expect(eventsService.mergeAnonymousEvents).toHaveBeenCalledWith(
+        'anon-uuid-123',
+        verifiedUser.id,
+      );
+    });
+
+    it('does not attempt a merge when no anonymous_id cookie is present', async () => {
+      const { req, res } = buildReqRes({});
+
+      await service.login(loginDto, ip, req, res);
+
+      expect(eventsService.mergeAnonymousEvents).not.toHaveBeenCalled();
+    });
+
+    it('still returns a successful login when the anonymous-event merge fails', async () => {
+      const { req, res } = buildReqRes({
+        [ANONYMOUS_ID_COOKIE]: 'anon-uuid-123',
+      });
+      eventsService.mergeAnonymousEvents.mockRejectedValue(
+        new Error('merge failed'),
+      );
+
+      const result = await service.login(loginDto, ip, req, res);
+
+      expect(result).toMatchObject({ status: 'success' });
+      // let the fire-and-forget .catch() settle before the test ends
+      await new Promise((resolve) => setImmediate(resolve));
+    });
   });
 
   describe('register', () => {
