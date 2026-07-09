@@ -37,6 +37,8 @@ import { PasswordChangedEmailData } from '../mail/interfaces/password-changed-em
 import { AccountLockedEmailData } from '../mail/interfaces/account-locked-email.interface';
 import { NewIpLoginEmailData } from '../mail/interfaces/new-ip-login-email.interface';
 import { GoogleUser } from './interfaces/google.interface';
+import { EventsService } from '../events/events.service';
+import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
 
 const FORGOT_PASSWORD_GENERIC_MSG =
   'If an account exists for this email, a verification code has been sent.';
@@ -78,6 +80,7 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly redisService: RedisService,
     private readonly tokenService: TokenService,
+    private readonly eventsService: EventsService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterSuccessResponse> {
@@ -249,6 +252,7 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+    this.mergeAnonymousIdentityIfPresent(req, user.id);
 
     this.logger.debug(
       `[login] userId=${user.id} authProvider=${user.authProvider} tokensGenerated=true`,
@@ -597,6 +601,7 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+    this.mergeAnonymousIdentityIfPresent(req, user.id);
 
     return {
       status: 'success',
@@ -639,10 +644,26 @@ export class AuthService {
     return { user: created, isNewUser };
   }
 
+  private mergeAnonymousIdentityIfPresent(req: Request, userId: string): void {
+    const anonymousId = (req.cookies as Record<string, string> | undefined)?.[
+      ANONYMOUS_ID_COOKIE
+    ];
+
+    if (!anonymousId) return;
+
+    void this.eventsService
+      .mergeAnonymousEvents(anonymousId, userId)
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to merge anonymous events for userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+  }
+
   async loginGoogle(
     user: User,
     ipAddress: string,
-    _req: Request,
+    req: Request,
     res: Response,
   ): Promise<GoogleAuthResponse> {
     this.usersService.logOAuthLogin(user.id, ipAddress, 'google');
@@ -650,6 +671,7 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+    this.mergeAnonymousIdentityIfPresent(req, user.id);
 
     this.logger.debug(`[loginGoogle] userId=${user.id} tokensGenerated=true`);
 

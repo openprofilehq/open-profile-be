@@ -12,13 +12,17 @@ interface RecordEventParams {
   eventType: EventType;
   profileId?: string;
   actorId?: string;
+  anonymousId?: string;
   metadata?: Record<string, unknown>;
+  dedupKey?: string;
+  dedupTtlSeconds?: number;
 }
 
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
   private readonly LINK_CACHE_TTL = 300; // 5 minutes
+  private readonly DEFAULT_DEDUP_TTL_SECONDS = 300; // 5 minutes
 
   constructor(
     @InjectRepository(Event)
@@ -31,10 +35,19 @@ export class EventsService {
   ) {}
 
   async recordEvent(params: RecordEventParams): Promise<void> {
+    if (params.dedupKey) {
+      const isDuplicate = await this.isDuplicateEvent(
+        params.dedupKey,
+        params.dedupTtlSeconds ?? this.DEFAULT_DEDUP_TTL_SECONDS,
+      );
+      if (isDuplicate) return;
+    }
+
     const payload = {
       eventType: params.eventType,
       profileId: params.profileId ?? null,
       actorId: params.actorId ?? null,
+      anonymousId: params.anonymousId ?? null,
       metadata: params.metadata ?? null,
     };
 
@@ -55,6 +68,38 @@ export class EventsService {
         });
         await this.failedEventRepository.save(failedEvent);
       },
+    );
+  }
+
+  private async isDuplicateEvent(
+    dedupKey: string,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    try {
+      // set(..., true) = set-if-not-exists (NX); returns false if the key
+      // already existed, meaning this is a duplicate within the window.
+      const isNew = await this.redisService.set(
+        dedupKey,
+        '1',
+        ttlSeconds,
+        true,
+      );
+      return !isNew;
+    } catch (err) {
+      this.logger.warn(
+        `[isDuplicateEvent] Redis error, treating as not-duplicate: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return false; // fail open — don't block recording just because Redis is down
+    }
+  }
+
+  async mergeAnonymousEvents(
+    anonymousId: string,
+    actorId: string,
+  ): Promise<void> {
+    await this.eventRepository.update(
+      { anonymousId, actorId: IsNull() },
+      { actorId },
     );
   }
 

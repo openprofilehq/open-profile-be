@@ -15,6 +15,7 @@ export enum EventType {
 @Entity('events')
 @Index(['profileId', 'occurredAt'])
 @Index(['eventType', 'occurredAt'])
+@Index('IDX_events_anonymousId', ['anonymousId'])
 export class Event {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -24,6 +25,13 @@ export class Event {
 
   @Column({ type: 'uuid', nullable: true })
   actorId: string | null;
+
+  // Persistent identifier for unauthenticated visitors (UUID generated
+  // client-side, stored in a cookie). Populated only when actorId is null.
+  // On login/signup, past events matching this value get reassigned to
+  // the real actorId — see the identity-merge logic.
+  @Column({ type: 'varchar', nullable: true })
+  anonymousId: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   profileId: string | null;

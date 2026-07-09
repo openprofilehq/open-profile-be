@@ -84,12 +84,14 @@ describe('EventsService', () => {
         eventType: EventType.SEARCH_PERFORMED,
         profileId: PROFILE_ID,
         actorId: ACTOR_ID,
+        anonymousId: null,
         metadata,
       });
       expect(eventRepository.save).toHaveBeenCalledWith({
         eventType: EventType.SEARCH_PERFORMED,
         profileId: PROFILE_ID,
         actorId: ACTOR_ID,
+        anonymousId: null,
         metadata,
       });
       expect(failedEventRepository.save).not.toHaveBeenCalled();
@@ -106,12 +108,14 @@ describe('EventsService', () => {
         eventType: EventType.PROFILE_VIEWED,
         profileId: null,
         actorId: null,
+        anonymousId: null,
         metadata: null,
       });
       expect(eventRepository.save).toHaveBeenCalledWith({
         eventType: EventType.PROFILE_VIEWED,
         profileId: null,
         actorId: null,
+        anonymousId: null,
         metadata: null,
       });
     });
@@ -144,6 +148,7 @@ describe('EventsService', () => {
               eventType: EventType.LINK_CLICKED,
               profileId: PROFILE_ID,
               actorId: ACTOR_ID,
+              anonymousId: null,
               metadata: null,
             },
             errorMessage: dbError.message,
@@ -378,6 +383,97 @@ describe('EventsService', () => {
       await expect(
         service.isValidProfileLink(PROFILE_ID, 'https://unknown.example.com'),
       ).resolves.toBe(false);
+    });
+  });
+
+  describe('mergeAnonymousEvents', () => {
+    it('updates only events with a null actorId, matching the given anonymousId', async () => {
+      eventRepository.update = jest.fn().mockResolvedValue({ affected: 2 });
+
+      await service.mergeAnonymousEvents('anon-uuid-123', ACTOR_ID);
+
+      expect(eventRepository.update).toHaveBeenCalledWith(
+        { anonymousId: 'anon-uuid-123', actorId: IsNull() },
+        { actorId: ACTOR_ID },
+      );
+    });
+  });
+
+  describe('recordEvent dedup', () => {
+    it('writes normally when no dedupKey is provided', async () => {
+      eventRepository.save.mockResolvedValue({ id: 'event-id' });
+
+      await service.recordEvent({
+        eventType: EventType.LINK_CLICKED,
+        profileId: PROFILE_ID,
+      });
+
+      expect(redisService.set).not.toHaveBeenCalled();
+      expect(eventRepository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes when the dedup key is new (Redis returns true)', async () => {
+      redisService.set.mockResolvedValue(true);
+      eventRepository.save.mockResolvedValue({ id: 'event-id' });
+
+      await service.recordEvent({
+        eventType: EventType.PROFILE_VIEWED,
+        profileId: PROFILE_ID,
+        dedupKey: 'event-dedup:PROFILE_VIEWED:some-profile:some-viewer',
+      });
+
+      expect(redisService.set).toHaveBeenCalledWith(
+        'event-dedup:PROFILE_VIEWED:some-profile:some-viewer',
+        '1',
+        300,
+        true,
+      );
+      expect(eventRepository.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the write entirely when the dedup key already exists (Redis returns false)', async () => {
+      redisService.set.mockResolvedValue(false);
+
+      await service.recordEvent({
+        eventType: EventType.PROFILE_VIEWED,
+        profileId: PROFILE_ID,
+        dedupKey: 'event-dedup:PROFILE_VIEWED:some-profile:some-viewer',
+      });
+
+      expect(eventRepository.create).not.toHaveBeenCalled();
+      expect(eventRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('respects a custom dedupTtlSeconds when provided', async () => {
+      redisService.set.mockResolvedValue(true);
+      eventRepository.save.mockResolvedValue({ id: 'event-id' });
+
+      await service.recordEvent({
+        eventType: EventType.PROFILE_VIEWED,
+        profileId: PROFILE_ID,
+        dedupKey: 'custom-key',
+        dedupTtlSeconds: 60,
+      });
+
+      expect(redisService.set).toHaveBeenCalledWith(
+        'custom-key',
+        '1',
+        60,
+        true,
+      );
+    });
+
+    it('fails open and still writes when Redis throws during the dedup check', async () => {
+      redisService.set.mockRejectedValue(new Error('redis down'));
+      eventRepository.save.mockResolvedValue({ id: 'event-id' });
+
+      await service.recordEvent({
+        eventType: EventType.PROFILE_VIEWED,
+        profileId: PROFILE_ID,
+        dedupKey: 'event-dedup:PROFILE_VIEWED:some-profile:some-viewer',
+      });
+
+      expect(eventRepository.save).toHaveBeenCalledTimes(1);
     });
   });
 });
