@@ -265,26 +265,29 @@ export class ProfileService {
         });
       }
 
-      const skills = await this.skillRepo.find({
-        where: { profileId: profile.id },
-        order: { displayOrder: 'ASC' },
-      });
-      const education = await this.educationRepo.find({
-        where: { profileId: profile.id },
-        order: { displayOrder: 'ASC' },
-      });
-      const workExperience = await this.workExperienceRepo.find({
-        where: { profileId: profile.id },
-        order: { displayOrder: 'ASC' },
-      });
-      const awards = await this.awardRepo.find({
-        where: { profileId: profile.id },
-        order: { displayOrder: 'ASC' },
-      });
-      const components = await this.componentRepo.find({
-        where: { profileId: profile.id },
-        order: { displayOrder: 'ASC' },
-      });
+      const [skills, education, workExperience, awards, components] =
+        await Promise.all([
+          this.skillRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.educationRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.workExperienceRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.awardRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.componentRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+        ]);
       const responseData = this.serialize(
         profile,
         skills,
@@ -351,27 +354,29 @@ export class ProfileService {
       );
     }
 
-    const skills = await this.skillRepo.find({
-      where: { profileId: profile.id },
-      order: { displayOrder: 'ASC' },
-    });
-    const education = await this.educationRepo.find({
-      where: { profileId: profile.id },
-      order: { displayOrder: 'ASC' },
-    });
-    const workExperience = await this.workExperienceRepo.find({
-      where: { profileId: profile.id },
-      order: { displayOrder: 'ASC' },
-    });
-    const awards = await this.awardRepo.find({
-      where: { profileId: profile.id },
-      order: { displayOrder: 'ASC' },
-    });
-    const components = await this.componentRepo.find({
-      where: { profileId: profile.id },
-      order: { displayOrder: 'ASC' },
-    });
-
+    const [skills, education, workExperience, awards, components] =
+      await Promise.all([
+        this.skillRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.educationRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.workExperienceRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.awardRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.componentRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+      ]);
     return {
       ...this.toProfileResponse(profile),
       components: components.map((c) => ({
