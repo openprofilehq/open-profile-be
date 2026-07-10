@@ -405,6 +405,16 @@ export class ProfileController {
   @ApiOperation({
     summary: 'Reorder all components on the authenticated profile',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Components reordered successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more componentIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   async reorderComponents(
     @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: ReorderComponentsDto,
@@ -485,6 +495,13 @@ export class ProfileController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Reorder all skills on the authenticated profile' })
+  @ApiResponse({ status: 200, description: 'Skills reordered successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more skillIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   async reorderSkills(
     @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: ReorderSkillsDto,
@@ -587,6 +604,16 @@ export class ProfileController {
   @ApiOperation({
     summary: 'Reorder all education entries on the authenticated profile',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Education entries reordered successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more educationIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   async reorderEducation(
     @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: ReorderEducationDto,
@@ -699,6 +726,16 @@ export class ProfileController {
   @ApiOperation({
     summary: 'Reorder all work experience entries on the authenticated profile',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Work experience reordered successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more workExperienceIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   async reorderWorkExperience(
     @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: ReorderWorkExperienceDto,
@@ -781,7 +818,16 @@ export class ProfileController {
   @Put('me/awards/order')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT')
-  @ApiOperation({ summary: 'Reorder all awards on the authenticated profile' })
+  @ApiOperation({
+    summary: 'Reorder all awards on the authenticated profile',
+  })
+  @ApiResponse({ status: 200, description: 'Awards reordered successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more awardIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   async reorderAwards(
     @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: ReorderAwardsDto,

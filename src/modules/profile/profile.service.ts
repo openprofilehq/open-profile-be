@@ -726,6 +726,10 @@ export class ProfileService {
         throw new ComponentSetMismatchException(missing, extra);
       }
 
+      if (submittedIds.length === 0) {
+        return [];
+      }
+
       // One UPDATE statement, N rows. Parameterised values list.
       const values = submittedIds
         .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
@@ -888,11 +892,14 @@ export class ProfileService {
           );
         }
       }
-
       const missing = [...currentIds].filter((id) => !submittedSet.has(id));
       const extra = submittedIds.filter((id) => !currentIds.has(id));
       if (missing.length > 0 || extra.length > 0) {
         throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      if (submittedIds.length === 0) {
+        return [];
       }
 
       const values = submittedIds
@@ -1090,6 +1097,10 @@ export class ProfileService {
       const extra = submittedIds.filter((id) => !currentIds.has(id));
       if (missing.length > 0 || extra.length > 0) {
         throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      if (submittedIds.length === 0) {
+        return [];
       }
 
       const values = submittedIds
@@ -1336,6 +1347,10 @@ export class ProfileService {
         throw new ComponentSetMismatchException(missing, extra);
       }
 
+      if (submittedIds.length === 0) {
+        return [];
+      }
+
       const values = submittedIds
         .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
         .join(', ');
@@ -1502,6 +1517,10 @@ export class ProfileService {
       const extra = submittedIds.filter((id) => !currentIds.has(id));
       if (missing.length > 0 || extra.length > 0) {
         throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      if (submittedIds.length === 0) {
+        return [];
       }
 
       const values = submittedIds
