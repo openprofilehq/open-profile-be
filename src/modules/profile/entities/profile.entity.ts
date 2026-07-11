@@ -15,6 +15,10 @@ import { ProfileComponent } from './profile-component.entity';
 import { ProfileContentDto } from '../dto/profile-content.dto';
 import { ThemeSettings } from '../dto/theme-settings.dto';
 import { AppearanceSettingsDto } from '../dto/appearance-settings.dto';
+import { Skill } from './skill.entity';
+import { Education } from './education.entity';
+import { WorkExperience } from './work-experience.entity';
+import { Award } from './award.entity';
 
 @Entity('profiles')
 export class Profile {
@@ -85,6 +89,18 @@ export class Profile {
 
   @OneToMany(() => ProfileComponent, (component) => component.profile)
   components: ProfileComponent[];
+
+  @OneToMany(() => Skill, (skill) => skill.profile)
+  skills: Skill[];
+
+  @OneToMany(() => Education, (education) => education.profile)
+  education: Education[];
+
+  @OneToMany(() => WorkExperience, (workExperience) => workExperience.profile)
+  workExperience: WorkExperience[];
+
+  @OneToMany(() => Award, (award) => award.profile)
+  awards: Award[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
