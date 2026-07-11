@@ -611,6 +611,10 @@ describe('ProfileService', () => {
         links: { ...defaultStyle },
         projects: { ...defaultStyle },
         cta: { ...defaultStyle },
+        workExperience: { ...defaultStyle },
+        education: { ...defaultStyle },
+        skills: { ...defaultStyle },
+        awards: { ...defaultStyle },
       },
     };
 
@@ -658,6 +662,10 @@ describe('ProfileService', () => {
           links: { ...savedStyle },
           projects: { ...savedStyle },
           cta: { ...savedStyle },
+          workExperience: { ...defaultStyle },
+          education: { ...defaultStyle },
+          skills: { ...defaultStyle },
+          awards: { ...defaultStyle },
         },
       });
     });

@@ -2157,6 +2157,22 @@ export class ProfileService {
           ...DEFAULT_APPEARANCE.components!.cta,
           ...(saved.components?.cta ?? {}),
         },
+        workExperience: {
+          ...DEFAULT_APPEARANCE.components!.workExperience,
+          ...(saved.components?.workExperience ?? {}),
+        },
+        education: {
+          ...DEFAULT_APPEARANCE.components!.education,
+          ...(saved.components?.education ?? {}),
+        },
+        skills: {
+          ...DEFAULT_APPEARANCE.components!.skills,
+          ...(saved.components?.skills ?? {}),
+        },
+        awards: {
+          ...DEFAULT_APPEARANCE.components!.awards,
+          ...(saved.components?.awards ?? {}),
+        },
       },
     };
 

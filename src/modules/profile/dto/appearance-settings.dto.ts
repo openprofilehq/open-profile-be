@@ -104,6 +104,30 @@ export class AppearanceComponentsDto {
   @Type(() => AppearanceStyleDto)
   @IsOptional()
   cta?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  workExperience?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  education?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  skills?: AppearanceStyleDto;
+
+  @ApiPropertyOptional({ type: () => AppearanceStyleDto })
+  @ValidateNested()
+  @Type(() => AppearanceStyleDto)
+  @IsOptional()
+  awards?: AppearanceStyleDto;
 }
 
 export class AppearanceSettingsDto {
