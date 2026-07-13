@@ -14,8 +14,9 @@ import {
   Req,
   Res,
   UseGuards,
+  Delete,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -48,6 +49,31 @@ import { Query } from '@nestjs/common';
 import { ValidateLinkQueryDto } from './dto/validate-link-query.dto';
 import { EventsService } from '../events/events.service';
 import { EventType } from '../events/entities/event.entity';
+import { Skill } from './entities/skill.entity';
+import { WorkExperience } from './entities/work-experience.entity';
+import {
+  CreateWorkExperienceDto,
+  UpdateWorkExperienceDto,
+  ReorderWorkExperienceDto,
+} from './dto/work-experience.dto';
+import {
+  CreateSkillDto,
+  UpdateSkillDto,
+  ReorderSkillsDto,
+} from './dto/skill.dto';
+import { Education } from './entities/education.entity';
+import {
+  CreateEducationDto,
+  UpdateEducationDto,
+  ReorderEducationDto,
+} from './dto/education.dto';
+import { Award } from './entities/award.entity';
+import {
+  CreateAwardDto,
+  UpdateAwardDto,
+  ReorderAwardsDto,
+} from './dto/award.dto';
+import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -333,22 +359,28 @@ export class ProfileController {
       res.status(HttpStatus.NOT_MODIFIED);
       return;
     }
-
     const actorId = (req as Request & { user?: { sub: string } }).user?.sub;
     const isOwner = !!actorId && actorId === userId;
 
     if (!isOwner) {
+      const anonymousId = actorId ? undefined : getOrSetAnonymousId(req, res);
+
+      const dedupIdentifier = actorId ?? anonymousId;
+
       void this.eventsService
         .recordEvent({
           eventType: EventType.PROFILE_VIEWED,
           profileId: profileId || undefined,
           actorId: actorId ?? undefined,
+          anonymousId,
+          dedupKey: dedupIdentifier
+            ? `event-dedup:PROFILE_VIEWED:${profileId}:${dedupIdentifier}`
+            : undefined,
         })
         .catch((err) =>
-          this.logger?.warn?.(`Failed to record PROFILE_VIEWED event: ${err}`),
+          this.logger?.warn(`Failed to record PROFILE_VIEWED event: ${err}`),
         );
     }
-
     return data;
   }
 
@@ -373,12 +405,435 @@ export class ProfileController {
   @ApiOperation({
     summary: 'Reorder all components on the authenticated profile',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Components reordered successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more componentIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
   async reorderComponents(
     @currentUserDecorator.CurrentUser('sub') userId: string,
     @Body() dto: ReorderComponentsDto,
   ): Promise<{ components: ProfileComponent[] }> {
     const components = await this.profileService.reorderComponents(userId, dto);
     return { components };
+  }
+
+  @Post('me/skills')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Add a skill to the authenticated profile' })
+  @ApiResponse({ status: 201, description: 'Skill created successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async createSkill(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: CreateSkillDto,
+  ): Promise<Skill> {
+    return this.profileService.createSkill(userId, dto);
+  }
+
+  @Get('me/skills')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'List all skills on the authenticated profile' })
+  @ApiResponse({ status: 200, description: 'Skills returned successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async listSkills(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ): Promise<Skill[]> {
+    return this.profileService.listSkills(userId);
+  }
+
+  @Patch('me/skills/:skillId')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Update a skill on the authenticated profile' })
+  @ApiParam({ name: 'skillId', description: 'UUID of the skill' })
+  @ApiResponse({ status: 200, description: 'Skill updated successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Skill does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Skill not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async updateSkill(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('skillId', new ParseUUIDPipe()) skillId: string,
+    @Body() dto: UpdateSkillDto,
+  ): Promise<Skill> {
+    return this.profileService.updateSkill(userId, skillId, dto);
+  }
+
+  @Delete('me/skills/:skillId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Delete a skill from the authenticated profile' })
+  @ApiParam({ name: 'skillId', description: 'UUID of the skill' })
+  @ApiResponse({ status: 204, description: 'Skill deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Skill does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Skill not found' })
+  async deleteSkill(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('skillId', new ParseUUIDPipe()) skillId: string,
+  ): Promise<void> {
+    return this.profileService.deleteSkill(userId, skillId);
+  }
+
+  @Put('me/skills/order')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Reorder all skills on the authenticated profile' })
+  @ApiResponse({ status: 200, description: 'Skills reordered successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more skillIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async reorderSkills(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: ReorderSkillsDto,
+  ): Promise<{ skills: Skill[] }> {
+    const skills = await this.profileService.reorderSkills(userId, dto);
+    return { skills };
+  }
+
+  @Post('me/education')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Add an education entry to the authenticated profile',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Education entry created successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async createEducation(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: CreateEducationDto,
+  ): Promise<Education> {
+    return this.profileService.createEducation(userId, dto);
+  }
+
+  @Get('me/education')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'List all education entries on the authenticated profile',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Education entries returned successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async listEducation(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ): Promise<Education[]> {
+    return this.profileService.listEducation(userId);
+  }
+
+  @Patch('me/education/:educationId')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Update an education entry on the authenticated profile',
+  })
+  @ApiParam({ name: 'educationId', description: 'UUID of the education entry' })
+  @ApiResponse({
+    status: 200,
+    description: 'Education entry updated successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Education entry does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Education entry not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async updateEducation(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('educationId', new ParseUUIDPipe()) educationId: string,
+    @Body() dto: UpdateEducationDto,
+  ): Promise<Education> {
+    return this.profileService.updateEducation(userId, educationId, dto);
+  }
+
+  @Delete('me/education/:educationId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Delete an education entry from the authenticated profile',
+  })
+  @ApiParam({ name: 'educationId', description: 'UUID of the education entry' })
+  @ApiResponse({
+    status: 204,
+    description: 'Education entry deleted successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Education entry does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Education entry not found' })
+  async deleteEducation(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('educationId', new ParseUUIDPipe()) educationId: string,
+  ): Promise<void> {
+    return this.profileService.deleteEducation(userId, educationId);
+  }
+
+  @Put('me/education/order')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Reorder all education entries on the authenticated profile',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Education entries reordered successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more educationIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async reorderEducation(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: ReorderEducationDto,
+  ): Promise<{ education: Education[] }> {
+    const education = await this.profileService.reorderEducation(userId, dto);
+    return { education };
+  }
+
+  @Post('me/work-experience')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Add a work experience entry to the authenticated profile',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Work experience created successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async createWorkExperience(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: CreateWorkExperienceDto,
+  ): Promise<WorkExperience> {
+    return this.profileService.createWorkExperience(userId, dto);
+  }
+
+  @Get('me/work-experience')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'List all work experience entries on the authenticated profile',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Work experience entries returned successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async listWorkExperience(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ): Promise<WorkExperience[]> {
+    return this.profileService.listWorkExperience(userId);
+  }
+
+  @Patch('me/work-experience/:workExperienceId')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Update a work experience entry on the authenticated profile',
+  })
+  @ApiParam({
+    name: 'workExperienceId',
+    description: 'UUID of the work experience entry',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Work experience updated successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Work experience does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Work experience not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async updateWorkExperience(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('workExperienceId', new ParseUUIDPipe()) workExperienceId: string,
+    @Body() dto: UpdateWorkExperienceDto,
+  ): Promise<WorkExperience> {
+    return this.profileService.updateWorkExperience(
+      userId,
+      workExperienceId,
+      dto,
+    );
+  }
+
+  @Delete('me/work-experience/:workExperienceId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Delete a work experience entry from the authenticated profile',
+  })
+  @ApiParam({
+    name: 'workExperienceId',
+    description: 'UUID of the work experience entry',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Work experience deleted successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Work experience does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Work experience not found' })
+  async deleteWorkExperience(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('workExperienceId', new ParseUUIDPipe()) workExperienceId: string,
+  ): Promise<void> {
+    return this.profileService.deleteWorkExperience(userId, workExperienceId);
+  }
+
+  @Put('me/work-experience/order')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Reorder all work experience entries on the authenticated profile',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Work experience reordered successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more workExperienceIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async reorderWorkExperience(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: ReorderWorkExperienceDto,
+  ): Promise<{ workExperience: WorkExperience[] }> {
+    const workExperience = await this.profileService.reorderWorkExperience(
+      userId,
+      dto,
+    );
+    return { workExperience };
+  }
+
+  @Post('me/awards')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Add an award to the authenticated profile' })
+  @ApiResponse({ status: 201, description: 'Award created successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async createAward(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: CreateAwardDto,
+  ): Promise<Award> {
+    return this.profileService.createAward(userId, dto);
+  }
+
+  @Get('me/awards')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'List all awards on the authenticated profile' })
+  @ApiResponse({ status: 200, description: 'Awards returned successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async listAwards(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+  ): Promise<Award[]> {
+    return this.profileService.listAwards(userId);
+  }
+
+  @Patch('me/awards/:awardId')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Update an award on the authenticated profile' })
+  @ApiParam({ name: 'awardId', description: 'UUID of the award' })
+  @ApiResponse({ status: 200, description: 'Award updated successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Award does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Award not found' })
+  @ApiResponse({ status: 422, description: 'Validation failed' })
+  async updateAward(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('awardId', new ParseUUIDPipe()) awardId: string,
+    @Body() dto: UpdateAwardDto,
+  ): Promise<Award> {
+    return this.profileService.updateAward(userId, awardId, dto);
+  }
+
+  @Delete('me/awards/:awardId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Delete an award from the authenticated profile' })
+  @ApiParam({ name: 'awardId', description: 'UUID of the award' })
+  @ApiResponse({ status: 204, description: 'Award deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Award does not belong to the authenticated user',
+  })
+  @ApiResponse({ status: 404, description: 'Award not found' })
+  async deleteAward(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Param('awardId', new ParseUUIDPipe()) awardId: string,
+  ): Promise<void> {
+    return this.profileService.deleteAward(userId, awardId);
+  }
+
+  @Put('me/awards/order')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Reorder all awards on the authenticated profile',
+  })
+  @ApiResponse({ status: 200, description: 'Awards reordered successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({
+    status: 403,
+    description: 'One or more awardIds belong to a different profile',
+  })
+  @ApiResponse({ status: 404, description: 'Profile not found' })
+  async reorderAwards(
+    @currentUserDecorator.CurrentUser('sub') userId: string,
+    @Body() dto: ReorderAwardsDto,
+  ): Promise<{ awards: Award[] }> {
+    const awards = await this.profileService.reorderAwards(userId, dto);
+    return { awards };
   }
 
   @Patch('me/visibility')

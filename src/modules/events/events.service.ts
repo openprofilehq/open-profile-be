@@ -1,35 +1,125 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Event, EventType } from './entities/event.entity';
+import { FailedEvent } from './entities/failed-event.entity';
 import { Profile } from '../profile/entities/profile.entity';
-import { Repository, IsNull } from 'typeorm';
-import { CtaType } from '../profile/dto/profile-content.dto';
+import { Repository, IsNull, QueryFailedError } from 'typeorm';
+import { CtaType, ProfileContentDto } from '../profile/dto/profile-content.dto';
+import { RedisService } from '../../common/redis/redis.service';
+import { writeEventWithRetry } from './utils/event-retry.util';
 
 interface RecordEventParams {
   eventType: EventType;
   profileId?: string;
   actorId?: string;
+  anonymousId?: string;
   metadata?: Record<string, unknown>;
+  dedupKey?: string;
+  dedupTtlSeconds?: number;
 }
 
 @Injectable()
 export class EventsService {
+  private readonly logger = new Logger(EventsService.name);
+  private readonly LINK_CACHE_TTL = 300; // 5 minutes
+  private readonly DEFAULT_DEDUP_TTL_SECONDS = 300; // 5 minutes
+
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @InjectRepository(FailedEvent)
+    private readonly failedEventRepository: Repository<FailedEvent>,
     @InjectRepository(Profile)
     private readonly profileRepository: Repository<Profile>,
+    private readonly redisService: RedisService,
   ) {}
 
   async recordEvent(params: RecordEventParams): Promise<void> {
-    const event = this.eventRepository.create({
+    if (params.dedupKey) {
+      const isDuplicate = await this.isDuplicateEvent(
+        params.dedupKey,
+        params.dedupTtlSeconds ?? this.DEFAULT_DEDUP_TTL_SECONDS,
+      );
+      if (isDuplicate) return;
+    }
+
+    const payload = {
       eventType: params.eventType,
       profileId: params.profileId ?? null,
       actorId: params.actorId ?? null,
+      anonymousId: params.anonymousId ?? null,
       metadata: params.metadata ?? null,
-    });
+    };
 
-    await this.eventRepository.save(event);
+    await writeEventWithRetry(
+      () => this.eventRepository.save(this.eventRepository.create(payload)),
+      async (err, attempts) => {
+        const errorCode =
+          err instanceof QueryFailedError
+            ? (err as unknown as { driverError?: { code?: string } })
+                .driverError?.code
+            : undefined;
+
+        const failedEvent = this.failedEventRepository.create({
+          payload,
+          errorMessage: (err as Error)?.message ?? 'unknown error',
+          errorCode: errorCode ?? null,
+          attemptCount: attempts,
+        });
+        await this.failedEventRepository.save(failedEvent);
+      },
+    );
+  }
+
+  private async isDuplicateEvent(
+    dedupKey: string,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    try {
+      // set(..., true) = set-if-not-exists (NX); returns false if the key
+      // already existed, meaning this is a duplicate within the window.
+      const isNew = await this.redisService.set(
+        dedupKey,
+        '1',
+        ttlSeconds,
+        true,
+      );
+      return !isNew;
+    } catch (err) {
+      this.logger.warn(
+        `[isDuplicateEvent] Redis error, treating as not-duplicate: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return false; // fail open — don't block recording just because Redis is down
+    }
+  }
+
+  async mergeAnonymousEvents(
+    anonymousId: string,
+    actorId: string,
+  ): Promise<void> {
+    await this.eventRepository.update(
+      { anonymousId, actorId: IsNull() },
+      { actorId },
+    );
+  }
+
+  private buildLinkSet(content: ProfileContentDto): Set<string> {
+    const normalize = (u: string) => this.normalizeUrl(u);
+    const { links, projects, cta } = content;
+
+    const urls: string[] = [
+      ...(links?.items?.map((item) => normalize(item.url)) ?? []),
+      ...(projects?.items ?? []).flatMap((item) => {
+        const u: string[] = [normalize(item.repoUrl)];
+        if (item.liveUrl) u.push(normalize(item.liveUrl));
+        return u;
+      }),
+      ...(cta?.type === CtaType.LINK && cta?.value
+        ? [normalize(cta.value)]
+        : []),
+    ];
+
+    return new Set(urls);
   }
 
   private normalizeUrl(url: string): string {
@@ -45,33 +135,75 @@ export class EventsService {
     profileId: string,
     linkUrl: string,
   ): Promise<boolean> {
-    const profile = await this.profileRepository.findOne({
-      where: { id: profileId, isPublished: true, deletedAt: IsNull() },
-      select: ['content'],
-    });
+    const cacheKey = `profile:links:${profileId}`;
+    const lockKey = `profile:links:lock:${profileId}`;
+    const normalizedInput = this.normalizeUrl(linkUrl);
 
-    if (!profile?.content) return false;
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) {
+        const linkSet = new Set<string>(JSON.parse(cached));
+        return linkSet.has(normalizedInput);
+      }
 
-    const { links, projects, cta } = profile.content;
-    const normalize = (u: string) => this.normalizeUrl(u);
-    const normalizedInput = normalize(linkUrl);
+      const lockAcquired = await this.redisService.set(lockKey, '1', 5, true);
 
-    // Links section
-    const linkUrls = links?.items?.map((item) => normalize(item.url)) ?? [];
+      if (!lockAcquired) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const retried = await this.redisService.get(cacheKey);
+          if (retried) {
+            const linkSet = new Set<string>(JSON.parse(retried));
+            return linkSet.has(normalizedInput);
+          }
+        }
+        const fallbackProfile = await this.profileRepository.findOne({
+          where: { id: profileId, isPublished: true, deletedAt: IsNull() },
+          select: ['content'],
+        });
+        return (
+          !!fallbackProfile?.content &&
+          this.buildLinkSet(fallbackProfile.content).has(normalizedInput)
+        );
+      }
 
-    // Project repo and live URLs
-    const projectUrls = (projects?.items ?? []).flatMap((item) => {
-      const urls: string[] = [normalize(item.repoUrl)];
-      if (item.liveUrl) urls.push(normalize(item.liveUrl));
-      return urls;
-    });
+      try {
+        const profile = await this.profileRepository.findOne({
+          where: { id: profileId, isPublished: true, deletedAt: IsNull() },
+          select: ['content'],
+        });
 
-    // CTA — only valid if type is LINK
-    const ctaUrls: string[] =
-      cta?.type === CtaType.LINK && cta?.value ? [normalize(cta.value)] : [];
+        if (!profile?.content) {
+          await this.redisService.set(
+            cacheKey,
+            JSON.stringify([]),
+            this.LINK_CACHE_TTL,
+          );
+          return false;
+        }
 
-    const allValidUrls = [...linkUrls, ...projectUrls, ...ctaUrls];
-
-    return allValidUrls.includes(normalizedInput);
+        const linkSet = this.buildLinkSet(profile.content);
+        await this.redisService.set(
+          cacheKey,
+          JSON.stringify([...linkSet]),
+          this.LINK_CACHE_TTL,
+        );
+        return linkSet.has(normalizedInput);
+      } finally {
+        await this.redisService.del(lockKey);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[isValidProfileLink] Redis error, falling back to DB: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      const fallbackProfile = await this.profileRepository.findOne({
+        where: { id: profileId, isPublished: true, deletedAt: IsNull() },
+        select: ['content'],
+      });
+      return (
+        !!fallbackProfile?.content &&
+        this.buildLinkSet(fallbackProfile.content).has(normalizedInput)
+      );
+    }
   }
 }

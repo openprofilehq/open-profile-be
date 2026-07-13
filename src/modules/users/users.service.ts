@@ -17,6 +17,7 @@ import { UpdateEmailDto } from './dto/update-email.dto';
 import { UpdateEmailResponseDto } from './dto/update-email-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserSettingsResponseDto } from './dto/user-settings-response.dto';
+import { BillingInfoResponseDto } from './dto/billing-info-response.dto';
 import { AuthProvider, User } from './entities/user.entity';
 import { ResetPassword } from '../auth/entities/reset-password.entity';
 
@@ -306,6 +307,11 @@ export class UsersService {
       authProvider: user.authProvider,
       onboardingComplete: user.onboardingComplete,
     };
+  }
+
+  async getBillingInfo(userId: string): Promise<BillingInfoResponseDto> {
+    await this.findOne(userId);
+    return { plan: 'Free', nextBillingDate: null };
   }
 
   async updateEmail(

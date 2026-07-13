@@ -22,6 +22,10 @@ import dns from 'node:dns/promises';
 import { ProfileService } from './profile.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
+import { Skill } from './entities/skill.entity';
+import { Education } from './entities/education.entity';
+import { WorkExperience } from './entities/work-experience.entity';
+import { Award } from './entities/award.entity';
 import { ProfileDraft } from './entities/profile-draft.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { RedisService } from '../../common/redis/redis.service';
@@ -140,6 +144,10 @@ describe('ProfileService', () => {
   let service: ProfileService;
   let profileRepo: Record<string, jest.Mock>;
   let componentRepo: Record<string, jest.Mock>;
+  let skillRepo: Record<string, jest.Mock>;
+  let educationRepo: Record<string, jest.Mock>;
+  let workExperienceRepo: Record<string, jest.Mock>;
+  let awardRepo: Record<string, jest.Mock>;
   let draftRepo: Record<string, jest.Mock>;
   let userRepo: Record<string, jest.Mock>;
   let redisService: Record<string, jest.Mock>;
@@ -155,9 +163,45 @@ describe('ProfileService', () => {
     };
 
     componentRepo = {
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    skillRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    educationRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    workExperienceRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    awardRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
 
@@ -203,6 +247,28 @@ describe('ProfileService', () => {
     };
     const txComponentRepo = {
       find: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txSkillRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txEducationRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txWorkExperienceRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txAwardRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
 
@@ -213,6 +279,10 @@ describe('ProfileService', () => {
         if (entity === User) return txUserRepo;
         if (entity === ProfileDraft) return txDraftRepo;
         if (entity === ProfileComponent) return txComponentRepo;
+        if (entity === Skill) return txSkillRepo;
+        if (entity === Education) return txEducationRepo;
+        if (entity === WorkExperience) return txWorkExperienceRepo;
+        if (entity === Award) return txAwardRepo;
         return {};
       }),
     };
@@ -231,6 +301,13 @@ describe('ProfileService', () => {
           provide: getRepositoryToken(ProfileComponent),
           useValue: componentRepo,
         },
+        { provide: getRepositoryToken(Skill), useValue: skillRepo },
+        { provide: getRepositoryToken(Education), useValue: educationRepo },
+        {
+          provide: getRepositoryToken(WorkExperience),
+          useValue: workExperienceRepo,
+        },
+        { provide: getRepositoryToken(Award), useValue: awardRepo },
         {
           provide: getRepositoryToken(ProfileDraft),
           useValue: draftRepo,
@@ -437,6 +514,7 @@ describe('ProfileService', () => {
       expect(result.data.username).toBe(USERNAME);
       expect(result.fromCache).toBe(false);
       expect(result.etag).toBeTruthy();
+      expect(result.data).not.toHaveProperty('isPublic');
     });
 
     it('caches 404 on cache miss when profile not found', async () => {
@@ -533,6 +611,10 @@ describe('ProfileService', () => {
         links: { ...defaultStyle },
         projects: { ...defaultStyle },
         cta: { ...defaultStyle },
+        workExperience: { ...defaultStyle },
+        education: { ...defaultStyle },
+        skills: { ...defaultStyle },
+        awards: { ...defaultStyle },
       },
     };
 
@@ -580,6 +662,10 @@ describe('ProfileService', () => {
           links: { ...savedStyle },
           projects: { ...savedStyle },
           cta: { ...savedStyle },
+          workExperience: { ...defaultStyle },
+          education: { ...defaultStyle },
+          skills: { ...defaultStyle },
+          awards: { ...defaultStyle },
         },
       });
     });
@@ -644,6 +730,18 @@ describe('ProfileService', () => {
       await expect(service.getDashboardProfile(USER_ID)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('exposes isPublic on the owner-facing dashboard response', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        isPublic: false,
+      });
+      componentRepo.find.mockResolvedValue([]);
+
+      const result = await service.getDashboardProfile(USER_ID);
+
+      expect(result.isPublic).toBe(false);
     });
   });
 
