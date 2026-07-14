@@ -14,6 +14,7 @@ export const QUEUE_JOB_NAMES = {
     ACCOUNT_LOCKED: 'account-locked',
     NEW_IP_LOGIN: 'new-ip-login',
     SEND_OTP: 'send-otp',
+    SEND_NOTIFICATION_EMAIL: 'send-notification-email',
   },
 } as const;
 

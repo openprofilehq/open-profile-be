@@ -53,7 +53,7 @@
     "@t3-oss/env-core": "^0.13.11",
     "argon2": "^0.44.0",
     "bcrypt": "^6.0.0",
-    "bullmq": "^5.76.8",
+    "bullmq": "^5.76.9",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "compression": "^1.8.1",
