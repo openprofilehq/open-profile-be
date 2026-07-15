@@ -36,6 +36,10 @@ export class AnnouncementFanoutProcessor extends WorkerHost {
       dedupeKey: `ANNOUNCEMENT_${announcementId}`,
     }));
 
+    if (rows.length === 0) {
+      return;
+    }
+
     await this.notificationRepo
       .createQueryBuilder()
       .insert()

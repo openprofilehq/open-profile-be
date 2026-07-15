@@ -1,4 +1,11 @@
-import { Controller, Get, Patch, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Query,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import * as currentUserDecorator from '../../common/decorators/current-user.decorator';
 import { NotificationService } from './notifications.service';
 import { QueryNotificationsDto } from './dto/query-notifications.dto';
@@ -27,7 +34,7 @@ export class NotificationController {
   @Patch(':id/read')
   markAsRead(
     @currentUserDecorator.CurrentUser('sub') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.notificationService.markAsRead(userId, id);
   }
@@ -35,7 +42,7 @@ export class NotificationController {
   @Patch(':id/unread')
   markAsUnread(
     @currentUserDecorator.CurrentUser('sub') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.notificationService.markAsUnread(userId, id);
   }

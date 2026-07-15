@@ -8,6 +8,7 @@ import {
   QUEUE_NAMES,
   QUEUE_JOB_NAMES,
 } from '../queue/config/queue-names.constant';
+import { Logger } from '@nestjs/common';
 
 export interface DispatchNotificationParams {
   userId: string;
@@ -26,6 +27,7 @@ interface NotificationInsertResult {
 
 @Injectable()
 export class NotificationService {
+  private readonly logger = new Logger(NotificationService.name);
   constructor(
     @InjectRepository(Notification)
     private readonly repo: Repository<Notification>,
@@ -58,12 +60,18 @@ export class NotificationService {
     const notification = result.raw[0];
 
     if (params.sendEmail && params.userEmail) {
-      await this.queueService.addJob(
-        QUEUE_NAMES.EMAIL,
-        QUEUE_JOB_NAMES.EMAIL.SEND_NOTIFICATION_EMAIL,
-        { to: params.userEmail, title: params.title, body: params.body },
-        { attempts: 5, backoff: { type: 'exponential', delay: 1000 } },
-      );
+      try {
+        await this.queueService.addJob(
+          QUEUE_NAMES.EMAIL,
+          QUEUE_JOB_NAMES.EMAIL.SEND_NOTIFICATION_EMAIL,
+          { to: params.userEmail, title: params.title, body: params.body },
+          { attempts: 5, backoff: { type: 'exponential', delay: 1000 } },
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Failed to enqueue notification email for ${params.userId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     return notification;

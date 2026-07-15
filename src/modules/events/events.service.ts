@@ -82,27 +82,30 @@ export class EventsService {
 
   private async checkProfileViewMilestone(profileId: string): Promise<void> {
     try {
-      await this.profileRepository.increment({ id: profileId }, 'viewCount', 1);
+      const result: { view_count: number; user_id: string }[] =
+        await this.profileRepository.query(
+          `UPDATE profiles SET view_count = view_count + 1 WHERE id = $1 RETURNING view_count, user_id`,
+          [profileId],
+        );
 
-      const profile = await this.profileRepository.findOne({
-        where: { id: profileId },
-        select: ['viewCount', 'userId'],
-      });
-
+      const profile = result[0];
       if (!profile) return;
+
+      const viewCount = profile.view_count;
+      const userId = profile.user_id;
 
       const milestones = this.configService.get<number[]>(
         'app.profileViewMilestones',
       );
 
-      if (milestones?.includes(profile.viewCount)) {
+      if (milestones?.includes(viewCount)) {
         await this.notificationService.dispatch({
-          userId: profile.userId,
+          userId,
           type: NotificationType.PROFILE_VIEW_MILESTONE,
           title: 'Milestone reached!',
-          body: `Your profile has been viewed ${profile.viewCount} times.`,
-          metadata: { viewCount: profile.viewCount },
-          dedupeKey: `MILESTONE_${profileId}_${profile.viewCount}`,
+          body: `Your profile has been viewed ${viewCount} times.`,
+          metadata: { viewCount },
+          dedupeKey: `MILESTONE_${profileId}_${viewCount}`,
         });
       }
     } catch (err) {

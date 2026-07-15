@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,6 +17,7 @@ const FANOUT_BATCH_SIZE = 500;
 
 @Injectable()
 export class AnnouncementService {
+  private readonly logger = new Logger(AnnouncementService.name);
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
@@ -52,7 +57,10 @@ export class AnnouncementService {
 
         offset += FANOUT_BATCH_SIZE;
       }
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Failed to broadcast announcement ${announcementId} at offset ${offset}: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new InternalServerErrorException(
         'Failed to broadcast announcement',
       );
