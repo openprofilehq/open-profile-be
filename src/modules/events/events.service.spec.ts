@@ -41,6 +41,7 @@ describe('EventsService', () => {
     profileRepository = {
       findOne: jest.fn(),
       increment: jest.fn(),
+      query: jest.fn(),
     };
 
     redisService = {
@@ -216,11 +217,9 @@ describe('EventsService', () => {
     describe('profile view milestones', () => {
       it('increments the view count and dispatches when the new count matches a configured milestone', async () => {
         eventRepository.save.mockResolvedValue({ id: 'event-id' });
-        profileRepository.increment.mockResolvedValue({ affected: 1 });
-        profileRepository.findOne.mockResolvedValue({
-          viewCount: 100,
-          userId: ACTOR_ID,
-        });
+        profileRepository.query.mockResolvedValue([
+          { view_count: 100, user_id: ACTOR_ID },
+        ]);
         configService.get.mockReturnValue([10, 100, 1000]);
 
         await service.recordEvent({
@@ -228,15 +227,10 @@ describe('EventsService', () => {
           profileId: PROFILE_ID,
         });
 
-        expect(profileRepository.increment).toHaveBeenCalledWith(
-          { id: PROFILE_ID },
-          'viewCount',
-          1,
+        expect(profileRepository.query).toHaveBeenCalledWith(
+          'UPDATE profiles SET view_count = view_count + 1 WHERE id = $1 RETURNING view_count, user_id',
+          [PROFILE_ID],
         );
-        expect(profileRepository.findOne).toHaveBeenCalledWith({
-          where: { id: PROFILE_ID },
-          select: ['viewCount', 'userId'],
-        });
         expect(configService.get).toHaveBeenCalledWith(
           'app.profileViewMilestones',
         );
@@ -252,11 +246,9 @@ describe('EventsService', () => {
 
       it("doesn't dispatch when the new count does not match any milestone", async () => {
         eventRepository.save.mockResolvedValue({ id: 'event-id' });
-        profileRepository.increment.mockResolvedValue({ affected: 1 });
-        profileRepository.findOne.mockResolvedValue({
-          viewCount: 99,
-          userId: ACTOR_ID,
-        });
+        profileRepository.query.mockResolvedValue([
+          { view_count: 99, user_id: ACTOR_ID },
+        ]);
         configService.get.mockReturnValue([10, 100, 1000]);
 
         await service.recordEvent({
@@ -264,10 +256,9 @@ describe('EventsService', () => {
           profileId: PROFILE_ID,
         });
 
-        expect(profileRepository.increment).toHaveBeenCalledWith(
-          { id: PROFILE_ID },
-          'viewCount',
-          1,
+        expect(profileRepository.query).toHaveBeenCalledWith(
+          'UPDATE profiles SET view_count = view_count + 1 WHERE id = $1 RETURNING view_count, user_id',
+          [PROFILE_ID],
         );
         expect(notificationService.dispatch).not.toHaveBeenCalled();
       });
@@ -277,7 +268,7 @@ describe('EventsService', () => {
           .spyOn(service['logger'], 'warn')
           .mockImplementation(jest.fn());
         eventRepository.save.mockResolvedValue({ id: 'event-id' });
-        profileRepository.increment.mockRejectedValue(new Error('db down'));
+        profileRepository.query.mockRejectedValue(new Error('db down'));
 
         await expect(
           service.recordEvent({
