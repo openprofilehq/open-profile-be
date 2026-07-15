@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { IsNull } from 'typeorm';
 import { EventsService } from './events.service';
 import { Event, EventType } from './entities/event.entity';
@@ -7,6 +8,8 @@ import { FailedEvent } from './entities/failed-event.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { RedisService } from '../../common/redis/redis.service';
 import { DEFAULT_RETRY_CONFIG } from './utils/event-retry.util';
+import { NotificationService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification-type.enum';
 
 jest.mock('../../common/redis/redis.service', () => ({
   RedisService: class RedisService {},
@@ -21,6 +24,8 @@ describe('EventsService', () => {
   let failedEventRepository: Record<string, jest.Mock>;
   let profileRepository: Record<string, jest.Mock>;
   let redisService: Record<string, jest.Mock>;
+  let notificationService: Record<string, jest.Mock>;
+  let configService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     eventRepository = {
@@ -35,12 +40,21 @@ describe('EventsService', () => {
 
     profileRepository = {
       findOne: jest.fn(),
+      increment: jest.fn(),
     };
 
     redisService = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(true),
       del: jest.fn().mockResolvedValue(undefined),
+    };
+
+    notificationService = {
+      dispatch: jest.fn(),
+    };
+
+    configService = {
+      get: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -61,6 +75,14 @@ describe('EventsService', () => {
         {
           provide: RedisService,
           useValue: redisService,
+        },
+        {
+          provide: NotificationService,
+          useValue: notificationService,
+        },
+        {
+          provide: ConfigService,
+          useValue: configService,
         },
       ],
     }).compile();
@@ -188,6 +210,100 @@ describe('EventsService', () => {
           }),
         );
         expect(failedEventRepository.save).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('profile view milestones', () => {
+      it('increments the view count and dispatches when the new count matches a configured milestone', async () => {
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+        profileRepository.increment.mockResolvedValue({ affected: 1 });
+        profileRepository.findOne.mockResolvedValue({
+          viewCount: 100,
+          userId: ACTOR_ID,
+        });
+        configService.get.mockReturnValue([10, 100, 1000]);
+
+        await service.recordEvent({
+          eventType: EventType.PROFILE_VIEWED,
+          profileId: PROFILE_ID,
+        });
+
+        expect(profileRepository.increment).toHaveBeenCalledWith(
+          { id: PROFILE_ID },
+          'viewCount',
+          1,
+        );
+        expect(profileRepository.findOne).toHaveBeenCalledWith({
+          where: { id: PROFILE_ID },
+          select: ['viewCount', 'userId'],
+        });
+        expect(configService.get).toHaveBeenCalledWith(
+          'app.profileViewMilestones',
+        );
+        expect(notificationService.dispatch).toHaveBeenCalledWith({
+          userId: ACTOR_ID,
+          type: NotificationType.PROFILE_VIEW_MILESTONE,
+          title: 'Milestone reached!',
+          body: 'Your profile has been viewed 100 times.',
+          metadata: { viewCount: 100 },
+          dedupeKey: `MILESTONE_${PROFILE_ID}_100`,
+        });
+      });
+
+      it("doesn't dispatch when the new count does not match any milestone", async () => {
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+        profileRepository.increment.mockResolvedValue({ affected: 1 });
+        profileRepository.findOne.mockResolvedValue({
+          viewCount: 99,
+          userId: ACTOR_ID,
+        });
+        configService.get.mockReturnValue([10, 100, 1000]);
+
+        await service.recordEvent({
+          eventType: EventType.PROFILE_VIEWED,
+          profileId: PROFILE_ID,
+        });
+
+        expect(profileRepository.increment).toHaveBeenCalledWith(
+          { id: PROFILE_ID },
+          'viewCount',
+          1,
+        );
+        expect(notificationService.dispatch).not.toHaveBeenCalled();
+      });
+
+      it('logs and does not propagate errors from the milestone flow', async () => {
+        const warnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(jest.fn());
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+        profileRepository.increment.mockRejectedValue(new Error('db down'));
+
+        await expect(
+          service.recordEvent({
+            eventType: EventType.PROFILE_VIEWED,
+            profileId: PROFILE_ID,
+          }),
+        ).resolves.toBeUndefined();
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          `Failed to check profile view milestone for ${PROFILE_ID}: db down`,
+        );
+        expect(notificationService.dispatch).not.toHaveBeenCalled();
+
+        warnSpy.mockRestore();
+      });
+
+      it('skips the milestone check when profileId is missing', async () => {
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+
+        await service.recordEvent({
+          eventType: EventType.PROFILE_VIEWED,
+        });
+
+        expect(profileRepository.increment).not.toHaveBeenCalled();
+        expect(profileRepository.findOne).not.toHaveBeenCalled();
+        expect(notificationService.dispatch).not.toHaveBeenCalled();
       });
     });
   });
