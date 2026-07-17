@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Event, EventType } from './entities/event.entity';
 import { FailedEvent } from './entities/failed-event.entity';
 import { Profile } from '../profile/entities/profile.entity';
@@ -7,6 +8,8 @@ import { Repository, IsNull, QueryFailedError } from 'typeorm';
 import { CtaType, ProfileContentDto } from '../profile/dto/profile-content.dto';
 import { RedisService } from '../../common/redis/redis.service';
 import { writeEventWithRetry } from './utils/event-retry.util';
+import { NotificationService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification-type.enum';
 
 interface RecordEventParams {
   eventType: EventType;
@@ -32,6 +35,8 @@ export class EventsService {
     @InjectRepository(Profile)
     private readonly profileRepository: Repository<Profile>,
     private readonly redisService: RedisService,
+    private readonly notificationService: NotificationService,
+    private readonly configService: ConfigService,
   ) {}
 
   async recordEvent(params: RecordEventParams): Promise<void> {
@@ -69,6 +74,45 @@ export class EventsService {
         await this.failedEventRepository.save(failedEvent);
       },
     );
+
+    if (params.eventType === EventType.PROFILE_VIEWED && params.profileId) {
+      await this.checkProfileViewMilestone(params.profileId);
+    }
+  }
+
+  private async checkProfileViewMilestone(profileId: string): Promise<void> {
+    try {
+      const result: { view_count: number; user_id: string }[] =
+        await this.profileRepository.query(
+          `UPDATE profiles SET view_count = view_count + 1 WHERE id = $1 RETURNING view_count, user_id`,
+          [profileId],
+        );
+
+      const profile = result[0];
+      if (!profile) return;
+
+      const viewCount = profile.view_count;
+      const userId = profile.user_id;
+
+      const milestones = this.configService.get<number[]>(
+        'app.profileViewMilestones',
+      );
+
+      if (milestones?.includes(viewCount)) {
+        await this.notificationService.dispatch({
+          userId,
+          type: NotificationType.PROFILE_VIEW_MILESTONE,
+          title: 'Milestone reached!',
+          body: `Your profile has been viewed ${viewCount} times.`,
+          metadata: { viewCount },
+          dedupeKey: `MILESTONE_${profileId}_${viewCount}`,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to check profile view milestone for ${profileId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private async isDuplicateEvent(
@@ -76,8 +120,6 @@ export class EventsService {
     ttlSeconds: number,
   ): Promise<boolean> {
     try {
-      // set(..., true) = set-if-not-exists (NX); returns false if the key
-      // already existed, meaning this is a duplicate within the window.
       const isNew = await this.redisService.set(
         dedupKey,
         '1',
@@ -89,7 +131,7 @@ export class EventsService {
       this.logger.warn(
         `[isDuplicateEvent] Redis error, treating as not-duplicate: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return false; // fail open — don't block recording just because Redis is down
+      return false;
     }
   }
 

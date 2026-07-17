@@ -108,6 +108,9 @@ export class Profile {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
+  @Column({ type: 'int', name: 'view_count', default: 0 })
+  viewCount: number;
+
   @DeleteDateColumn({ name: 'deleted_at' })
   deletedAt: Date | null;
 }
