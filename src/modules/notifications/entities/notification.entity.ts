@@ -12,7 +12,7 @@ import { User } from '../../users/entities/user.entity';
 import { NotificationType } from '../enums/notification-type.enum';
 
 @Entity()
-@Index(['userId', 'isRead'])
+@Index('IDX_notification_unread', ['userId'], { where: '"readAt" IS NULL' })
 @Unique('uq_notification_user_dedupe', ['userId', 'dedupeKey'])
 export class Notification {
   @PrimaryGeneratedColumn('uuid')
@@ -36,9 +36,6 @@ export class Notification {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any> | null;
-
-  @Column({ default: false })
-  isRead: boolean;
 
   @Column({ type: 'timestamptz', nullable: true })
   readAt: Date | null;

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { NotificationType } from './enums/notification-type.enum';
 import { QueueService } from '../queue/queue.service';
@@ -91,7 +91,7 @@ export class NotificationService {
   async markAsRead(userId: string, id: string): Promise<void> {
     const result = await this.repo.update(
       { id, userId },
-      { isRead: true, readAt: new Date() },
+      { readAt: new Date() },
     );
 
     if (result.affected === 0) {
@@ -100,10 +100,7 @@ export class NotificationService {
   }
 
   async markAsUnread(userId: string, id: string): Promise<void> {
-    const result = await this.repo.update(
-      { id, userId },
-      { isRead: false, readAt: null },
-    );
+    const result = await this.repo.update({ id, userId }, { readAt: null });
 
     if (result.affected === 0) {
       throw new NotFoundException('Notification not found');
@@ -112,12 +109,12 @@ export class NotificationService {
 
   async markAllAsRead(userId: string): Promise<void> {
     await this.repo.update(
-      { userId, isRead: false },
-      { isRead: true, readAt: new Date() },
+      { userId, readAt: IsNull() },
+      { readAt: new Date() },
     );
   }
 
   async unreadCount(userId: string): Promise<number> {
-    return this.repo.count({ where: { userId, isRead: false } });
+    return this.repo.count({ where: { userId, readAt: IsNull() } });
   }
 }

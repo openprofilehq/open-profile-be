@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { IsNull } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { NotificationType } from './enums/notification-type.enum';
 import { NotificationService } from './notifications.service';
@@ -189,7 +190,7 @@ describe('NotificationService', () => {
 
       expect(repo.update).toHaveBeenCalledWith(
         { id: 'notification-id', userId: USER_ID },
-        { isRead: true, readAt: expect.any(Date) },
+        { readAt: expect.any(Date) },
       );
     });
 
@@ -212,7 +213,7 @@ describe('NotificationService', () => {
 
       expect(repo.update).toHaveBeenCalledWith(
         { id: 'notification-id', userId: USER_ID },
-        { isRead: false, readAt: null },
+        { readAt: null },
       );
     });
 
@@ -232,8 +233,8 @@ describe('NotificationService', () => {
       await expect(service.markAllAsRead(USER_ID)).resolves.toBeUndefined();
 
       expect(repo.update).toHaveBeenCalledWith(
-        { userId: USER_ID, isRead: false },
-        { isRead: true, readAt: expect.any(Date) },
+        { userId: USER_ID, readAt: IsNull() },
+        { readAt: expect.any(Date) },
       );
     });
   });
@@ -245,7 +246,7 @@ describe('NotificationService', () => {
       await expect(service.unreadCount(USER_ID)).resolves.toBe(7);
 
       expect(repo.count).toHaveBeenCalledWith({
-        where: { userId: USER_ID, isRead: false },
+        where: { userId: USER_ID, readAt: IsNull() },
       });
     });
   });
