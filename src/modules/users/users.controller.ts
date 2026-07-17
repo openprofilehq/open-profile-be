@@ -24,6 +24,10 @@ import { UpdateEmailResponseDto } from './dto/update-email-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserSettingsResponseDto } from './dto/user-settings-response.dto';
 import { BillingInfoResponseDto } from './dto/billing-info-response.dto';
+import {
+  UserPreferencesDto,
+  UserPreferencesResponseDto,
+} from './dto/user-preferences.dto';
 import { UsersService } from './users.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -95,6 +99,34 @@ export class UsersController {
     @CurrentUser('sub') userId: string,
   ): Promise<BillingInfoResponseDto> {
     return this.usersService.getBillingInfo(userId);
+  }
+
+  @Get('me/preferences')
+  @ApiOperation({
+    summary: 'Get UI preferences for the authenticated user',
+  })
+  @ApiResponse({ status: 200, type: UserPreferencesResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  getPreferences(
+    @CurrentUser('sub') userId: string,
+  ): Promise<UserPreferencesResponseDto> {
+    return this.usersService.getPreferences(userId);
+  }
+
+  @Patch('me/preferences')
+  @ApiOperation({
+    summary: 'Update UI preferences for the authenticated user',
+    description:
+      'Partial update — omitted fields keep their previously saved value.',
+  })
+  @ApiResponse({ status: 200, type: UserPreferencesResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthenticated' })
+  @ApiResponse({ status: 422, description: 'Invalid preferences payload' })
+  updatePreferences(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: UserPreferencesDto,
+  ): Promise<UserPreferencesResponseDto> {
+    return this.usersService.updatePreferences(userId, dto);
   }
 
   @Patch('me/email')
