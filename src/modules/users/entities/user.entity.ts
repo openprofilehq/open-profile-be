@@ -9,6 +9,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { UserPreferencesDto } from '../dto/user-preferences.dto';
 
 export enum UserRole {
   ADMIN = 'admin',
@@ -76,6 +77,9 @@ export class User {
   @ApiProperty({ default: false })
   @Column({ type: 'boolean', name: 'onboarding_complete', default: false })
   onboardingComplete: boolean;
+
+  @Column({ type: 'jsonb', default: {} })
+  preferences: UserPreferencesDto;
 
   @Exclude()
   @Column({ type: 'varchar', length: 255, name: 'otp_hash', nullable: true })
