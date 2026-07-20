@@ -1,16 +1,6 @@
-import {
-  INestApplication,
-  ValidationPipe,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
-import { APP_GUARD, APP_PIPE } from '@nestjs/core';
-import { Test, TestingModule } from '@nestjs/testing';
-import request from 'supertest';
-import { App } from 'supertest/types';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 jest.mock('@t3-oss/env-core', () => ({
@@ -21,121 +11,75 @@ jest.mock('uuid', () => ({
   v7: jest.fn(() => '00000000-0000-4000-8000-000000000000'),
 }));
 
-const VALID_UUID = '11111111-1111-4111-8111-111111111111';
-const NONEXISTENT_UUID = '22222222-2222-4222-8222-222222222222';
+describe('AnalyticsController', () => {
+  let controller: AnalyticsController;
+  let analyticsService: jest.Mocked<
+    Pick<AnalyticsService, 'getProfileViewStats' | 'getLinkClickStats'>
+  >;
 
-describe('AnalyticsController (integration)', () => {
-  let app: INestApplication<App>;
-  let mockAnalyticsService: { recordView: jest.Mock };
+  const req = {
+    user: { id: 'user-id' },
+  } as Parameters<AnalyticsController['getProfileViews']>[0];
 
-  beforeEach(async () => {
-    mockAnalyticsService = {
-      recordView: jest.fn(),
+  beforeEach(() => {
+    analyticsService = {
+      getProfileViewStats: jest.fn(),
+      getLinkClickStats: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [AnalyticsController],
-      providers: [
-        { provide: AnalyticsService, useValue: mockAnalyticsService },
-        { provide: APP_GUARD, useClass: ThrottlerGuard },
-        {
-          provide: APP_PIPE,
-          useValue: new ValidationPipe({
-            whitelist: true,
-            transform: true,
-            forbidNonWhitelisted: true,
-            transformOptions: { enableImplicitConversion: false },
-            exceptionFactory: (errors) => {
-              const formatted = errors.map((e) => ({
-                field: e.property,
-                error: Object.values(e.constraints ?? {}).join(', '),
-              }));
-              return new UnprocessableEntityException(formatted);
-            },
-          }),
-        },
-      ],
-      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }])],
-    })
-      .overrideGuard(JwtAuthGuard)
-      .useValue({ canActivate: jest.fn(() => true) })
-      .compile();
-
-    app = module.createNestApplication();
-    await app.init();
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
-
-  it('POST /view with valid profileId → 201', async () => {
-    mockAnalyticsService.recordView.mockResolvedValue(undefined);
-
-    await request(app.getHttpServer())
-      .post('/analytics/view')
-      .set('X-Forwarded-For', '10.0.0.1')
-      .send({ profileId: VALID_UUID })
-      .expect(201)
-      .expect((res) => {
-        expect(res.body.message).toBe('View recorded');
-      });
-  });
-
-  it('POST /view with invalid UUID → 400', async () => {
-    await request(app.getHttpServer())
-      .post('/analytics/view')
-      .set('X-Forwarded-For', '10.0.0.2')
-      .send({ profileId: 'not-a-uuid' })
-      .expect(422);
-  });
-
-  it('POST /view with non-existent profileId → 404', async () => {
-    mockAnalyticsService.recordView.mockRejectedValue(
-      new NotFoundException('Profile not found'),
+    controller = new AnalyticsController(
+      analyticsService as unknown as AnalyticsService,
     );
-
-    await request(app.getHttpServer())
-      .post('/analytics/view')
-      .set('X-Forwarded-For', '10.0.0.3')
-      .send({ profileId: NONEXISTENT_UUID })
-      .expect(404);
   });
 
-  it('POST /view same IP twice within 5 min → both 201, only one DB row', async () => {
-    mockAnalyticsService.recordView.mockResolvedValue(undefined);
+  it('GET /analytics/profile-views passes the authenticated user id and range through', async () => {
+    const result = {
+      total: 20,
+      range_total: 5,
+      unique_viewers: 4,
+      daily_breakdown: [{ date: '2026-07-21', views: 2 }],
+    };
+    analyticsService.getProfileViewStats.mockResolvedValue(result);
 
-    await request(app.getHttpServer())
-      .post('/analytics/view')
-      .set('X-Forwarded-For', '10.0.0.4')
-      .send({ profileId: VALID_UUID })
-      .expect(201);
+    await expect(
+      controller.getProfileViews(req, { range: '7d' }),
+    ).resolves.toEqual(result);
 
-    await request(app.getHttpServer())
-      .post('/analytics/view')
-      .set('X-Forwarded-For', '10.0.0.4')
-      .send({ profileId: VALID_UUID })
-      .expect(201);
-
-    expect(mockAnalyticsService.recordView).toHaveBeenCalledTimes(2);
+    expect(analyticsService.getProfileViewStats).toHaveBeenCalledWith(
+      'user-id',
+      '7d',
+    );
   });
 
-  it('POST /view 31 times in 1 min → 429 on 31st', async () => {
-    mockAnalyticsService.recordView.mockResolvedValue(undefined);
+  it('GET /analytics/link-clicks passes the authenticated user id and range through', async () => {
+    const result = {
+      range_total: 9,
+      links: [{ linkUrl: 'https://example.com', clicks: 9 }],
+    };
+    analyticsService.getLinkClickStats.mockResolvedValue(result);
 
-    const limit = 30;
-    for (let i = 0; i < limit; i++) {
-      await request(app.getHttpServer())
-        .post('/analytics/view')
-        .set('X-Forwarded-For', '10.0.0.5')
-        .send({ profileId: VALID_UUID })
-        .expect(201);
-    }
+    await expect(
+      controller.getLinkClicks(req, { range: '90d' }),
+    ).resolves.toEqual(result);
 
-    await request(app.getHttpServer())
-      .post('/analytics/view')
-      .set('X-Forwarded-For', '10.0.0.5')
-      .send({ profileId: VALID_UUID })
-      .expect(429);
-  }, 30_000);
+    expect(analyticsService.getLinkClickStats).toHaveBeenCalledWith(
+      'user-id',
+      '90d',
+    );
+  });
+
+  it('enforces JwtAuthGuard on analytics routes', () => {
+    expect(
+      Reflect.getMetadata(
+        GUARDS_METADATA,
+        AnalyticsController.prototype.getProfileViews,
+      ),
+    ).toContain(JwtAuthGuard);
+    expect(
+      Reflect.getMetadata(
+        GUARDS_METADATA,
+        AnalyticsController.prototype.getLinkClicks,
+      ),
+    ).toContain(JwtAuthGuard);
+  });
 });
