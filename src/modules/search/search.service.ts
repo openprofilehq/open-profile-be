@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import type { Request, Response } from 'express';
 import { SearchAction, PaginatedSearchResult } from './actions/search.action';
 import { SearchQueryDto } from './dto/search-query.dto';
 import { RedisService } from '../../common/redis/redis.service';
 import { EventsService } from '../events/events.service';
 import { EventType } from '../events/entities/event.entity';
+import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
 
 const SEARCH_CACHE_TTL_SECONDS = 300;
 const SEARCH_CACHE_PREFIX = 'search:';
@@ -21,8 +24,13 @@ export class SearchService {
   async searchProfiles(
     dto: SearchQueryDto,
     actorId?: string,
+    req?: Request,
+    res?: Response,
   ): Promise<PaginatedSearchResult> {
     const cacheKey = `${SEARCH_CACHE_PREFIX}${dto.q.toLowerCase()}:page=${dto.page}:limit=${dto.limit}`;
+    const anonymousId =
+      !actorId && req && res ? getOrSetAnonymousId(req, res) : undefined;
+    const searchId = randomUUID();
 
     try {
       const cached = await this.redisService.get(cacheKey);
@@ -34,10 +42,11 @@ export class SearchService {
           .recordEvent({
             eventType: EventType.SEARCH_PERFORMED,
             actorId: actorId ?? undefined,
+            anonymousId,
             metadata: { query: dto.q },
           })
           .catch(() => {});
-        return result;
+        return { ...result, searchId };
       }
     } catch (error) {
       this.logger.warn(
@@ -55,6 +64,7 @@ export class SearchService {
       .recordEvent({
         eventType: EventType.SEARCH_PERFORMED,
         actorId: actorId ?? undefined,
+        anonymousId,
         metadata: { query: dto.q },
       })
       .catch(() => {});
@@ -71,7 +81,7 @@ export class SearchService {
       );
     }
 
-    return result;
+    return { ...result, searchId };
   }
 
   async invalidateSearchCache(q: string): Promise<void> {

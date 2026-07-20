@@ -74,6 +74,7 @@ import {
   ReorderAwardsDto,
 } from './dto/award.dto';
 import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
+import { parseReferrerSource } from '../../common/utils/parse-referrer.util';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -347,6 +348,8 @@ export class ProfileController {
     @Headers('if-none-match') ifNoneMatch: string | undefined,
     @Res({ passthrough: true }) res: Response,
     @Req() req: Request,
+    @Query('referrerSearchId') referrerSearchId?: string,
+    @Query('src') src?: string,
   ) {
     const { profileId, userId, data, etag, fromCache } =
       await this.profileService.getPublicProfile(username);
@@ -364,8 +367,12 @@ export class ProfileController {
 
     if (!isOwner) {
       const anonymousId = actorId ? undefined : getOrSetAnonymousId(req, res);
-
       const dedupIdentifier = actorId ?? anonymousId;
+
+      const referrerSource = src ?? parseReferrerSource(req.headers.referer);
+      const metadata: Record<string, unknown> = {};
+      if (referrerSearchId) metadata.referrerSearchId = referrerSearchId;
+      if (referrerSource) metadata.referrerSource = referrerSource;
 
       void this.eventsService
         .recordEvent({
@@ -376,6 +383,7 @@ export class ProfileController {
           dedupKey: dedupIdentifier
             ? `event-dedup:PROFILE_VIEWED:${profileId}:${dedupIdentifier}`
             : undefined,
+          metadata: Object.keys(metadata).length ? metadata : undefined,
         })
         .catch((err) =>
           this.logger?.warn(`Failed to record PROFILE_VIEWED event: ${err}`),

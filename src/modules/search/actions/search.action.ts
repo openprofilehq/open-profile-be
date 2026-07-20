@@ -24,6 +24,7 @@ export type PaginatedSearchResult = {
   page: number;
   limit: number;
   totalPages: number;
+  searchId?: string;
 };
 
 export type SearchProfilesOptions = {

@@ -37,6 +37,7 @@ export class EventsController {
       profileId: dto.profileId,
       actorId,
       metadata: { linkUrl: dto.linkUrl },
+      dedupKey: `link-click:${dto.profileId}:${dto.linkUrl}:${actorId ?? 'anon'}`,
     });
   }
 }
