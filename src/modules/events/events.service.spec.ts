@@ -367,7 +367,7 @@ describe('EventsService', () => {
       ).resolves.toBe(true);
     });
 
-    it('normalizes case and trailing slashes before comparing URLs', async () => {
+    it('normalizes scheme/host case and trailing slashes before comparing URLs', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
           links: {
@@ -389,12 +389,12 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/Link'),
       ).resolves.toBe(true);
       await expect(
         service.isValidProfileLink(
           PROFILE_ID,
-          'https://github.com/example/project',
+          'https://github.com/Example/Project',
         ),
       ).resolves.toBe(true);
       await expect(
@@ -403,9 +403,12 @@ describe('EventsService', () => {
       await expect(
         service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
       ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(false);
     });
 
-    it('normalizes non-URL values by lowercasing and trimming a trailing slash', async () => {
+    it('normalizes non-URL values by trimming a trailing slash while preserving case', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
           links: {
@@ -415,11 +418,14 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'mailto:hello@example.com'),
+        service.isValidProfileLink(PROFILE_ID, 'mailto:Hello@Example.com'),
       ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'mailto:hello@example.com'),
+      ).resolves.toBe(false);
     });
 
-    it('falls back to string normalization for non-parseable values', async () => {
+    it('falls back to case-sensitive string normalization for non-parseable values', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
           links: { items: [{ url: '/Relative/Path/' }] },
@@ -427,8 +433,11 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, '/relative/path'),
+        service.isValidProfileLink(PROFILE_ID, '/Relative/Path'),
       ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, '/relative/path'),
+      ).resolves.toBe(false);
     });
 
     it('returns true for project repository and live URLs', async () => {

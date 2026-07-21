@@ -253,8 +253,9 @@ describe('AnalyticsService', () => {
       expect(result).toEqual({
         range_total: 9,
         links: [
-          { linkUrl: 'https://example.com/path', clicks: 5 },
           { linkUrl: 'https://other.example/link', clicks: 4 },
+          { linkUrl: 'https://example.com/path', clicks: 3 },
+          { linkUrl: 'https://example.com/Path', clicks: 2 },
         ],
       });
       expect(qb.andWhere).toHaveBeenCalledWith('e."eventType" = :type', {
