@@ -91,7 +91,7 @@ describe('SearchService', () => {
       metadata: {
         query: 'Ada',
         searchId: 'search-id',
-        resultProfileIds: [1],
+        resultProfileIds: ['1'],
       },
     });
   });
@@ -113,7 +113,7 @@ describe('SearchService', () => {
       metadata: {
         query: 'Ada',
         searchId: 'search-id',
-        resultProfileIds: [1],
+        resultProfileIds: ['1'],
       },
     });
     expect(redisService.set).toHaveBeenCalledWith(
@@ -161,7 +161,7 @@ describe('SearchService', () => {
       metadata: {
         query: 'Ada',
         searchId: 'search-id',
-        resultProfileIds: [1],
+        resultProfileIds: ['1'],
       },
     });
   });
