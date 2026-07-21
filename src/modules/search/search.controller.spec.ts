@@ -28,6 +28,7 @@ describe('SearchController', () => {
       page: 1,
       limit: 5,
       totalPages: 0,
+      searchId: 'search-id',
     };
     searchService.searchProfiles.mockResolvedValue(result);
     const req = {

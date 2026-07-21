@@ -23,6 +23,7 @@ import {
   ApiParam,
   ApiHeader,
   ApiResponse,
+  ApiQuery,
   ApiTags,
   ApiBody,
 } from '@nestjs/swagger';
@@ -342,6 +343,18 @@ export class ProfileController {
   @ApiResponse({
     status: 429,
     description: 'Too many requests — rate limit of 60 req/min exceeded',
+  })
+  @ApiQuery({
+    name: 'referrerSearchId',
+    required: false,
+    description:
+      'searchId from a prior search response, if this view originated from search results',
+  })
+  @ApiQuery({
+    name: 'src',
+    required: false,
+    description:
+      'Explicit share source (e.g. whatsapp, twitter) set by share-button links; falls back to Referer header parsing if omitted',
   })
   async getPublicProfile(
     @Param('username') username: string,

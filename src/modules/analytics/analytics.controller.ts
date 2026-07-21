@@ -43,4 +43,19 @@ export class AnalyticsController {
     const userId = req.user.id;
     return this.analyticsService.getLinkClickStats(userId, range);
   }
+
+  @Get('search-conversions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary:
+      'Get search-to-profile conversion analytics for the authenticated user',
+  })
+  async getSearchConversions(
+    @Req() req: AuthRequest,
+    @Query() { range }: AnalyticsRangeQueryDto,
+  ) {
+    const userId = req.user.id;
+    return this.analyticsService.getSearchConversionStats(userId, range);
+  }
 }

@@ -14,7 +14,10 @@ jest.mock('uuid', () => ({
 describe('AnalyticsController', () => {
   let controller: AnalyticsController;
   let analyticsService: jest.Mocked<
-    Pick<AnalyticsService, 'getProfileViewStats' | 'getLinkClickStats'>
+    Pick<
+      AnalyticsService,
+      'getProfileViewStats' | 'getLinkClickStats' | 'getSearchConversionStats'
+    >
   >;
 
   const req = {
@@ -25,6 +28,7 @@ describe('AnalyticsController', () => {
     analyticsService = {
       getProfileViewStats: jest.fn(),
       getLinkClickStats: jest.fn(),
+      getSearchConversionStats: jest.fn(),
     };
 
     controller = new AnalyticsController(
@@ -68,6 +72,24 @@ describe('AnalyticsController', () => {
     );
   });
 
+  it('GET /analytics/search-conversions passes the authenticated user id and range through', async () => {
+    const result = {
+      searches_surfaced: 10,
+      search_driven_views: 3,
+      conversion_rate: 0.3,
+    };
+    analyticsService.getSearchConversionStats.mockResolvedValue(result);
+
+    await expect(
+      controller.getSearchConversions(req, { range: '30d' }),
+    ).resolves.toEqual(result);
+
+    expect(analyticsService.getSearchConversionStats).toHaveBeenCalledWith(
+      'user-id',
+      '30d',
+    );
+  });
+
   it('enforces JwtAuthGuard on analytics routes', () => {
     expect(
       Reflect.getMetadata(
@@ -79,6 +101,12 @@ describe('AnalyticsController', () => {
       Reflect.getMetadata(
         GUARDS_METADATA,
         AnalyticsController.prototype.getLinkClicks,
+      ),
+    ).toContain(JwtAuthGuard);
+    expect(
+      Reflect.getMetadata(
+        GUARDS_METADATA,
+        AnalyticsController.prototype.getSearchConversions,
       ),
     ).toContain(JwtAuthGuard);
   });

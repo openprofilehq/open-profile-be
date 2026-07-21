@@ -31,6 +31,7 @@ describe('SearchService', () => {
   const result: PaginatedSearchResult = {
     results: [
       {
+        id: '1',
         username: 'ada',
         fullName: 'Ada Lovelace',
         bio: 'Mathematician',
@@ -41,6 +42,10 @@ describe('SearchService', () => {
     page: 2,
     limit: 10,
     totalPages: 1,
+  };
+  const publicResult = {
+    ...result,
+    results: result.results.map(({ id: _id, ...row }) => row),
   };
 
   beforeEach(async () => {
@@ -72,7 +77,7 @@ describe('SearchService', () => {
     redisService.get.mockResolvedValue(JSON.stringify(result));
 
     await expect(service.searchProfiles(dto)).resolves.toEqual({
-      ...result,
+      ...publicResult,
       searchId: 'search-id',
     });
 
@@ -83,7 +88,11 @@ describe('SearchService', () => {
       eventType: EventType.SEARCH_PERFORMED,
       actorId: undefined,
       anonymousId: undefined,
-      metadata: { query: 'Ada' },
+      metadata: {
+        query: 'Ada',
+        searchId: 'search-id',
+        resultProfileIds: [1],
+      },
     });
   });
 
@@ -92,7 +101,7 @@ describe('SearchService', () => {
     searchAction.searchProfiles.mockResolvedValue(result);
 
     await expect(service.searchProfiles(dto, 'user-id')).resolves.toEqual({
-      ...result,
+      ...publicResult,
       searchId: 'search-id',
     });
 
@@ -101,7 +110,11 @@ describe('SearchService', () => {
       eventType: EventType.SEARCH_PERFORMED,
       actorId: 'user-id',
       anonymousId: undefined,
-      metadata: { query: 'Ada' },
+      metadata: {
+        query: 'Ada',
+        searchId: 'search-id',
+        resultProfileIds: [1],
+      },
     });
     expect(redisService.set).toHaveBeenCalledWith(
       'search:ada:page=2:limit=10',
@@ -136,7 +149,7 @@ describe('SearchService', () => {
     await expect(
       service.searchProfiles(dto, undefined, req, res),
     ).resolves.toEqual({
-      ...result,
+      ...publicResult,
       searchId: 'search-id',
     });
 
@@ -145,7 +158,11 @@ describe('SearchService', () => {
       eventType: EventType.SEARCH_PERFORMED,
       actorId: undefined,
       anonymousId: 'anonymous-id',
-      metadata: { query: 'Ada' },
+      metadata: {
+        query: 'Ada',
+        searchId: 'search-id',
+        resultProfileIds: [1],
+      },
     });
   });
 

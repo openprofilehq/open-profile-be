@@ -8,6 +8,7 @@ import { AnalyticsRange } from './dto/analytics-range-query.dto';
 import { RedisService } from '../../common/redis/redis.service';
 import { normalizeUrl } from '../events/utils/normalize-url.util';
 import { LinkClickStatsDto } from './dto/link-click-stats.dto';
+import { SearchConversionStatsDto } from './dto/search-conversion-stats.dto';
 
 const RANGE_DAYS: Record<AnalyticsRange, number> = {
   '7d': 7,
@@ -44,8 +45,10 @@ export class AnalyticsService {
     let cached: string | null = null;
     try {
       cached = await this.redis.get(cacheKey);
-    } catch {
-      // ignore cache read errors
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     if (cached) {
       try {
@@ -144,8 +147,10 @@ export class AnalyticsService {
     let cached: string | null = null;
     try {
       cached = await this.redis.get(cacheKey);
-    } catch {
-      // ignore cache read errors
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     if (cached) {
       try {
@@ -189,6 +194,81 @@ export class AnalyticsService {
     const range_total = links.reduce((sum, l) => sum + l.clicks, 0);
 
     const result: LinkClickStatsDto = { range_total, links };
+
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(result), 60);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return result;
+  }
+
+  async getSearchConversionStats(
+    userId: string,
+    range: AnalyticsRange,
+  ): Promise<SearchConversionStatsDto> {
+    const profile = await this.profileRepo.findOne({ where: { userId } });
+    if (!profile) {
+      throw new ForbiddenException('Profile not found');
+    }
+
+    const cacheKey = `analytics:search-conversions:${profile.id}:${range}`;
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (cached) {
+      try {
+        return JSON.parse(cached) as SearchConversionStatsDto;
+      } catch {
+        // ignore malformed cache, recompute
+      }
+    }
+
+    const days = RANGE_DAYS[range];
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    const rangeStart = new Date(startOfToday);
+    rangeStart.setUTCDate(startOfToday.getUTCDate() - (days - 1));
+
+    // Denominator: searches in range whose resultProfileIds included this profile.
+    // The `?` jsonb operator checks whether a text value exists as a top-level
+    // element of a jsonb array — exactly what we need for resultProfileIds.
+    const searches_surfaced = await this.eventRepo
+      .createQueryBuilder('e')
+      .where('e."eventType" = :type', { type: EventType.SEARCH_PERFORMED })
+      .andWhere('e."occurredAt" >= :start', { start: rangeStart })
+      .andWhere(`e.metadata->'resultProfileIds' ? :profileId`, {
+        profileId: profile.id,
+      })
+      .getCount();
+
+    // Numerator: views of this profile that carry a referrerSearchId — i.e.
+    // the visitor clicked through from a search's results, not just an
+    // unrelated later view.
+    const search_driven_views = await this.eventRepo
+      .createQueryBuilder('e')
+      .where('e."profileId" = :profileId', { profileId: profile.id })
+      .andWhere('e."eventType" = :type', { type: EventType.PROFILE_VIEWED })
+      .andWhere('e."occurredAt" >= :start', { start: rangeStart })
+      .andWhere(`e.metadata->>'referrerSearchId' IS NOT NULL`)
+      .getCount();
+
+    const conversion_rate =
+      searches_surfaced > 0 ? search_driven_views / searches_surfaced : 0;
+
+    const result: SearchConversionStatsDto = {
+      searches_surfaced,
+      search_driven_views,
+      conversion_rate,
+    };
 
     try {
       await this.redis.set(cacheKey, JSON.stringify(result), 60);

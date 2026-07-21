@@ -11,7 +11,8 @@ const BIO_TRUNCATE_LENGTH = 120;
 const SIMILARITY_THRESHOLD = 0.4;
 const WORD_SIMILARITY_THRESHOLD = 0.5;
 
-type SearchProfileRow = {
+export type SearchProfileRow = {
+  id: string;
   username: string;
   fullName: string;
   bio: string | null;
@@ -80,9 +81,10 @@ export class SearchAction extends AbstractModelAction<Profile> {
     const results = await baseQuery
       .clone()
       .select([
-        'p.username                                            AS username',
+        'p.id                                                  AS "id"',
+        'p.username                                            AS "username"',
         'p.full_name                                          AS "fullName"',
-        `LEFT(p.bio, ${BIO_TRUNCATE_LENGTH})                  AS bio`,
+        `LEFT(p.bio, ${BIO_TRUNCATE_LENGTH})                  AS "bio"`,
         'p.photo_url                                          AS "photoUrl"',
       ])
       .orderBy(
