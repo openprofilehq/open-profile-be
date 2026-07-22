@@ -19,5 +19,9 @@ export const DEFAULT_APPEARANCE: AppearanceSettingsDto = {
     links: { ...DEFAULT_STYLE },
     projects: { ...DEFAULT_STYLE },
     cta: { ...DEFAULT_STYLE },
+    workExperience: { ...DEFAULT_STYLE },
+    education: { ...DEFAULT_STYLE },
+    skills: { ...DEFAULT_STYLE },
+    awards: { ...DEFAULT_STYLE },
   },
 };

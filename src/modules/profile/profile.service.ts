@@ -28,12 +28,37 @@ import {
   ProfileResponseDto,
   DashboardProfileResponseDto,
   PublicProfileResponseDto,
+  SectionMetaDto,
 } from './dto/profile-response.dto';
 import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
 import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 import { LinkItemDto } from './dto/profile-content.dto';
 import { SectionType } from './dto/profile-content.dto';
 import { isValidPhoneNumber } from 'libphonenumber-js';
+import { Skill } from './entities/skill.entity';
+import { WorkExperience } from './entities/work-experience.entity';
+import { Award } from './entities/award.entity';
+import {
+  CreateAwardDto,
+  UpdateAwardDto,
+  ReorderAwardsDto,
+} from './dto/award.dto';
+import {
+  CreateWorkExperienceDto,
+  UpdateWorkExperienceDto,
+  ReorderWorkExperienceDto,
+} from './dto/work-experience.dto';
+import {
+  CreateSkillDto,
+  UpdateSkillDto,
+  ReorderSkillsDto,
+} from './dto/skill.dto';
+import { Education } from './entities/education.entity';
+import {
+  CreateEducationDto,
+  UpdateEducationDto,
+  ReorderEducationDto,
+} from './dto/education.dto';
 import {
   sanitizeUrl,
   isValidUrl,
@@ -52,6 +77,14 @@ export class ProfileService {
     private readonly profileRepo: Repository<Profile>,
     @InjectRepository(ProfileComponent)
     private readonly componentRepo: Repository<ProfileComponent>,
+    @InjectRepository(Skill)
+    private readonly skillRepo: Repository<Skill>,
+    @InjectRepository(Education)
+    private readonly educationRepo: Repository<Education>,
+    @InjectRepository(WorkExperience)
+    private readonly workExperienceRepo: Repository<WorkExperience>,
+    @InjectRepository(Award)
+    private readonly awardRepo: Repository<Award>,
     @InjectRepository(ProfileDraft)
     private readonly profileDraftRepo: Repository<ProfileDraft>,
     private readonly redisService: RedisService,
@@ -73,6 +106,7 @@ export class ProfileService {
       isPublished: profile.isPublished,
       hasUnpublishedChanges: profile.hasUnpublishedChanges,
       isVerified: profile.isVerified,
+      isPublic: profile.isPublic,
       createdAt: profile.createdAt,
       updatedAt: profile.updatedAt,
     };
@@ -117,12 +151,13 @@ export class ProfileService {
       isPublished: createProfileDto.isPublished ?? true,
     });
 
-    // Step 4 - persist profile + flip onboarding flag atomically.
+    // Step 8 - persist profile + flip onboarding flag atomically.
     // If either write fails the transaction rolls back, leaving the user
     // in a clean state where they can retry without hitting a conflict.
     const savedProfile = await this.dataSource.transaction(async (manager) => {
       const txProfileRepo = manager.getRepository(Profile);
       const txUserRepo = manager.getRepository(User);
+      const txComponentRepo = manager.getRepository(ProfileComponent);
 
       const saved = await txProfileRepo.save(profile);
 
@@ -135,6 +170,27 @@ export class ProfileService {
         throw new NotFoundException('User not found');
       }
 
+      const defaultSections = [
+        SectionType.BIO,
+        SectionType.LINKS,
+        SectionType.PROJECTS,
+        SectionType.CTA,
+        SectionType.WORK_EXPERIENCE,
+        SectionType.EDUCATION,
+        SectionType.SKILLS,
+        SectionType.AWARDS,
+      ];
+
+      const defaultComponents = defaultSections.map((sectionType, index) =>
+        txComponentRepo.create({
+          profileId: saved.id,
+          sectionType,
+          isEnabled: true,
+          displayOrder: index,
+        }),
+      );
+      await txComponentRepo.save(defaultComponents);
+
       return saved;
     });
 
@@ -142,6 +198,8 @@ export class ProfileService {
   }
 
   async getPublicProfile(username: string): Promise<{
+    profileId: string;
+    userId: string;
     data: PublicProfileResponseDto;
     etag: string;
     fromCache: boolean;
@@ -152,7 +210,10 @@ export class ProfileService {
 
     const cached = await this.redisService.get(cacheKey);
     if (cached) {
-      const parsed = JSON.parse(cached) as PublicProfileResponseDto;
+      const parsed = JSON.parse(cached) as PublicProfileResponseDto & {
+        profileId?: string;
+        userId?: string;
+      };
       if (parsed['__notFound']) {
         throw new NotFoundException({
           error: 'not_found',
@@ -160,7 +221,17 @@ export class ProfileService {
         });
       }
       const etag = this.computeEtag(cached);
-      return { data: parsed, etag, fromCache: true };
+
+      // Strip internal fields before returning as the public `data` payload
+      const { profileId, userId, ...publicData } = parsed;
+
+      return {
+        profileId: profileId ?? '',
+        userId: userId ?? '',
+        data: publicData,
+        etag,
+        fromCache: true,
+      };
     }
 
     // Single-flight lock — prevents cache stampede on cold cache.
@@ -176,6 +247,7 @@ export class ProfileService {
         where: {
           username: normalizedUsername,
           isPublished: true,
+          isPublic: true,
           deletedAt: IsNull(),
         },
         relations: ['user'],
@@ -193,14 +265,75 @@ export class ProfileService {
         });
       }
 
-      const responseData = this.serialize(profile);
-      const serialized = JSON.stringify(responseData);
+      const [skills, education, workExperience, awards, components] =
+        await Promise.all([
+          this.skillRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.educationRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.workExperienceRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.awardRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+          this.componentRepo.find({
+            where: { profileId: profile.id },
+            order: { displayOrder: 'ASC' },
+          }),
+        ]);
+      const responseData = this.serialize(
+        profile,
+        skills,
+        education,
+        components,
+        workExperience,
+        awards,
+      );
+      const cachePayload = {
+        profileId: profile.id,
+        userId: profile.userId,
+        ...responseData,
+      };
+      const serialized = JSON.stringify(cachePayload);
 
       this.logger.log(`Cache miss for profile: ${normalizedUsername}`);
-      await this.redisService.set(cacheKey, serialized, CACHE_TTL_SECONDS);
+
+      // Re-check visibility flags immediately before writing the cache. If a
+      // toggle-to-private (save + invalidateCache) lands between the read
+      // above and here, this prevents writing back a stale public payload
+      // that would outlive the invalidation for up to CACHE_TTL_SECONDS. The
+      // in-flight response below was built from a legitimately-public read
+      // and is still returned — only the cache write is skipped.
+      const currentFlags = await this.profileRepo.findOne({
+        where: { id: profile.id },
+        select: ['isPublished', 'isPublic', 'deletedAt'],
+      });
+      const stillPublic =
+        !!currentFlags &&
+        currentFlags.isPublished &&
+        currentFlags.isPublic &&
+        !currentFlags.deletedAt;
+
+      if (stillPublic) {
+        await this.redisService.set(cacheKey, serialized, CACHE_TTL_SECONDS);
+      }
+
       const etag = this.computeEtag(serialized);
 
-      return { data: responseData, etag, fromCache: false };
+      return {
+        profileId: profile.id,
+        userId: profile.userId,
+        data: responseData,
+        etag,
+        fromCache: false,
+      };
     } finally {
       if (lockAcquired) {
         await this.redisService.del(lockKey);
@@ -221,11 +354,29 @@ export class ProfileService {
       );
     }
 
-    const components = await this.componentRepo.find({
-      where: { profileId: profile.id },
-      order: { displayOrder: 'ASC' },
-    });
-
+    const [skills, education, workExperience, awards, components] =
+      await Promise.all([
+        this.skillRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.educationRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.workExperienceRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.awardRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+        this.componentRepo.find({
+          where: { profileId: profile.id },
+          order: { displayOrder: 'ASC' },
+        }),
+      ]);
     return {
       ...this.toProfileResponse(profile),
       components: components.map((c) => ({
@@ -237,6 +388,45 @@ export class ProfileService {
         isEnabled: c.isEnabled,
         metadata: c.metadata,
       })),
+      skills: skills.map((s) => ({
+        id: s.id,
+        name: s.name,
+        level: s.level,
+        displayOrder: s.displayOrder,
+      })),
+      education: education.map((e) => ({
+        id: e.id,
+        school: e.school,
+        degree: e.degree,
+        fieldOfStudy: e.fieldOfStudy,
+        location: e.location,
+        activitiesHonors: e.activitiesHonors,
+        startYear: e.startYear,
+        endYear: e.endYear,
+        displayOrder: e.displayOrder,
+      })),
+      workExperience: workExperience.map((w) => ({
+        id: w.id,
+        companyName: w.companyName,
+        jobTitle: w.jobTitle,
+        location: w.location,
+        description: w.description,
+        startMonth: w.startMonth,
+        startYear: w.startYear,
+        endMonth: w.endMonth,
+        endYear: w.endYear,
+        isCurrent: w.isCurrent,
+        displayOrder: w.displayOrder,
+      })),
+      awards: awards.map((a) => ({
+        id: a.id,
+        title: a.title,
+        issuer: a.issuer,
+        awardDate: a.awardDate,
+        description: a.description,
+        credentialUrl: a.credentialUrl,
+        displayOrder: a.displayOrder,
+      })),
     };
   }
 
@@ -244,7 +434,48 @@ export class ProfileService {
     await this.redisService.del(`profile:${username.toLowerCase()}`);
   }
 
-  private serialize(profile: Profile): PublicProfileResponseDto {
+  async updateVisibility(
+    userId: string,
+    isPublic: boolean,
+  ): Promise<{ isPublic: boolean }> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    if (profile.isPublic === isPublic) {
+      return { isPublic };
+    }
+
+    profile.isPublic = isPublic;
+    const saved = await this.profileRepo.save(profile);
+    await this.invalidateCache(saved.username);
+
+    return { isPublic: saved.isPublic };
+  }
+
+  private serialize(
+    profile: Profile,
+    skills: Skill[] = [],
+    education: Education[] = [],
+    components: ProfileComponent[] = [],
+    workExperience: WorkExperience[] = [],
+    awards: Award[] = [],
+  ): PublicProfileResponseDto {
+    const isEnabled = (type: SectionType): boolean => {
+      const component = components.find(
+        (c) => c.sectionType === (type as string),
+      );
+      // No ProfileComponent row for this type (shouldn't happen post-seeding-fix,
+      // but fail open rather than hide data due to a missing row) → treat as enabled.
+      return component ? component.isEnabled : true;
+    };
+
     const defaultContent: ProfileContentDto = {
       sectionOrder: [
         SectionType.BIO,
@@ -300,6 +531,34 @@ export class ProfileService {
       },
     };
 
+    // Strip disabled sections' raw data — sections array alone isn't enough,
+    // since a client reading the raw fields directly (bypassing `sections`)
+    // should not see data for a section the owner has turned off.
+    if (!isEnabled(SectionType.BIO)) {
+      content.bio = { ...defaultContent.bio, visible: false, content: '' };
+    }
+    if (!isEnabled(SectionType.LINKS)) {
+      content.links = { ...defaultContent.links, visible: false, items: [] };
+    }
+    if (!isEnabled(SectionType.PROJECTS)) {
+      content.projects = {
+        ...defaultContent.projects,
+        visible: false,
+        items: [],
+      };
+    }
+    if (!isEnabled(SectionType.CTA)) {
+      content.cta = { ...defaultContent.cta, visible: false, value: null };
+    }
+
+    const sections: SectionMetaDto[] = components
+      .filter((c) => c.isEnabled)
+      .sort((a, b) => a.displayOrder - b.displayOrder)
+      .map((c) => ({
+        type: c.sectionType as SectionType,
+        displayOrder: c.displayOrder,
+      }));
+
     return {
       username: profile.username,
       fullName: profile.fullName ?? null,
@@ -308,9 +567,56 @@ export class ProfileService {
       themeSettings: profile.themeSettings,
       appearance: profile.appearance,
       content,
+      skills: isEnabled(SectionType.SKILLS)
+        ? skills.map((s) => ({
+            id: s.id,
+            name: s.name,
+            level: s.level,
+            displayOrder: s.displayOrder,
+          }))
+        : [],
+      education: isEnabled(SectionType.EDUCATION)
+        ? education.map((e) => ({
+            id: e.id,
+            school: e.school,
+            degree: e.degree,
+            fieldOfStudy: e.fieldOfStudy,
+            location: e.location,
+            activitiesHonors: e.activitiesHonors,
+            startYear: e.startYear,
+            endYear: e.endYear,
+            displayOrder: e.displayOrder,
+          }))
+        : [],
+      workExperience: isEnabled(SectionType.WORK_EXPERIENCE)
+        ? workExperience.map((w) => ({
+            id: w.id,
+            companyName: w.companyName,
+            jobTitle: w.jobTitle,
+            location: w.location,
+            description: w.description,
+            startMonth: w.startMonth,
+            startYear: w.startYear,
+            endMonth: w.endMonth,
+            endYear: w.endYear,
+            isCurrent: w.isCurrent,
+            displayOrder: w.displayOrder,
+          }))
+        : [],
+      awards: isEnabled(SectionType.AWARDS)
+        ? awards.map((a) => ({
+            id: a.id,
+            title: a.title,
+            issuer: a.issuer,
+            awardDate: a.awardDate,
+            description: a.description,
+            credentialUrl: a.credentialUrl,
+            displayOrder: a.displayOrder,
+          }))
+        : [],
+      sections,
     };
   }
-
   private computeEtag(content: string): string {
     return `"${crypto.createHash('md5').update(content).digest('hex')}"`;
   }
@@ -425,6 +731,10 @@ export class ProfileService {
         throw new ComponentSetMismatchException(missing, extra);
       }
 
+      if (submittedIds.length === 0) {
+        return [];
+      }
+
       // One UPDATE statement, N rows. Parameterised values list.
       const values = submittedIds
         .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
@@ -451,6 +761,797 @@ export class ProfileService {
     await this.invalidateCache(profile.username);
     this.logger.log(
       `Reordered ${result.length} components for profile ${profile.id}`,
+    );
+    return result;
+  }
+
+  // ─────────────────────────────────────────────
+  // Skills
+  // ─────────────────────────────────────────────
+
+  private async getOwnedSkill(
+    userId: string,
+    skillId: string,
+  ): Promise<{ skill: Skill; profile: Profile }> {
+    const skill = await this.skillRepo.findOne({ where: { id: skillId } });
+    if (!skill) {
+      throw new NotFoundException(`Skill ${skillId} not found.`);
+    }
+
+    const profile = await this.profileRepo.findOne({
+      where: { id: skill.profileId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(`Skill ${skillId} not found.`);
+    }
+    if (profile.userId !== userId) {
+      throw new ForbiddenException(
+        'Skill does not belong to the authenticated user.',
+      );
+    }
+
+    return { skill, profile };
+  }
+
+  async createSkill(userId: string, dto: CreateSkillDto): Promise<Skill> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    const maxResult = await this.skillRepo
+      .createQueryBuilder('s')
+      .select('MAX(s.displayOrder)', 'max')
+      .where('s.profileId = :profileId', { profileId: profile.id })
+      .getRawOne<{ max: number | null }>();
+
+    const max = maxResult?.max ?? null;
+
+    const skill = this.skillRepo.create({
+      profileId: profile.id,
+      name: dto.name,
+      level: dto.level ?? null,
+      displayOrder: (max ?? -1) + 1,
+    });
+
+    const saved = await this.skillRepo.save(skill);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async listSkills(userId: string): Promise<Skill[]> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+    return this.skillRepo.find({
+      where: { profileId: profile.id },
+      order: { displayOrder: 'ASC' },
+    });
+  }
+
+  async updateSkill(
+    userId: string,
+    skillId: string,
+    dto: UpdateSkillDto,
+  ): Promise<Skill> {
+    const { skill, profile } = await this.getOwnedSkill(userId, skillId);
+
+    if (dto.name !== undefined) skill.name = dto.name;
+    if (dto.level !== undefined) skill.level = dto.level;
+
+    const saved = await this.skillRepo.save(skill);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async deleteSkill(userId: string, skillId: string): Promise<void> {
+    const { skill, profile } = await this.getOwnedSkill(userId, skillId);
+    await this.skillRepo.remove(skill);
+    await this.invalidateCache(profile.username);
+  }
+
+  /**
+   * PUT /profiles/me/skills/order
+   * Same pessimistic-lock + set-mismatch pattern as reorderComponents.
+   */
+  async reorderSkills(userId: string, dto: ReorderSkillsDto): Promise<Skill[]> {
+    const submittedIds = dto.skillIds;
+
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException('Profile not found for user.');
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const skillsRepo = manager.getRepository(Skill);
+
+      const currentSkills = await skillsRepo
+        .createQueryBuilder('s')
+        .where('s.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getMany();
+
+      const currentIds = new Set(currentSkills.map((s) => s.id));
+      const submittedSet = new Set(submittedIds);
+
+      const foreignIds = submittedIds.filter((id) => !currentIds.has(id));
+      if (foreignIds.length > 0) {
+        const foreignRows = await skillsRepo.find({
+          where: { id: In(foreignIds) },
+          select: ['id'],
+        });
+        if (foreignRows.length > 0) {
+          throw new ForbiddenException(
+            'One or more skillIds belong to a different profile.',
+          );
+        }
+      }
+      const missing = [...currentIds].filter((id) => !submittedSet.has(id));
+      const extra = submittedIds.filter((id) => !currentIds.has(id));
+      if (missing.length > 0 || extra.length > 0) {
+        throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      if (submittedIds.length === 0) {
+        return [];
+      }
+
+      const values = submittedIds
+        .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
+        .join(', ');
+      const params: (string | number)[] = [];
+      submittedIds.forEach((id, i) => params.push(id, i));
+
+      await manager.query(
+        `UPDATE skills AS s
+         SET display_order = v.new_order, updated_at = NOW()
+         FROM (VALUES ${values}) AS v(id, new_order)
+         WHERE s.id = v.id`,
+        params,
+      );
+
+      return skillsRepo
+        .createQueryBuilder('s')
+        .where('s.profile_id = :profileId', { profileId: profile.id })
+        .orderBy('s.display_order', 'ASC')
+        .getMany();
+    });
+
+    await this.invalidateCache(profile.username);
+    this.logger.log(
+      `Reordered ${result.length} skills for profile ${profile.id}`,
+    );
+    return result;
+  }
+
+  // ─────────────────────────────────────────────
+  // Education
+  // ─────────────────────────────────────────────
+
+  private async getOwnedEducation(
+    userId: string,
+    educationId: string,
+  ): Promise<{ education: Education; profile: Profile }> {
+    const education = await this.educationRepo.findOne({
+      where: { id: educationId },
+    });
+    if (!education) {
+      throw new NotFoundException(`Education entry ${educationId} not found.`);
+    }
+
+    const profile = await this.profileRepo.findOne({
+      where: { id: education.profileId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(`Education entry ${educationId} not found.`);
+    }
+    if (profile.userId !== userId) {
+      throw new ForbiddenException(
+        'Education entry does not belong to the authenticated user.',
+      );
+    }
+
+    return { education, profile };
+  }
+
+  async createEducation(
+    userId: string,
+    dto: CreateEducationDto,
+  ): Promise<Education> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    const { max } = (await this.educationRepo
+      .createQueryBuilder('e')
+      .select('MAX(e.displayOrder)', 'max')
+      .where('e.profileId = :profileId', { profileId: profile.id })
+      .getRawOne<{ max: number | null }>()) ?? { max: null };
+
+    const education = this.educationRepo.create({
+      profileId: profile.id,
+      school: dto.school,
+      degree: dto.degree,
+      fieldOfStudy: dto.fieldOfStudy,
+      location: dto.location ?? null,
+      activitiesHonors: dto.activitiesHonors ?? null,
+      startYear: dto.startYear,
+      endYear: dto.endYear,
+      displayOrder: (max ?? -1) + 1,
+    });
+
+    const saved = await this.educationRepo.save(education);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async listEducation(userId: string): Promise<Education[]> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+    return this.educationRepo.find({
+      where: { profileId: profile.id },
+      order: { displayOrder: 'ASC' },
+    });
+  }
+
+  async updateEducation(
+    userId: string,
+    educationId: string,
+    dto: UpdateEducationDto,
+  ): Promise<Education> {
+    const { education, profile } = await this.getOwnedEducation(
+      userId,
+      educationId,
+    );
+
+    if (dto.school !== undefined) education.school = dto.school;
+    if (dto.degree !== undefined) education.degree = dto.degree;
+    if (dto.fieldOfStudy !== undefined)
+      education.fieldOfStudy = dto.fieldOfStudy;
+    if (dto.location !== undefined) education.location = dto.location;
+    if (dto.activitiesHonors !== undefined)
+      education.activitiesHonors = dto.activitiesHonors;
+    if (dto.startYear !== undefined) education.startYear = dto.startYear;
+    if (dto.endYear !== undefined) education.endYear = dto.endYear;
+
+    // DTO-level @Validate only checks fields present in the same request body.
+    // Re-check here against the fully merged entity, since a lone startYear
+    // PATCH could otherwise make endYear (unchanged, from the DB) invalid.
+    if (education.endYear < education.startYear) {
+      throw new UnprocessableEntityException({
+        error: 'INVALID_DATE_RANGE',
+        message: 'endYear must be greater than or equal to startYear.',
+      });
+    }
+
+    const saved = await this.educationRepo.save(education);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async deleteEducation(userId: string, educationId: string): Promise<void> {
+    const { education, profile } = await this.getOwnedEducation(
+      userId,
+      educationId,
+    );
+    await this.educationRepo.remove(education);
+    await this.invalidateCache(profile.username);
+  }
+
+  async reorderEducation(
+    userId: string,
+    dto: ReorderEducationDto,
+  ): Promise<Education[]> {
+    const submittedIds = dto.educationIds;
+
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException('Profile not found for user.');
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const educationRepo = manager.getRepository(Education);
+
+      const currentEducation = await educationRepo
+        .createQueryBuilder('e')
+        .where('e.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getMany();
+
+      const currentIds = new Set(currentEducation.map((e) => e.id));
+      const submittedSet = new Set(submittedIds);
+
+      const foreignIds = submittedIds.filter((id) => !currentIds.has(id));
+      if (foreignIds.length > 0) {
+        const foreignRows = await educationRepo.find({
+          where: { id: In(foreignIds) },
+          select: ['id'],
+        });
+        if (foreignRows.length > 0) {
+          throw new ForbiddenException(
+            'One or more educationIds belong to a different profile.',
+          );
+        }
+      }
+
+      const missing = [...currentIds].filter((id) => !submittedSet.has(id));
+      const extra = submittedIds.filter((id) => !currentIds.has(id));
+      if (missing.length > 0 || extra.length > 0) {
+        throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      if (submittedIds.length === 0) {
+        return [];
+      }
+
+      const values = submittedIds
+        .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
+        .join(', ');
+      const params: (string | number)[] = [];
+      submittedIds.forEach((id, i) => params.push(id, i));
+
+      await manager.query(
+        `UPDATE education AS e
+         SET display_order = v.new_order, updated_at = NOW()
+         FROM (VALUES ${values}) AS v(id, new_order)
+         WHERE e.id = v.id`,
+        params,
+      );
+
+      return educationRepo
+        .createQueryBuilder('e')
+        .where('e.profile_id = :profileId', { profileId: profile.id })
+        .orderBy('e.display_order', 'ASC')
+        .getMany();
+    });
+
+    await this.invalidateCache(profile.username);
+    this.logger.log(
+      `Reordered ${result.length} education entries for profile ${profile.id}`,
+    );
+    return result;
+  }
+
+  // ─────────────────────────────────────────────
+  // Work Experience
+  // ─────────────────────────────────────────────
+
+  private validateWorkExperienceDates(entity: WorkExperience): void {
+    if (entity.isCurrent) {
+      if (entity.endMonth != null || entity.endYear != null) {
+        throw new UnprocessableEntityException({
+          error: 'INVALID_DATE_RANGE',
+          message: 'endMonth/endYear must be empty when isCurrent is true.',
+        });
+      }
+      return;
+    }
+
+    if (entity.endMonth == null || entity.endYear == null) {
+      throw new UnprocessableEntityException({
+        error: 'INVALID_DATE_RANGE',
+        message: 'endMonth and endYear are required when isCurrent is false.',
+      });
+    }
+
+    const startsAfterEnds =
+      entity.endYear < entity.startYear ||
+      (entity.endYear === entity.startYear &&
+        entity.endMonth < entity.startMonth);
+
+    if (startsAfterEnds) {
+      throw new UnprocessableEntityException({
+        error: 'INVALID_DATE_RANGE',
+        message: 'End date must be on or after start date.',
+      });
+    }
+  }
+
+  private async getOwnedWorkExperience(
+    userId: string,
+    workExperienceId: string,
+  ): Promise<{ workExperience: WorkExperience; profile: Profile }> {
+    const workExperience = await this.workExperienceRepo.findOne({
+      where: { id: workExperienceId },
+    });
+    if (!workExperience) {
+      throw new NotFoundException(
+        `Work experience ${workExperienceId} not found.`,
+      );
+    }
+
+    const profile = await this.profileRepo.findOne({
+      where: { id: workExperience.profileId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        `Work experience ${workExperienceId} not found.`,
+      );
+    }
+    if (profile.userId !== userId) {
+      throw new ForbiddenException(
+        'Work experience does not belong to the authenticated user.',
+      );
+    }
+
+    return { workExperience, profile };
+  }
+
+  async createWorkExperience(
+    userId: string,
+    dto: CreateWorkExperienceDto,
+  ): Promise<WorkExperience> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    const { max } = (await this.workExperienceRepo
+      .createQueryBuilder('w')
+      .select('MAX(w.displayOrder)', 'max')
+      .where('w.profileId = :profileId', { profileId: profile.id })
+      .getRawOne<{ max: number | null }>()) ?? { max: null };
+
+    const workExperience = this.workExperienceRepo.create({
+      profileId: profile.id,
+      companyName: dto.companyName,
+      jobTitle: dto.jobTitle,
+      location: dto.location ?? null,
+      description: dto.description ?? null,
+      startMonth: dto.startMonth,
+      startYear: dto.startYear,
+      endMonth: dto.isCurrent ? null : (dto.endMonth ?? null),
+      endYear: dto.isCurrent ? null : (dto.endYear ?? null),
+      isCurrent: dto.isCurrent,
+      displayOrder: (max ?? -1) + 1,
+    });
+
+    this.validateWorkExperienceDates(workExperience);
+
+    const saved = await this.workExperienceRepo.save(workExperience);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async listWorkExperience(userId: string): Promise<WorkExperience[]> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+    return this.workExperienceRepo.find({
+      where: { profileId: profile.id },
+      order: { displayOrder: 'ASC' },
+    });
+  }
+
+  async updateWorkExperience(
+    userId: string,
+    workExperienceId: string,
+    dto: UpdateWorkExperienceDto,
+  ): Promise<WorkExperience> {
+    const { workExperience, profile } = await this.getOwnedWorkExperience(
+      userId,
+      workExperienceId,
+    );
+
+    if (dto.companyName !== undefined)
+      workExperience.companyName = dto.companyName;
+    if (dto.jobTitle !== undefined) workExperience.jobTitle = dto.jobTitle;
+    if (dto.location !== undefined) workExperience.location = dto.location;
+    if (dto.description !== undefined)
+      workExperience.description = dto.description;
+    if (dto.startMonth !== undefined)
+      workExperience.startMonth = dto.startMonth;
+    if (dto.startYear !== undefined) workExperience.startYear = dto.startYear;
+    if (dto.isCurrent !== undefined) workExperience.isCurrent = dto.isCurrent;
+
+    // endMonth/endYear: apply explicitly-sent values, but also clear them
+    // if isCurrent was just flipped to true in this same request.
+    if (dto.endMonth !== undefined) workExperience.endMonth = dto.endMonth;
+    if (dto.endYear !== undefined) workExperience.endYear = dto.endYear;
+    if (workExperience.isCurrent) {
+      workExperience.endMonth = null;
+      workExperience.endYear = null;
+    }
+
+    // Re-validate against the fully merged entity — catches cases where
+    // only one of isCurrent/endMonth/endYear was sent in this PATCH but
+    // the merged result is inconsistent with what's already stored.
+    this.validateWorkExperienceDates(workExperience);
+
+    const saved = await this.workExperienceRepo.save(workExperience);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async deleteWorkExperience(
+    userId: string,
+    workExperienceId: string,
+  ): Promise<void> {
+    const { workExperience, profile } = await this.getOwnedWorkExperience(
+      userId,
+      workExperienceId,
+    );
+    await this.workExperienceRepo.remove(workExperience);
+    await this.invalidateCache(profile.username);
+  }
+
+  async reorderWorkExperience(
+    userId: string,
+    dto: ReorderWorkExperienceDto,
+  ): Promise<WorkExperience[]> {
+    const submittedIds = dto.workExperienceIds;
+
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException('Profile not found for user.');
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const workExperienceRepo = manager.getRepository(WorkExperience);
+
+      const currentEntries = await workExperienceRepo
+        .createQueryBuilder('w')
+        .where('w.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getMany();
+
+      const currentIds = new Set(currentEntries.map((w) => w.id));
+      const submittedSet = new Set(submittedIds);
+
+      const foreignIds = submittedIds.filter((id) => !currentIds.has(id));
+      if (foreignIds.length > 0) {
+        const foreignRows = await workExperienceRepo.find({
+          where: { id: In(foreignIds) },
+          select: ['id'],
+        });
+        if (foreignRows.length > 0) {
+          throw new ForbiddenException(
+            'One or more workExperienceIds belong to a different profile.',
+          );
+        }
+      }
+
+      const missing = [...currentIds].filter((id) => !submittedSet.has(id));
+      const extra = submittedIds.filter((id) => !currentIds.has(id));
+      if (missing.length > 0 || extra.length > 0) {
+        throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      if (submittedIds.length === 0) {
+        return [];
+      }
+
+      const values = submittedIds
+        .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
+        .join(', ');
+      const params: (string | number)[] = [];
+      submittedIds.forEach((id, i) => params.push(id, i));
+
+      await manager.query(
+        `UPDATE work_experience AS w
+         SET display_order = v.new_order, updated_at = NOW()
+         FROM (VALUES ${values}) AS v(id, new_order)
+         WHERE w.id = v.id`,
+        params,
+      );
+
+      return workExperienceRepo
+        .createQueryBuilder('w')
+        .where('w.profile_id = :profileId', { profileId: profile.id })
+        .orderBy('w.display_order', 'ASC')
+        .getMany();
+    });
+
+    await this.invalidateCache(profile.username);
+    this.logger.log(
+      `Reordered ${result.length} work experience entries for profile ${profile.id}`,
+    );
+    return result;
+  }
+
+  // ─────────────────────────────────────────────
+  // Awards
+  // ─────────────────────────────────────────────
+
+  private async getOwnedAward(
+    userId: string,
+    awardId: string,
+  ): Promise<{ award: Award; profile: Profile }> {
+    const award = await this.awardRepo.findOne({ where: { id: awardId } });
+    if (!award) {
+      throw new NotFoundException(`Award ${awardId} not found.`);
+    }
+
+    const profile = await this.profileRepo.findOne({
+      where: { id: award.profileId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(`Award ${awardId} not found.`);
+    }
+    if (profile.userId !== userId) {
+      throw new ForbiddenException(
+        'Award does not belong to the authenticated user.',
+      );
+    }
+
+    return { award, profile };
+  }
+
+  async createAward(userId: string, dto: CreateAwardDto): Promise<Award> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+
+    const { max } = (await this.awardRepo
+      .createQueryBuilder('a')
+      .select('MAX(a.displayOrder)', 'max')
+      .where('a.profileId = :profileId', { profileId: profile.id })
+      .getRawOne<{ max: number | null }>()) ?? { max: null };
+
+    const award = this.awardRepo.create({
+      profileId: profile.id,
+      title: dto.title,
+      issuer: dto.issuer,
+      awardDate: dto.awardDate,
+      description: dto.description ?? null,
+      credentialUrl: dto.credentialUrl ?? null,
+      displayOrder: (max ?? -1) + 1,
+    });
+
+    const saved = await this.awardRepo.save(award);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async listAwards(userId: string): Promise<Award[]> {
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException(
+        'Profile not found. Please complete onboarding first.',
+      );
+    }
+    return this.awardRepo.find({
+      where: { profileId: profile.id },
+      order: { displayOrder: 'ASC' },
+    });
+  }
+
+  async updateAward(
+    userId: string,
+    awardId: string,
+    dto: UpdateAwardDto,
+  ): Promise<Award> {
+    const { award, profile } = await this.getOwnedAward(userId, awardId);
+
+    if (dto.title !== undefined) award.title = dto.title;
+    if (dto.issuer !== undefined) award.issuer = dto.issuer;
+    if (dto.awardDate !== undefined) award.awardDate = dto.awardDate;
+    if (dto.description !== undefined) award.description = dto.description;
+    if (dto.credentialUrl !== undefined)
+      award.credentialUrl = dto.credentialUrl;
+
+    const saved = await this.awardRepo.save(award);
+    await this.invalidateCache(profile.username);
+    return saved;
+  }
+
+  async deleteAward(userId: string, awardId: string): Promise<void> {
+    const { award, profile } = await this.getOwnedAward(userId, awardId);
+    await this.awardRepo.remove(award);
+    await this.invalidateCache(profile.username);
+  }
+
+  async reorderAwards(userId: string, dto: ReorderAwardsDto): Promise<Award[]> {
+    const submittedIds = dto.awardIds;
+
+    const profile = await this.profileRepo.findOne({
+      where: { userId, deletedAt: IsNull() },
+    });
+    if (!profile) {
+      throw new NotFoundException('Profile not found for user.');
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const awardRepo = manager.getRepository(Award);
+
+      const currentAwards = await awardRepo
+        .createQueryBuilder('a')
+        .where('a.profile_id = :profileId', { profileId: profile.id })
+        .setLock('pessimistic_write')
+        .getMany();
+
+      const currentIds = new Set(currentAwards.map((a) => a.id));
+      const submittedSet = new Set(submittedIds);
+
+      const foreignIds = submittedIds.filter((id) => !currentIds.has(id));
+      if (foreignIds.length > 0) {
+        const foreignRows = await awardRepo.find({
+          where: { id: In(foreignIds) },
+          select: ['id'],
+        });
+        if (foreignRows.length > 0) {
+          throw new ForbiddenException(
+            'One or more awardIds belong to a different profile.',
+          );
+        }
+      }
+
+      const missing = [...currentIds].filter((id) => !submittedSet.has(id));
+      const extra = submittedIds.filter((id) => !currentIds.has(id));
+      if (missing.length > 0 || extra.length > 0) {
+        throw new ComponentSetMismatchException(missing, extra);
+      }
+
+      if (submittedIds.length === 0) {
+        return [];
+      }
+
+      const values = submittedIds
+        .map((_, i) => `($${i * 2 + 1}::uuid, $${i * 2 + 2}::int)`)
+        .join(', ');
+      const params: (string | number)[] = [];
+      submittedIds.forEach((id, i) => params.push(id, i));
+
+      await manager.query(
+        `UPDATE awards AS a
+         SET display_order = v.new_order, updated_at = NOW()
+         FROM (VALUES ${values}) AS v(id, new_order)
+         WHERE a.id = v.id`,
+        params,
+      );
+
+      return awardRepo
+        .createQueryBuilder('a')
+        .where('a.profile_id = :profileId', { profileId: profile.id })
+        .orderBy('a.display_order', 'ASC')
+        .getMany();
+    });
+
+    await this.invalidateCache(profile.username);
+    this.logger.log(
+      `Reordered ${result.length} awards for profile ${profile.id}`,
     );
     return result;
   }
@@ -558,6 +1659,7 @@ export class ProfileService {
     });
 
     await this.invalidateCache(profile.username);
+    await this.redisService.del(`profile:links:${profile.id}`);
 
     return result;
   }
@@ -1054,6 +2156,22 @@ export class ProfileService {
         cta: {
           ...DEFAULT_APPEARANCE.components!.cta,
           ...(saved.components?.cta ?? {}),
+        },
+        workExperience: {
+          ...DEFAULT_APPEARANCE.components!.workExperience,
+          ...(saved.components?.workExperience ?? {}),
+        },
+        education: {
+          ...DEFAULT_APPEARANCE.components!.education,
+          ...(saved.components?.education ?? {}),
+        },
+        skills: {
+          ...DEFAULT_APPEARANCE.components!.skills,
+          ...(saved.components?.skills ?? {}),
+        },
+        awards: {
+          ...DEFAULT_APPEARANCE.components!.awards,
+          ...(saved.components?.awards ?? {}),
         },
       },
     };

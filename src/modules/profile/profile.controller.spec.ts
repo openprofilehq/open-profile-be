@@ -16,6 +16,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
+import { EventsService } from '../events/events.service';
+import { EventType } from '../events/entities/event.entity';
 
 jest.mock('@t3-oss/env-core', () => ({
   createEnv: () => ({}) as never,
@@ -30,12 +32,14 @@ jest.mock('../../config/env', () => ({
 }));
 
 const UUID_V1 = '11111111-1111-4111-8111-111111111111';
+const USER_ID = '22222222-2222-4222-8222-222222222222';
 const USERNAME = 'testuser';
 const NOW = '2026-05-20T12:00:00.000Z';
 
 describe('ProfileController (integration)', () => {
   let app: INestApplication<App>;
   let mockProfileService: Record<string, jest.Mock>;
+  let mockEventsService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     mockProfileService = {
@@ -51,12 +55,17 @@ describe('ProfileController (integration)', () => {
       getDraftState: jest.fn(),
       updateAppearance: jest.fn(),
       getAppearance: jest.fn(),
+      updateVisibility: jest.fn(),
+    };
+    mockEventsService = {
+      recordEvent: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProfileController],
       providers: [
         { provide: ProfileService, useValue: mockProfileService },
+        { provide: EventsService, useValue: mockEventsService },
         {
           provide: APP_PIPE,
           useValue: new ValidationPipe({
@@ -102,7 +111,7 @@ describe('ProfileController (integration)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    await app?.close();
   });
 
   // -----------------------------------------------------------------------
@@ -123,6 +132,7 @@ describe('ProfileController (integration)', () => {
         isPublished: true,
         hasUnpublishedChanges: false,
         isVerified: false,
+        isPublic: true,
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -134,6 +144,7 @@ describe('ProfileController (integration)', () => {
         .expect((res) => {
           expect(res.body.username).toBe(USERNAME);
           expect(res.body.isPublished).toBe(true);
+          expect(res.body.isPublic).toBe(true);
         });
     });
 
@@ -309,6 +320,7 @@ describe('ProfileController (integration)', () => {
         isPublished: true,
         hasUnpublishedChanges: true,
         isVerified: false,
+        isPublic: true,
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -319,6 +331,7 @@ describe('ProfileController (integration)', () => {
         .expect(200)
         .expect((res) => {
           expect(res.body.fullName).toBe('Updated Name');
+          expect(res.body.isPublic).toBe(true);
         });
     });
 
@@ -354,6 +367,7 @@ describe('ProfileController (integration)', () => {
         isPublished: true,
         hasUnpublishedChanges: false,
         isVerified: false,
+        isPublic: true,
         createdAt: NOW,
         updatedAt: NOW,
         components: [],
@@ -364,6 +378,7 @@ describe('ProfileController (integration)', () => {
         .expect(200)
         .expect((res) => {
           expect(res.body.components).toEqual([]);
+          expect(res.body.isPublic).toBe(true);
         });
     });
 
@@ -385,6 +400,8 @@ describe('ProfileController (integration)', () => {
     it('returns 200 with profile data, ETag, and cache headers', async () => {
       const etag = '"mocked-etag"';
       mockProfileService.getPublicProfile.mockResolvedValue({
+        profileId: UUID_V1,
+        userId: USER_ID,
         data: {
           username: USERNAME,
           fullName: 'Test User',
@@ -405,12 +422,22 @@ describe('ProfileController (integration)', () => {
         .expect('X-Cache', 'MISS')
         .expect((res) => {
           expect(res.body.username).toBe(USERNAME);
+          expect(res.body).not.toHaveProperty('isPublic');
         });
+      expect(mockEventsService.recordEvent).toHaveBeenCalledWith({
+        eventType: EventType.PROFILE_VIEWED,
+        profileId: UUID_V1,
+        actorId: undefined,
+        anonymousId: expect.any(String),
+        dedupKey: expect.any(String),
+      });
     });
 
     it('returns 304 when ETag matches If-None-Match header', async () => {
       const etag = '"matching-etag"';
       mockProfileService.getPublicProfile.mockResolvedValue({
+        profileId: UUID_V1,
+        userId: USER_ID,
         data: {
           username: USERNAME,
           fullName: 'Test User',
@@ -427,6 +454,8 @@ describe('ProfileController (integration)', () => {
         .get(`/api/v1/profiles/${USERNAME}`)
         .set('If-None-Match', etag)
         .expect(304);
+
+      expect(mockEventsService.recordEvent).not.toHaveBeenCalled();
     });
 
     it('returns 404 when profile not found', async () => {
@@ -732,6 +761,50 @@ describe('ProfileController (integration)', () => {
       await request(app.getHttpServer())
         .patch('/api/v1/profiles/appearance')
         .send({ unknownField: 'something' })
+        .expect(422);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // PATCH /api/v1/profiles/me/visibility
+  // -----------------------------------------------------------------------
+  describe('PATCH /api/v1/profiles/me/visibility', () => {
+    it('returns 200 with the updated visibility state', async () => {
+      mockProfileService.updateVisibility.mockResolvedValue({
+        isPublic: false,
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: false })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.isPublic).toBe(false);
+        });
+    });
+
+    it('returns 404 when the caller has no profile', async () => {
+      mockProfileService.updateVisibility.mockRejectedValue(
+        new NotFoundException('Profile not found'),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: false })
+        .expect(404);
+    });
+
+    it('returns 422 when isPublic is not a boolean', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: 'yes' })
+        .expect(422);
+    });
+
+    it('returns 422 for unknown fields (forbidNonWhitelisted)', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/profiles/me/visibility')
+        .send({ isPublic: false, extra: 'field' })
         .expect(422);
     });
   });

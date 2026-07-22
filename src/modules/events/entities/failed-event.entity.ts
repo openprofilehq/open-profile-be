@@ -1,0 +1,32 @@
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  Index,
+} from 'typeorm';
+
+@Entity('failed_events')
+@Index('IDX_failed_events_resolved', ['resolved'])
+export class FailedEvent {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'jsonb' })
+  payload: Record<string, unknown>;
+
+  @Column()
+  errorMessage: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  errorCode: string | null;
+
+  @Column({ default: 0 })
+  attemptCount: number;
+
+  @Column({ default: false })
+  resolved: boolean;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  failedAt: Date;
+}
