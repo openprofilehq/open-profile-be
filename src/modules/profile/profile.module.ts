@@ -9,13 +9,28 @@ import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
 import { UsersModule } from '../users/users.module';
 import { UsernamesModule } from '../usernames/usernames.module';
+import { EventsModule } from '../events/events.module';
+import { Skill } from './entities/skill.entity';
+import { Education } from './entities/education.entity';
+import { WorkExperience } from './entities/work-experience.entity';
+import { Award } from './entities/award.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Profile, ProfileComponent, ProfileDraft, User]),
+    TypeOrmModule.forFeature([
+      Profile,
+      ProfileComponent,
+      ProfileDraft,
+      User,
+      Skill,
+      Education,
+      WorkExperience,
+      Award,
+    ]),
     RedisModule,
     UsersModule,
     UsernamesModule,
+    EventsModule,
   ],
   controllers: [ProfileController],
   providers: [ProfileService],

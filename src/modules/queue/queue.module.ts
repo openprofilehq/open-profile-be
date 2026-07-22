@@ -10,6 +10,9 @@ import { bullConfig } from './config/bull.config';
     BullModule.registerQueue({
       name: QUEUE_NAMES.EMAIL,
     }),
+    BullModule.registerQueue({
+      name: QUEUE_NAMES.ANNOUNCEMENT,
+    }),
   ],
   providers: [QueueService],
   exports: [BullModule, QueueService],

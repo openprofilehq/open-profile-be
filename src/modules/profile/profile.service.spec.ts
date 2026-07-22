@@ -22,6 +22,10 @@ import dns from 'node:dns/promises';
 import { ProfileService } from './profile.service';
 import { Profile } from './entities/profile.entity';
 import { ProfileComponent } from './entities/profile-component.entity';
+import { Skill } from './entities/skill.entity';
+import { Education } from './entities/education.entity';
+import { WorkExperience } from './entities/work-experience.entity';
+import { Award } from './entities/award.entity';
 import { ProfileDraft } from './entities/profile-draft.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { RedisService } from '../../common/redis/redis.service';
@@ -62,6 +66,7 @@ const mockProfile = {
   ctaUrl: null,
   isPublished: true,
   isSearchable: true,
+  isPublic: true,
   isVerified: false,
   hasUnpublishedChanges: false,
   createdAt: NOW,
@@ -139,6 +144,10 @@ describe('ProfileService', () => {
   let service: ProfileService;
   let profileRepo: Record<string, jest.Mock>;
   let componentRepo: Record<string, jest.Mock>;
+  let skillRepo: Record<string, jest.Mock>;
+  let educationRepo: Record<string, jest.Mock>;
+  let workExperienceRepo: Record<string, jest.Mock>;
+  let awardRepo: Record<string, jest.Mock>;
   let draftRepo: Record<string, jest.Mock>;
   let userRepo: Record<string, jest.Mock>;
   let redisService: Record<string, jest.Mock>;
@@ -154,9 +163,45 @@ describe('ProfileService', () => {
     };
 
     componentRepo = {
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    skillRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    educationRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    workExperienceRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+
+    awardRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      remove: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
 
@@ -202,6 +247,28 @@ describe('ProfileService', () => {
     };
     const txComponentRepo = {
       find: jest.fn(),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txSkillRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txEducationRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txWorkExperienceRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    };
+    const txAwardRepo = {
+      find: jest.fn(),
+      save: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
 
@@ -212,6 +279,10 @@ describe('ProfileService', () => {
         if (entity === User) return txUserRepo;
         if (entity === ProfileDraft) return txDraftRepo;
         if (entity === ProfileComponent) return txComponentRepo;
+        if (entity === Skill) return txSkillRepo;
+        if (entity === Education) return txEducationRepo;
+        if (entity === WorkExperience) return txWorkExperienceRepo;
+        if (entity === Award) return txAwardRepo;
         return {};
       }),
     };
@@ -230,6 +301,13 @@ describe('ProfileService', () => {
           provide: getRepositoryToken(ProfileComponent),
           useValue: componentRepo,
         },
+        { provide: getRepositoryToken(Skill), useValue: skillRepo },
+        { provide: getRepositoryToken(Education), useValue: educationRepo },
+        {
+          provide: getRepositoryToken(WorkExperience),
+          useValue: workExperienceRepo,
+        },
+        { provide: getRepositoryToken(Award), useValue: awardRepo },
         {
           provide: getRepositoryToken(ProfileDraft),
           useValue: draftRepo,
@@ -426,6 +504,7 @@ describe('ProfileService', () => {
         where: {
           username: USERNAME,
           isPublished: true,
+          isPublic: true,
           deletedAt: IsNull(),
         },
         relations: ['user'],
@@ -435,6 +514,7 @@ describe('ProfileService', () => {
       expect(result.data.username).toBe(USERNAME);
       expect(result.fromCache).toBe(false);
       expect(result.etag).toBeTruthy();
+      expect(result.data).not.toHaveProperty('isPublic');
     });
 
     it('caches 404 on cache miss when profile not found', async () => {
@@ -465,6 +545,48 @@ describe('ProfileService', () => {
 
       expect(redisService.del).not.toHaveBeenCalled();
     });
+
+    it('skips the cache write when a race re-check finds the profile no longer public', async () => {
+      redisService.get.mockResolvedValue(null);
+      redisService.set.mockResolvedValue(true);
+      profileRepo.findOne
+        .mockResolvedValueOnce({ ...mockProfile, user: { id: USER_ID } }) // initial read
+        .mockResolvedValueOnce({
+          isPublished: true,
+          isPublic: false,
+          deletedAt: null,
+        } as Profile); // flags re-check: toggled private mid-flight
+
+      const result = await service.getPublicProfile(USERNAME);
+
+      // Only the single-flight lock was set — the profile cache write itself
+      // was skipped.
+      expect(redisService.set).toHaveBeenCalledTimes(1);
+      expect(result.data.username).toBe(USERNAME);
+      expect(result.fromCache).toBe(false);
+    });
+
+    it('writes the cache when the race re-check confirms the profile is still public', async () => {
+      redisService.get.mockResolvedValue(null);
+      redisService.set.mockResolvedValue(true);
+      profileRepo.findOne
+        .mockResolvedValueOnce({ ...mockProfile, user: { id: USER_ID } }) // initial read
+        .mockResolvedValueOnce({
+          isPublished: true,
+          isPublic: true,
+          deletedAt: null,
+        } as Profile); // flags re-check: still public
+
+      await service.getPublicProfile(USERNAME);
+
+      expect(redisService.set).toHaveBeenCalledTimes(2);
+      expect(redisService.set).toHaveBeenNthCalledWith(
+        2,
+        `profile:${USERNAME}`,
+        expect.any(String),
+        expect.any(Number),
+      );
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -489,6 +611,10 @@ describe('ProfileService', () => {
         links: { ...defaultStyle },
         projects: { ...defaultStyle },
         cta: { ...defaultStyle },
+        workExperience: { ...defaultStyle },
+        education: { ...defaultStyle },
+        skills: { ...defaultStyle },
+        awards: { ...defaultStyle },
       },
     };
 
@@ -536,6 +662,10 @@ describe('ProfileService', () => {
           links: { ...savedStyle },
           projects: { ...savedStyle },
           cta: { ...savedStyle },
+          workExperience: { ...defaultStyle },
+          education: { ...defaultStyle },
+          skills: { ...defaultStyle },
+          awards: { ...defaultStyle },
         },
       });
     });
@@ -601,6 +731,18 @@ describe('ProfileService', () => {
         NotFoundException,
       );
     });
+
+    it('exposes isPublic on the owner-facing dashboard response', async () => {
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        isPublic: false,
+      });
+      componentRepo.find.mockResolvedValue([]);
+
+      const result = await service.getDashboardProfile(USER_ID);
+
+      expect(result.isPublic).toBe(false);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -656,6 +798,82 @@ describe('ProfileService', () => {
       await expect(
         service.patchComponent(USER_ID, COMPONENT_ID, patchDto),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // updateVisibility
+  // ---------------------------------------------------------------------------
+  describe('updateVisibility', () => {
+    it('persists the flag, invalidates cache, and returns the new state', async () => {
+      profileRepo.findOne.mockResolvedValue({ ...mockProfile, isPublic: true });
+      profileRepo.save.mockImplementation((p: Partial<Profile>) =>
+        Promise.resolve(p),
+      );
+
+      const result = await service.updateVisibility(USER_ID, false);
+
+      expect(profileRepo.findOne).toHaveBeenCalledWith({
+        where: { userId: USER_ID, deletedAt: IsNull() },
+      });
+      expect(profileRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ isPublic: false }),
+      );
+      expect(redisService.del).toHaveBeenCalledWith(`profile:${USERNAME}`);
+      expect(result).toEqual({ isPublic: false });
+    });
+
+    it('throws NotFoundException when the caller has no profile', async () => {
+      profileRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.updateVisibility(USER_ID, false)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(redisService.del).not.toHaveBeenCalled();
+    });
+
+    it('short-circuits when re-setting the current value: no save, no cache invalidation', async () => {
+      profileRepo.findOne.mockResolvedValue({ ...mockProfile, isPublic: true });
+
+      const result = await service.updateVisibility(USER_ID, true);
+
+      expect(profileRepo.save).not.toHaveBeenCalled();
+      expect(redisService.del).not.toHaveBeenCalled();
+      expect(result).toEqual({ isPublic: true });
+    });
+
+    it('toggling to private makes the next public-route call miss the cache and 404, never serving the stale positive cache', async () => {
+      // A prior request populated the positive cache for this username.
+      profileRepo.findOne.mockResolvedValueOnce({
+        ...mockProfile,
+        isPublic: true,
+      });
+      profileRepo.save.mockImplementation((p: Partial<Profile>) =>
+        Promise.resolve(p),
+      );
+
+      await service.updateVisibility(USER_ID, false);
+      expect(redisService.del).toHaveBeenCalledWith(`profile:${USERNAME}`);
+
+      // Next public-route read: the cache key is gone (deleted above), so
+      // Redis must miss and the DB filter (now isPublic: true) excludes the
+      // now-private row.
+      redisService.get.mockResolvedValue(null);
+      profileRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.getPublicProfile(USERNAME)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(redisService.get).toHaveBeenCalledWith(`profile:${USERNAME}`);
+      expect(profileRepo.findOne).toHaveBeenCalledWith({
+        where: {
+          username: USERNAME,
+          isPublished: true,
+          isPublic: true,
+          deletedAt: IsNull(),
+        },
+        relations: ['user'],
+      });
     });
   });
 

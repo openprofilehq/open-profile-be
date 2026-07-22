@@ -20,6 +20,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -36,6 +37,8 @@ import { PasswordChangedEmailData } from '../mail/interfaces/password-changed-em
 import { AccountLockedEmailData } from '../mail/interfaces/account-locked-email.interface';
 import { NewIpLoginEmailData } from '../mail/interfaces/new-ip-login-email.interface';
 import { GoogleUser } from './interfaces/google.interface';
+import { EventsService } from '../events/events.service';
+import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
 
 const FORGOT_PASSWORD_GENERIC_MSG =
   'If an account exists for this email, a verification code has been sent.';
@@ -77,6 +80,7 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly redisService: RedisService,
     private readonly tokenService: TokenService,
+    private readonly eventsService: EventsService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterSuccessResponse> {
@@ -157,20 +161,7 @@ export class AuthService {
       });
     }
 
-    if (user.authProvider !== AuthProvider.EMAIL) {
-      throw new BadRequestException({
-        error: 'WRONG_PROVIDER',
-        message: `This account was created with ${
-          user.authProvider === AuthProvider.GOOGLE
-            ? 'Google'
-            : user.authProvider
-        }. Please use the Continue with ${
-          user.authProvider === AuthProvider.GOOGLE
-            ? 'Google'
-            : user.authProvider
-        } button.`,
-      });
-    }
+    this.assertEmailProvider(user);
 
     if (!user.isVerified) {
       await this.usersService.clearOtp(user.id);
@@ -261,6 +252,7 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+    this.mergeAnonymousIdentityIfPresent(req, user.id);
 
     this.logger.debug(
       `[login] userId=${user.id} authProvider=${user.authProvider} tokensGenerated=true`,
@@ -468,16 +460,88 @@ export class AuthService {
 
     await this.tokenService.invalidateAllRefreshTokens(user.id);
 
-    await this.queueService.addJob<PasswordChangedEmailData>(
-      QUEUE_NAMES.EMAIL,
-      QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
-      { to: user.email },
-    );
+    try {
+      await this.queueService.addJob<PasswordChangedEmailData>(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
+        { to: user.email },
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue password-changed email for user ${user.id}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
 
     return {
       status: 'success',
       message:
         'Your password has been updated. Please log in with your new password.',
+    };
+  }
+
+  private assertEmailProvider(user: User): void {
+    if (user.authProvider !== AuthProvider.EMAIL) {
+      throw new BadRequestException({
+        error: 'WRONG_PROVIDER',
+        message: `This account was created with ${
+          user.authProvider === AuthProvider.GOOGLE
+            ? 'Google'
+            : user.authProvider
+        }. Please use the Continue with ${
+          user.authProvider === AuthProvider.GOOGLE
+            ? 'Google'
+            : user.authProvider
+        } button.`,
+      });
+    }
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ status: string; message: string }> {
+    const user = await this.usersService.findOne(userId);
+
+    this.assertEmailProvider(user);
+
+    const valid = await argon2.verify(user.password, dto.currentPassword);
+    if (!valid) {
+      throw new BadRequestException({
+        error: 'CURRENT_PASSWORD_INCORRECT',
+        message: 'Your current password is incorrect.',
+      });
+    }
+
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException({
+        error: 'PASSWORD_UNCHANGED',
+        message:
+          'Your new password must be different from your current password.',
+      });
+    }
+
+    await this.usersService.updatePassword(user.id, dto.newPassword);
+
+    await this.tokenService.invalidateAllRefreshTokens(user.id);
+
+    try {
+      await this.queueService.addJob<PasswordChangedEmailData>(
+        QUEUE_NAMES.EMAIL,
+        QUEUE_JOB_NAMES.EMAIL.SEND_PASSWORD_CHANGED,
+        { to: user.email },
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to enqueue password-changed email for user ${user.id}`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
+
+    return {
+      status: 'success',
+      message:
+        'Your password has been changed. All sessions have been signed out and will require logging in again.',
     };
   }
 
@@ -537,6 +601,7 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+    this.mergeAnonymousIdentityIfPresent(req, user.id);
 
     return {
       status: 'success',
@@ -579,10 +644,26 @@ export class AuthService {
     return { user: created, isNewUser };
   }
 
+  private mergeAnonymousIdentityIfPresent(req: Request, userId: string): void {
+    const anonymousId = (req.cookies as Record<string, string> | undefined)?.[
+      ANONYMOUS_ID_COOKIE
+    ];
+
+    if (!anonymousId) return;
+
+    void this.eventsService
+      .mergeAnonymousEvents(anonymousId, userId)
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to merge anonymous events for userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+  }
+
   async loginGoogle(
     user: User,
     ipAddress: string,
-    _req: Request,
+    req: Request,
     res: Response,
   ): Promise<GoogleAuthResponse> {
     this.usersService.logOAuthLogin(user.id, ipAddress, 'google');
@@ -590,6 +671,7 @@ export class AuthService {
     const accessToken = await this.tokenService.generateAccessToken(user);
     const refreshToken = await this.tokenService.generateRefreshToken(user.id);
     this.tokenService.setTokenCookies(res, { accessToken, refreshToken });
+    this.mergeAnonymousIdentityIfPresent(req, user.id);
 
     this.logger.debug(`[loginGoogle] userId=${user.id} tokensGenerated=true`);
 

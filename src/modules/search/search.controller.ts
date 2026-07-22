@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
@@ -33,7 +33,8 @@ export class SearchController {
     description: 'Results per page (default: 5, max: 20).',
     example: 5,
   })
-  search(@Query() dto: SearchQueryDto) {
-    return this.searchService.searchProfiles(dto);
+  search(@Query() dto: SearchQueryDto, @Req() req: Request) {
+    const actorId = (req as Request & { user?: { sub: string } }).user?.sub;
+    return this.searchService.searchProfiles(dto, actorId);
   }
 }

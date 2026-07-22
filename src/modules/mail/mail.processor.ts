@@ -15,6 +15,8 @@ import { renderVerificationOtpEmail } from './templates/verification-otp.templat
 import { renderPasswordChangedEmail } from './templates/password-changed.template';
 import { renderAccountLockedEmail } from './templates/account-locked.template';
 import { renderNewIpLoginEmail } from './templates/new-ip-login.template';
+import { renderNotificationEmail } from './templates/notification.template';
+import { NotificationEmailData } from './interfaces/notification-email.interface';
 
 @Processor(QUEUE_NAMES.EMAIL)
 export class MailProcessor extends WorkerHost {
@@ -52,6 +54,12 @@ export class MailProcessor extends WorkerHost {
             otp: string;
             fullName: string;
           },
+        );
+        break;
+
+      case QUEUE_JOB_NAMES.EMAIL.SEND_NOTIFICATION_EMAIL:
+        await this.handleSendNotificationEmail(
+          job.data as NotificationEmailData,
         );
         break;
 
@@ -104,6 +112,12 @@ export class MailProcessor extends WorkerHost {
     const html = renderVerificationOtpEmail(data.fullName, data.otp);
 
     await this.mailService.sendEmail(data.to, OTP_EMAIL_SUBJECT, html);
+  }
+
+  private async handleSendNotificationEmail(data: NotificationEmailData) {
+    const { to, title, body } = data;
+    const html = renderNotificationEmail(title, body);
+    await this.mailService.sendEmail(to, title, html);
   }
 
   @OnWorkerEvent('completed')

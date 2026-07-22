@@ -17,6 +17,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { EventsModule } from '../events/events.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { RefreshToken } from './entities/refresh-token.entity';
     QueueModule,
     RateLimiterModule,
     RedisModule,
+    EventsModule,
   ],
   controllers: [AuthController],
   providers: [
