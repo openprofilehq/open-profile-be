@@ -38,6 +38,8 @@ describe('UsersController (integration)', () => {
       getSettings: jest.fn(),
       getBillingInfo: jest.fn(),
       updateEmail: jest.fn(),
+      getPreferences: jest.fn(),
+      updatePreferences: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -240,6 +242,109 @@ describe('UsersController (integration)', () => {
   });
 
   // -----------------------------------------------------------------------
+  // GET/PATCH /api/v1/users/me/preferences
+  // -----------------------------------------------------------------------
+  describe('GET /api/v1/users/me/preferences', () => {
+    it('returns 200 with schema defaults, scoped to the caller', async () => {
+      mockUsersService.getPreferences.mockResolvedValue({
+        mode: 'system',
+        colorTheme: 'default',
+      });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/users/me/preferences')
+        .expect(200)
+        .expect((res) => {
+          expect(mockUsersService.getPreferences).toHaveBeenCalledWith(USER_ID);
+          expect(res.body).toEqual({ mode: 'system', colorTheme: 'default' });
+        });
+    });
+  });
+
+  describe('PATCH /api/v1/users/me/preferences', () => {
+    it('returns 200 with the full merged object on a valid patch', async () => {
+      mockUsersService.updatePreferences.mockResolvedValue({
+        mode: 'dark',
+        colorTheme: 'default',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/users/me/preferences')
+        .send({ mode: 'dark' })
+        .expect(200)
+        .expect((res) => {
+          expect(mockUsersService.updatePreferences).toHaveBeenCalledWith(
+            USER_ID,
+            { mode: 'dark' },
+          );
+          expect(res.body).toEqual({ mode: 'dark', colorTheme: 'default' });
+        });
+    });
+
+    it('returns 422 for a mode outside the enum, and never calls the service', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/users/me/preferences')
+        .send({ mode: 'ultra-dark' })
+        .expect(422);
+
+      expect(mockUsersService.updatePreferences).not.toHaveBeenCalled();
+    });
+
+    it('returns 422 for an unknown top-level key, and never calls the service', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/v1/users/me/preferences')
+        .send({ mode: 'dark', fontSize: 'large' })
+        .expect(422);
+
+      expect(mockUsersService.updatePreferences).not.toHaveBeenCalled();
+    });
+
+    it('round-trips: defaults on GET, then PATCH persists, then GET reflects it', async () => {
+      let stored: { mode: string; colorTheme: string } = {
+        mode: 'system',
+        colorTheme: 'default',
+      };
+      mockUsersService.getPreferences.mockImplementation(() =>
+        Promise.resolve(stored),
+      );
+      mockUsersService.updatePreferences.mockImplementation(
+        (_userId: string, dto: Partial<typeof stored>) => {
+          // The real ValidationPipe transform sets every declared DTO
+          // field as an own key, so an omitted field arrives as
+          // `{ colorTheme: undefined }` rather than simply absent.
+          const definedEntries = Object.entries(dto).filter(
+            ([, v]) => v !== undefined,
+          );
+          stored = { ...stored, ...Object.fromEntries(definedEntries) };
+          return Promise.resolve(stored);
+        },
+      );
+
+      await request(app.getHttpServer())
+        .get('/api/v1/users/me/preferences')
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({ mode: 'system', colorTheme: 'default' });
+        });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/users/me/preferences')
+        .send({ mode: 'dark' })
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({ mode: 'dark', colorTheme: 'default' });
+        });
+
+      await request(app.getHttpServer())
+        .get('/api/v1/users/me/preferences')
+        .expect(200)
+        .expect((res) => {
+          expect(res.body).toEqual({ mode: 'dark', colorTheme: 'default' });
+        });
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Guard audit — no controller spec in this repo exercises a real 401
   // through JwtAuthGuard (every one that touches it overrides canActivate
   // to always succeed), and there is no guard-level unit test either.
@@ -249,7 +354,7 @@ describe('UsersController (integration)', () => {
   // enforcement, so in the real app JwtAuthGuard will run for both.
   // -----------------------------------------------------------------------
   describe('guard enforcement (decorator audit)', () => {
-    it('does not mark me/settings, me/billing, or me/email as public', () => {
+    it('does not mark me/settings, me/billing, me/email, or me/preferences as public', () => {
       const reflector = new Reflector();
       const isSettingsPublic = reflector.get(
         IS_PUBLIC_KEY,
@@ -263,10 +368,42 @@ describe('UsersController (integration)', () => {
         IS_PUBLIC_KEY,
         UsersController.prototype.updateEmail,
       );
+      const isGetPreferencesPublic = reflector.get(
+        IS_PUBLIC_KEY,
+        UsersController.prototype.getPreferences,
+      );
+      const isUpdatePreferencesPublic = reflector.get(
+        IS_PUBLIC_KEY,
+        UsersController.prototype.updatePreferences,
+      );
 
       expect(isSettingsPublic).toBeUndefined();
       expect(isBillingPublic).toBeUndefined();
       expect(isEmailPublic).toBeUndefined();
+      expect(isGetPreferencesPublic).toBeUndefined();
+      expect(isUpdatePreferencesPublic).toBeUndefined();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Cross-user scoping — me/preferences takes no id/path param, so the
+  // only identity input is @CurrentUser('sub'); asserting the service is
+  // always invoked with the authenticated caller's id (never anything
+  // from the request body or query) is the full scoping guarantee here.
+  // -----------------------------------------------------------------------
+  describe('cross-user scoping', () => {
+    it('ignores any userId supplied in the PATCH body and uses only the authenticated caller', async () => {
+      mockUsersService.updatePreferences.mockResolvedValue({
+        mode: 'dark',
+        colorTheme: 'default',
+      });
+
+      await request(app.getHttpServer())
+        .patch('/api/v1/users/me/preferences')
+        .send({ mode: 'dark', userId: 'someone-elses-id' })
+        .expect(422);
+
+      expect(mockUsersService.updatePreferences).not.toHaveBeenCalled();
     });
   });
 });
