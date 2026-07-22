@@ -70,5 +70,6 @@ notes.md
 # generated release output (do not commit)
 release.md
 branch_structure.json
-temp_auto_push.bat
-temp_interactive_push.bat
+
+.vscode/
+public/fonts/
