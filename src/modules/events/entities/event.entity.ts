@@ -16,6 +16,11 @@ export enum EventType {
 @Index(['profileId', 'occurredAt'])
 @Index(['eventType', 'occurredAt'])
 @Index('IDX_events_anonymousId', ['anonymousId'])
+@Index('IDX_events_profileId_eventType_occurredAt', [
+  'profileId',
+  'eventType',
+  'occurredAt',
+])
 export class Event {
   @PrimaryGeneratedColumn('uuid')
   id: string;

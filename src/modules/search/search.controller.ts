@@ -1,9 +1,10 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { SearchQueryDto } from './dto/search-query.dto';
 import { SearchService } from './search.service';
+import type { Request, Response } from 'express';
 
 @ApiTags('search')
 @Controller({ path: 'search', version: '1' })
@@ -33,8 +34,12 @@ export class SearchController {
     description: 'Results per page (default: 5, max: 20).',
     example: 5,
   })
-  search(@Query() dto: SearchQueryDto, @Req() req: Request) {
+  search(
+    @Query() dto: SearchQueryDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const actorId = (req as Request & { user?: { sub: string } }).user?.sub;
-    return this.searchService.searchProfiles(dto, actorId);
+    return this.searchService.searchProfiles(dto, actorId, req, res);
   }
 }

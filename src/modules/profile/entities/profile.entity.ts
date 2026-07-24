@@ -102,14 +102,14 @@ export class Profile {
   @OneToMany(() => Award, (award) => award.profile)
   awards: Award[];
 
+  @Column({ name: 'view_count', type: 'int', default: 0 })
+  viewCount: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
-
-  @Column({ type: 'int', name: 'view_count', default: 0 })
-  viewCount: number;
 
   @DeleteDateColumn({ name: 'deleted_at' })
   deletedAt: Date | null;

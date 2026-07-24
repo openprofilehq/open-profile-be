@@ -10,6 +10,7 @@ import { RedisService } from '../../common/redis/redis.service';
 import { writeEventWithRetry } from './utils/event-retry.util';
 import { NotificationService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification-type.enum';
+import { normalizeUrl } from './utils/normalize-url.util';
 
 interface RecordEventParams {
   eventType: EventType;
@@ -163,14 +164,8 @@ export class EventsService {
 
     return new Set(urls);
   }
-
   private normalizeUrl(url: string): string {
-    try {
-      const parsed = new URL(url);
-      return parsed.href.replace(/\/$/, '').toLowerCase();
-    } catch {
-      return url.toLowerCase().replace(/\/$/, '');
-    }
+    return normalizeUrl(url);
   }
 
   async isValidProfileLink(

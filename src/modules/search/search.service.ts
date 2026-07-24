@@ -1,9 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { SearchAction, PaginatedSearchResult } from './actions/search.action';
+import { randomUUID } from 'crypto';
+import type { Request, Response } from 'express';
+import {
+  SearchAction,
+  PaginatedSearchResult,
+  SearchProfileRow,
+} from './actions/search.action';
 import { SearchQueryDto } from './dto/search-query.dto';
 import { RedisService } from '../../common/redis/redis.service';
 import { EventsService } from '../events/events.service';
 import { EventType } from '../events/entities/event.entity';
+import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
+
+type PublicSearchResult = Omit<PaginatedSearchResult, 'results'> & {
+  results: Omit<SearchProfileRow, 'id'>[];
+  searchId: string;
+};
 
 const SEARCH_CACHE_TTL_SECONDS = 300;
 const SEARCH_CACHE_PREFIX = 'search:';
@@ -21,23 +33,33 @@ export class SearchService {
   async searchProfiles(
     dto: SearchQueryDto,
     actorId?: string,
-  ): Promise<PaginatedSearchResult> {
+    req?: Request,
+    res?: Response,
+  ): Promise<PublicSearchResult> {
     const cacheKey = `${SEARCH_CACHE_PREFIX}${dto.q.toLowerCase()}:page=${dto.page}:limit=${dto.limit}`;
+    const anonymousId =
+      !actorId && req && res ? getOrSetAnonymousId(req, res) : undefined;
+    const searchId = randomUUID();
 
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
         this.logger.debug(`Cache hit: ${cacheKey}`);
         const result = JSON.parse(cached) as PaginatedSearchResult;
-        // fire-and-forget even on cache hit
+        const resultProfileIds = result.results.map((r) => r.id);
         void this.eventsService
           .recordEvent({
             eventType: EventType.SEARCH_PERFORMED,
             actorId: actorId ?? undefined,
-            metadata: { query: dto.q },
+            anonymousId,
+            metadata: { query: dto.q, resultProfileIds, searchId },
           })
           .catch(() => {});
-        return result;
+        return {
+          ...result,
+          results: result.results.map(({ id: _id, ...rest }) => rest),
+          searchId,
+        };
       }
     } catch (error) {
       this.logger.warn(
@@ -49,13 +71,14 @@ export class SearchService {
     this.logger.debug(`Cache miss: ${cacheKey}`);
 
     const result = await this.searchAction.searchProfiles(dto);
+    const resultProfileIds = result.results.map((r) => r.id);
 
-    // fire-and-forget
     void this.eventsService
       .recordEvent({
         eventType: EventType.SEARCH_PERFORMED,
         actorId: actorId ?? undefined,
-        metadata: { query: dto.q },
+        anonymousId,
+        metadata: { query: dto.q, resultProfileIds, searchId },
       })
       .catch(() => {});
     try {
@@ -71,7 +94,11 @@ export class SearchService {
       );
     }
 
-    return result;
+    return {
+      ...result,
+      results: result.results.map(({ id: _id, ...rest }) => rest),
+      searchId,
+    };
   }
 
   async invalidateSearchCache(q: string): Promise<void> {
