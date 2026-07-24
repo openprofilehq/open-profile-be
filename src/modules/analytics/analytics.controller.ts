@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AnalyticsRangeQueryDto } from './dto/analytics-range-query.dto';
+import { AnalyticsDateRangeQueryDto } from './dto/analytics-range-query.dto';
 
 interface AuthRequest extends Request {
   user: {
@@ -15,7 +15,6 @@ interface AuthRequest extends Request {
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
-
   @Get('profile-views')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT')
@@ -24,12 +23,11 @@ export class AnalyticsController {
   })
   async getProfileViews(
     @Req() req: AuthRequest,
-    @Query() { range }: AnalyticsRangeQueryDto,
+    @Query() query: AnalyticsDateRangeQueryDto,
   ) {
     const userId = req.user.id;
-    return this.analyticsService.getProfileViewStats(userId, range);
+    return this.analyticsService.getProfileViewStats(userId, query);
   }
-
   @Get('link-clicks')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT')
@@ -38,10 +36,9 @@ export class AnalyticsController {
   })
   async getLinkClicks(
     @Req() req: AuthRequest,
-    @Query() { range }: AnalyticsRangeQueryDto,
+    @Query() query: AnalyticsDateRangeQueryDto,
   ) {
-    const userId = req.user.id;
-    return this.analyticsService.getLinkClickStats(userId, range);
+    return this.analyticsService.getLinkClickStats(req.user.id, query);
   }
 
   @Get('search-conversions')
@@ -53,9 +50,8 @@ export class AnalyticsController {
   })
   async getSearchConversions(
     @Req() req: AuthRequest,
-    @Query() { range }: AnalyticsRangeQueryDto,
+    @Query() query: AnalyticsDateRangeQueryDto,
   ) {
-    const userId = req.user.id;
-    return this.analyticsService.getSearchConversionStats(userId, range);
+    return this.analyticsService.getSearchConversionStats(req.user.id, query);
   }
 }

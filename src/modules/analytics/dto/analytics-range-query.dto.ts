@@ -1,16 +1,57 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional } from 'class-validator';
+import { IsDateString, IsOptional, Validate } from 'class-validator';
+import {
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
+} from 'class-validator';
 
-export const ANALYTICS_RANGES = ['7d', '30d', '90d'] as const;
-export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
+const DEFAULT_RANGE_DAYS = 30;
 
-export class AnalyticsRangeQueryDto {
+@ValidatorConstraint({ name: 'endDateAfterStartDate', async: false })
+export class EndDateAfterStartDateConstraint implements ValidatorConstraintInterface {
+  validate(endDate: string, args: ValidationArguments) {
+    const obj = args.object as AnalyticsDateRangeQueryDto;
+    if (!obj.startDate || !endDate) return true; // let @IsDateString handle format errors
+    return new Date(endDate) >= new Date(obj.startDate);
+  }
+  defaultMessage() {
+    return 'endDate must be on or after startDate';
+  }
+}
+
+export class AnalyticsDateRangeQueryDto {
   @ApiPropertyOptional({
-    enum: ANALYTICS_RANGES,
-    default: '30d',
-    description: 'Time range for the query window',
+    description:
+      'Start of the date range (ISO 8601, e.g. 2026-06-23). Defaults to 30 days before endDate.',
+    example: '2026-06-23',
   })
   @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range: AnalyticsRange = '30d';
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'End of the date range (ISO 8601, e.g. 2026-07-23). Defaults to today.',
+    example: '2026-07-23',
+  })
+  @IsOptional()
+  @IsDateString()
+  @Validate(EndDateAfterStartDateConstraint)
+  endDate?: string;
+}
+
+export function resolveDateRange(dto: AnalyticsDateRangeQueryDto): {
+  start: Date;
+  end: Date;
+} {
+  const end = dto.endDate ? new Date(dto.endDate) : new Date();
+  end.setUTCHours(23, 59, 59, 999);
+
+  const start = dto.startDate
+    ? new Date(dto.startDate)
+    : new Date(end.getTime() - DEFAULT_RANGE_DAYS * 24 * 60 * 60 * 1000);
+  start.setUTCHours(0, 0, 0, 0);
+
+  return { start, end };
 }

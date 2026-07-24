@@ -36,7 +36,7 @@ describe('AnalyticsController', () => {
     );
   });
 
-  it('GET /analytics/profile-views passes the authenticated user id and range through', async () => {
+  it('GET /analytics/profile-views passes the authenticated user id and query through', async () => {
     const result = {
       total: 20,
       range_total: 5,
@@ -45,34 +45,30 @@ describe('AnalyticsController', () => {
     };
     analyticsService.getProfileViewStats.mockResolvedValue(result);
 
-    await expect(
-      controller.getProfileViews(req, { range: '7d' }),
-    ).resolves.toEqual(result);
+    await expect(controller.getProfileViews(req, {})).resolves.toEqual(result);
 
     expect(analyticsService.getProfileViewStats).toHaveBeenCalledWith(
       'user-id',
-      '7d',
+      {},
     );
   });
 
-  it('GET /analytics/link-clicks passes the authenticated user id and range through', async () => {
+  it('GET /analytics/link-clicks passes the authenticated user id and query through', async () => {
     const result = {
       range_total: 9,
       links: [{ linkUrl: 'https://example.com', clicks: 9 }],
     };
     analyticsService.getLinkClickStats.mockResolvedValue(result);
 
-    await expect(
-      controller.getLinkClicks(req, { range: '90d' }),
-    ).resolves.toEqual(result);
+    await expect(controller.getLinkClicks(req, {})).resolves.toEqual(result);
 
     expect(analyticsService.getLinkClickStats).toHaveBeenCalledWith(
       'user-id',
-      '90d',
+      {},
     );
   });
 
-  it('GET /analytics/search-conversions passes the authenticated user id and range through', async () => {
+  it('GET /analytics/search-conversions passes the authenticated user id and query through', async () => {
     const result = {
       searches_surfaced: 10,
       search_driven_views: 3,
@@ -80,13 +76,52 @@ describe('AnalyticsController', () => {
     };
     analyticsService.getSearchConversionStats.mockResolvedValue(result);
 
-    await expect(
-      controller.getSearchConversions(req, { range: '30d' }),
-    ).resolves.toEqual(result);
+    await expect(controller.getSearchConversions(req, {})).resolves.toEqual(
+      result,
+    );
 
     expect(analyticsService.getSearchConversionStats).toHaveBeenCalledWith(
       'user-id',
-      '30d',
+      {},
+    );
+  });
+
+  it('passes explicit startDate and endDate through to analytics service methods', async () => {
+    const query = {
+      startDate: '2026-07-01',
+      endDate: '2026-07-10',
+    };
+    analyticsService.getProfileViewStats.mockResolvedValue({
+      total: 20,
+      range_total: 5,
+      unique_viewers: 4,
+      daily_breakdown: [],
+    });
+    analyticsService.getLinkClickStats.mockResolvedValue({
+      range_total: 0,
+      links: [],
+    });
+    analyticsService.getSearchConversionStats.mockResolvedValue({
+      searches_surfaced: 0,
+      search_driven_views: 0,
+      conversion_rate: 0,
+    });
+
+    await controller.getProfileViews(req, query);
+    await controller.getLinkClicks(req, query);
+    await controller.getSearchConversions(req, query);
+
+    expect(analyticsService.getProfileViewStats).toHaveBeenCalledWith(
+      'user-id',
+      query,
+    );
+    expect(analyticsService.getLinkClickStats).toHaveBeenCalledWith(
+      'user-id',
+      query,
+    );
+    expect(analyticsService.getSearchConversionStats).toHaveBeenCalledWith(
+      'user-id',
+      query,
     );
   });
 
