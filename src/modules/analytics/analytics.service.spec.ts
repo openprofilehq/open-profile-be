@@ -467,8 +467,20 @@ describe('AnalyticsService', () => {
     it('computes search conversion stats and caches the result on cache miss', async () => {
       const searchesSurfacedQb = createQueryBuilderMock();
       const searchDrivenViewsQb = createQueryBuilderMock();
-      searchesSurfacedQb.getCount.mockResolvedValue(8);
-      searchDrivenViewsQb.getCount.mockResolvedValue(2);
+      searchesSurfacedQb.getRawMany.mockResolvedValue([
+        { searchId: 'search-1' },
+        { searchId: 'search-2' },
+        { searchId: 'search-3' },
+        { searchId: 'search-4' },
+        { searchId: 'search-5' },
+        { searchId: 'search-6' },
+        { searchId: 'search-7' },
+        { searchId: 'search-8' },
+      ]);
+      searchDrivenViewsQb.getRawMany.mockResolvedValue([
+        { referrerSearchId: 'search-1' },
+        { referrerSearchId: 'search-2' },
+      ]);
       eventRepo.createQueryBuilder
         .mockReturnValueOnce(searchesSurfacedQb as never)
         .mockReturnValueOnce(searchDrivenViewsQb as never);
@@ -482,6 +494,10 @@ describe('AnalyticsService', () => {
         search_driven_views: 2,
         conversion_rate: 0.25,
       });
+      expect(searchesSurfacedQb.select).toHaveBeenCalledWith(
+        `e.metadata->>'searchId'`,
+        'searchId',
+      );
       expect(searchesSurfacedQb.where).toHaveBeenCalledWith(
         'e."eventType" = :type',
         { type: EventType.SEARCH_PERFORMED },
@@ -501,6 +517,10 @@ describe('AnalyticsService', () => {
       expect(searchDrivenViewsQb.where).toHaveBeenCalledWith(
         'e."profileId" = :profileId',
         { profileId: 'profile-id' },
+      );
+      expect(searchDrivenViewsQb.select).toHaveBeenCalledWith(
+        `e.metadata->>'referrerSearchId'`,
+        'referrerSearchId',
       );
       expect(searchDrivenViewsQb.andWhere).toHaveBeenCalledWith(
         'e."eventType" = :type',
@@ -522,13 +542,15 @@ describe('AnalyticsService', () => {
         JSON.stringify(result),
         60,
       );
+      expect(searchesSurfacedQb.getRawMany).toHaveBeenCalled();
+      expect(searchDrivenViewsQb.getRawMany).toHaveBeenCalled();
     });
 
     it('returns conversion_rate 0 when no searches surfaced the profile', async () => {
       const searchesSurfacedQb = createQueryBuilderMock();
       const searchDrivenViewsQb = createQueryBuilderMock();
-      searchesSurfacedQb.getCount.mockResolvedValue(0);
-      searchDrivenViewsQb.getCount.mockResolvedValue(0);
+      searchesSurfacedQb.getRawMany.mockResolvedValue([]);
+      searchDrivenViewsQb.getRawMany.mockResolvedValue([]);
       eventRepo.createQueryBuilder
         .mockReturnValueOnce(searchesSurfacedQb as never)
         .mockReturnValueOnce(searchDrivenViewsQb as never);
@@ -549,8 +571,14 @@ describe('AnalyticsService', () => {
     it('falls through to recompute when cached JSON is malformed', async () => {
       const searchesSurfacedQb = createQueryBuilderMock();
       const searchDrivenViewsQb = createQueryBuilderMock();
-      searchesSurfacedQb.getCount.mockResolvedValue(3);
-      searchDrivenViewsQb.getCount.mockResolvedValue(1);
+      searchesSurfacedQb.getRawMany.mockResolvedValue([
+        { searchId: 'search-1' },
+        { searchId: 'search-2' },
+        { searchId: 'search-3' },
+      ]);
+      searchDrivenViewsQb.getRawMany.mockResolvedValue([
+        { referrerSearchId: 'search-2' },
+      ]);
       eventRepo.createQueryBuilder
         .mockReturnValueOnce(searchesSurfacedQb as never)
         .mockReturnValueOnce(searchDrivenViewsQb as never);
@@ -576,8 +604,8 @@ describe('AnalyticsService', () => {
       const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       const searchesSurfacedQb = createQueryBuilderMock();
       const searchDrivenViewsQb = createQueryBuilderMock();
-      searchesSurfacedQb.getCount.mockResolvedValue(0);
-      searchDrivenViewsQb.getCount.mockResolvedValue(0);
+      searchesSurfacedQb.getRawMany.mockResolvedValue([]);
+      searchDrivenViewsQb.getRawMany.mockResolvedValue([]);
       eventRepo.createQueryBuilder
         .mockReturnValueOnce(searchesSurfacedQb as never)
         .mockReturnValueOnce(searchDrivenViewsQb as never);
@@ -602,8 +630,16 @@ describe('AnalyticsService', () => {
       const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       const searchesSurfacedQb = createQueryBuilderMock();
       const searchDrivenViewsQb = createQueryBuilderMock();
-      searchesSurfacedQb.getCount.mockResolvedValue(4);
-      searchDrivenViewsQb.getCount.mockResolvedValue(2);
+      searchesSurfacedQb.getRawMany.mockResolvedValue([
+        { searchId: 'search-1' },
+        { searchId: 'search-2' },
+        { searchId: 'search-3' },
+        { searchId: 'search-4' },
+      ]);
+      searchDrivenViewsQb.getRawMany.mockResolvedValue([
+        { referrerSearchId: 'search-1' },
+        { referrerSearchId: 'search-3' },
+      ]);
       eventRepo.createQueryBuilder
         .mockReturnValueOnce(searchesSurfacedQb as never)
         .mockReturnValueOnce(searchDrivenViewsQb as never);
@@ -623,6 +659,58 @@ describe('AnalyticsService', () => {
         'Redis cache write failed: write failed',
       );
       warnSpy.mockRestore();
+    });
+
+    it('counts one converted search once when it drives multiple profile views', async () => {
+      const searchesSurfacedQb = createQueryBuilderMock();
+      const searchDrivenViewsQb = createQueryBuilderMock();
+      searchesSurfacedQb.getRawMany.mockResolvedValue([
+        { searchId: 'search-1' },
+      ]);
+      searchDrivenViewsQb.getRawMany.mockResolvedValue([
+        { referrerSearchId: 'search-1' },
+        { referrerSearchId: 'search-1' },
+        { referrerSearchId: 'search-1' },
+      ]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(searchesSurfacedQb as never)
+        .mockReturnValueOnce(searchDrivenViewsQb as never);
+      profileRepo.findOne.mockResolvedValue(profile);
+      redisService.get.mockResolvedValue(null);
+
+      const result = await service.getSearchConversionStats('user-id', {});
+
+      expect(result).toEqual({
+        searches_surfaced: 1,
+        search_driven_views: 1,
+        conversion_rate: 1,
+      });
+    });
+
+    it('excludes referrerSearchIds that did not surface this profile in range', async () => {
+      const searchesSurfacedQb = createQueryBuilderMock();
+      const searchDrivenViewsQb = createQueryBuilderMock();
+      searchesSurfacedQb.getRawMany.mockResolvedValue([
+        { searchId: 'search-1' },
+        { searchId: 'search-2' },
+      ]);
+      searchDrivenViewsQb.getRawMany.mockResolvedValue([
+        { referrerSearchId: 'search-1' },
+        { referrerSearchId: 'orphan-search' },
+      ]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(searchesSurfacedQb as never)
+        .mockReturnValueOnce(searchDrivenViewsQb as never);
+      profileRepo.findOne.mockResolvedValue(profile);
+      redisService.get.mockResolvedValue(null);
+
+      const result = await service.getSearchConversionStats('user-id', {});
+
+      expect(result).toEqual({
+        searches_surfaced: 2,
+        search_driven_views: 1,
+        conversion_rate: 0.5,
+      });
     });
   });
 });

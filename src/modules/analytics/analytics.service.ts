@@ -199,30 +199,52 @@ export class AnalyticsService {
         // ignore malformed cache, recompute
       }
     }
-
-    const [searches_surfaced, search_driven_views] = await Promise.all([
+    const [surfacingSearchIds, allReferrerSearchIds] = await Promise.all([
       this.eventRepo
         .createQueryBuilder('e')
+        .select(`e.metadata->>'searchId'`, 'searchId')
         .where('e."eventType" = :type', { type: EventType.SEARCH_PERFORMED })
         .andWhere('e."occurredAt" >= :start', { start })
         .andWhere('e."occurredAt" <= :end', { end })
         .andWhere(`e.metadata->'resultProfileIds' ? :profileId`, {
           profileId: profile.id,
         })
-        .getCount(),
+        .getRawMany<{ searchId: string | null }>(),
       this.eventRepo
         .createQueryBuilder('e')
+        .select(`e.metadata->>'referrerSearchId'`, 'referrerSearchId')
         .where('e."profileId" = :profileId', { profileId: profile.id })
         .andWhere('e."eventType" = :type', { type: EventType.PROFILE_VIEWED })
         .andWhere('e."occurredAt" >= :start', { start })
         .andWhere('e."occurredAt" <= :end', { end })
         .andWhere(`e.metadata->>'referrerSearchId' IS NOT NULL`)
-        .getCount(),
+        .getRawMany<{ referrerSearchId: string | null }>(),
     ]);
+
+    const surfacingSearchIdSet = new Set(
+      surfacingSearchIds
+        .map((row) => row.searchId)
+        .filter((id): id is string => id !== null),
+    );
+
+    const searches_surfaced = surfacingSearchIdSet.size;
+
+    // search_driven_views counts distinct surfacing searchIds that led to at
+    // least one view (not total view count) — this keeps conversion_rate
+    // strictly bounded at [0, 1]: "what fraction of searches that surfaced
+    // this profile resulted in at least one click-through."
+    const convertedSearchIdSet = new Set(
+      allReferrerSearchIds
+        .map((row) => row.referrerSearchId)
+        .filter(
+          (id): id is string => id !== null && surfacingSearchIdSet.has(id),
+        ),
+    );
+
+    const search_driven_views = convertedSearchIdSet.size;
 
     const conversion_rate =
       searches_surfaced > 0 ? search_driven_views / searches_surfaced : 0;
-
     const result: SearchConversionStatsDto = {
       searches_surfaced,
       search_driven_views,
