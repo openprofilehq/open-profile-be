@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { env } from '../../config/env';
 import { Resend } from 'resend';
 import { renderWaitlistEmail } from '../../modules/mail/templates/waitlist.template';
+import { renderInviteEmail } from '../../modules/mail/templates/invite.template';
 
 interface EmailResult {
   success: boolean;
@@ -36,6 +37,28 @@ export class EmailService {
         err instanceof Error ? err.message : 'Failed to send waitlist email';
 
       this.logger.error(`Failed to send email to ${to}:`, message);
+
+      return { success: false, error: message };
+    }
+  }
+
+  async sendInviteEmail(to: string, signupUrl: string): Promise<EmailResult> {
+    try {
+      const html = renderInviteEmail(signupUrl);
+
+      const data = await this.resend.emails.send({
+        from: env.MAIL_FROM,
+        to,
+        subject: "You've been invited to OpenProfile",
+        html,
+      });
+
+      return { success: true, data };
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to send invite email';
+
+      this.logger.error(`Failed to send invite email to ${to}:`, message);
 
       return { success: false, error: message };
     }

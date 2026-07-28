@@ -54,4 +54,17 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getSearchConversionStats(req.user.id, query);
   }
+
+  @Get('invite-conversions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Get invite conversion analytics for the authenticated user',
+  })
+  async getInviteConversions(
+    @Req() req: AuthRequest,
+    @Query() query: AnalyticsDateRangeQueryDto,
+  ) {
+    return this.analyticsService.getInviteConversionStats(req.user.id, query);
+  }
 }

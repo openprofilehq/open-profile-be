@@ -18,6 +18,8 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { EventsModule } from '../events/events.module';
+import { forwardRef } from '@nestjs/common';
+import { InvitesModule } from '../invites/invites.module';
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { EventsModule } from '../events/events.module';
     RateLimiterModule,
     RedisModule,
     EventsModule,
+    forwardRef(() => InvitesModule),
   ],
   controllers: [AuthController],
   providers: [

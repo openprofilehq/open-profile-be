@@ -66,6 +66,10 @@ export const env = createEnv({
       .string()
       .default('10,50,100')
       .transform((val) => val.split(',').map((v) => parseInt(v.trim(), 10))),
+    INVITE_EXPIRY_DAYS: z
+      .string()
+      .default('7')
+      .transform((val) => parseInt(val, 10)),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

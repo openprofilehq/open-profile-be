@@ -27,6 +27,7 @@ import { MailService } from '../mail/mail.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { TokenService } from './services/token.service';
 import { EventsService } from '../events/events.service';
+import { InvitesService } from '../invites/invites.service';
 import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
 import {
   QUEUE_NAMES,
@@ -54,6 +55,7 @@ describe('AuthService', () => {
   let jwtService: Record<string, jest.Mock>;
   let redisService: Record<string, jest.Mock>;
   let eventsService: Record<string, jest.Mock>;
+  let invitesService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     const mockUsersService = {
@@ -93,6 +95,10 @@ describe('AuthService', () => {
       mergeAnonymousEvents: jest.fn().mockResolvedValue(undefined),
     };
 
+    const mockInvitesService = {
+      claimInvite: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -104,6 +110,7 @@ describe('AuthService', () => {
         { provide: RedisService, useValue: mockRedisService },
         { provide: TokenService, useValue: mockTokenService },
         { provide: EventsService, useValue: mockEventsService },
+        { provide: InvitesService, useValue: mockInvitesService },
       ],
     }).compile();
 
@@ -114,6 +121,7 @@ describe('AuthService', () => {
     jwtService = module.get(JwtService);
     redisService = module.get(RedisService);
     eventsService = module.get(EventsService);
+    invitesService = module.get(InvitesService);
     jest.clearAllMocks();
   });
 
@@ -233,6 +241,95 @@ describe('AuthService', () => {
 
       expect(usersService.storeOtpHash).not.toHaveBeenCalled();
       expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyOtp', () => {
+    const verifiedOtpUser = {
+      ...mockUser,
+      role: UserRole.USER,
+      onboardingComplete: false,
+      otpHash: 'stored-otp-hash',
+      otpExpiresAt: new Date(Date.now() + 60_000),
+    } as User;
+
+    const baseDto = {
+      email: mockUser.email,
+      otp: '123456',
+    };
+
+    function buildReqRes() {
+      const req = { cookies: {} } as unknown as Request;
+      const res = {} as unknown as Response;
+      return { req, res };
+    }
+
+    beforeEach(() => {
+      usersService.findByEmail.mockResolvedValue(verifiedOtpUser);
+      usersService.clearOtp.mockResolvedValue(undefined);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      tokenService.generateAccessToken.mockResolvedValue('access-token');
+      tokenService.generateRefreshToken.mockResolvedValue('refresh-token');
+      tokenService.setTokenCookies.mockReturnValue(undefined);
+    });
+
+    it('claims an invite when inviteToken is provided and still returns the standard success response', async () => {
+      const { req, res } = buildReqRes();
+      const dto = { ...baseDto, inviteToken: 'invite-token-123' };
+
+      const result = await service.verifyOtp(dto, req, res);
+
+      expect(invitesService.claimInvite).toHaveBeenCalledWith(
+        dto.inviteToken,
+        verifiedOtpUser.id,
+      );
+      expect(result).toEqual({
+        status: 'success',
+        message: 'Email verified successfully.',
+        user: {
+          id: verifiedOtpUser.id,
+          email: verifiedOtpUser.email,
+          role: verifiedOtpUser.role,
+          onboardingComplete: verifiedOtpUser.onboardingComplete,
+        },
+      });
+    });
+
+    it('logs and still returns the standard success response when invite claiming fails', async () => {
+      const { req, res } = buildReqRes();
+      const dto = { ...baseDto, inviteToken: 'invite-token-123' };
+      invitesService.claimInvite.mockRejectedValue(new Error('claim failed'));
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const result = await service.verifyOtp(dto, req, res);
+
+      expect(invitesService.claimInvite).toHaveBeenCalledWith(
+        dto.inviteToken,
+        verifiedOtpUser.id,
+      );
+      expect(warnSpy).toHaveBeenCalled();
+      expect(result).toEqual({
+        status: 'success',
+        message: 'Email verified successfully.',
+        user: {
+          id: verifiedOtpUser.id,
+          email: verifiedOtpUser.email,
+          role: verifiedOtpUser.role,
+          onboardingComplete: verifiedOtpUser.onboardingComplete,
+        },
+      });
+
+      warnSpy.mockRestore();
+    });
+
+    it('does not claim an invite when inviteToken is omitted', async () => {
+      const { req, res } = buildReqRes();
+
+      await service.verifyOtp(baseDto, req, res);
+
+      expect(invitesService.claimInvite).not.toHaveBeenCalled();
     });
   });
 
