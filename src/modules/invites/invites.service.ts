@@ -88,6 +88,9 @@ export class InvitesService {
         expiresAt: existingInvite.expiresAt,
       });
     }
+    if (existingInvite) {
+      await this.inviteRepository.delete(existingInvite.id);
+    }
 
     const expiryDays =
       this.configService.get<number>('app.inviteExpiryDays') ?? 7;
