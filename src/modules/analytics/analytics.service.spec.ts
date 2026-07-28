@@ -713,4 +713,201 @@ describe('AnalyticsService', () => {
       });
     });
   });
+
+  describe('getInviteConversionStats', () => {
+    it('returns cached JSON without querying events', async () => {
+      const cached = {
+        invites_sent: 5,
+        invites_claimed: 2,
+        conversion_rate: 0.4,
+      };
+      redisService.get.mockResolvedValue(JSON.stringify(cached));
+
+      await expect(
+        service.getInviteConversionStats('user-id', {}),
+      ).resolves.toEqual(cached);
+
+      expect(redisService.get).toHaveBeenCalledWith(
+        `analytics:invite-conversions:user-id:${DEFAULT_RANGE_KEY}`,
+      );
+      expect(eventRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(redisService.set).not.toHaveBeenCalled();
+    });
+
+    it('computes conversion stats, dedupes invite IDs, and caches the result on cache miss', async () => {
+      const sentQb = createQueryBuilderMock();
+      const claimedQb = createQueryBuilderMock();
+      sentQb.getRawMany.mockResolvedValue([
+        { inviteId: 'invite-1' },
+        { inviteId: 'invite-1' }, // duplicate — should count once
+        { inviteId: 'invite-2' },
+        { inviteId: 'invite-3' },
+      ]);
+      claimedQb.getRawMany.mockResolvedValue([
+        { inviteId: 'invite-1' },
+        { inviteId: 'invite-1' }, // duplicate — should count once
+        { inviteId: 'orphan-invite' }, // not in sent set — should be excluded
+      ]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(sentQb as never)
+        .mockReturnValueOnce(claimedQb as never);
+      redisService.get.mockResolvedValue(null);
+
+      const result = await service.getInviteConversionStats('user-id', {});
+
+      expect(result).toEqual({
+        invites_sent: 3,
+        invites_claimed: 1,
+        conversion_rate: 1 / 3,
+      });
+      expect(sentQb.where).toHaveBeenCalledWith('e."eventType" = :type', {
+        type: EventType.INVITE_SENT,
+      });
+      expect(sentQb.andWhere).toHaveBeenCalledWith('e."actorId" = :userId', {
+        userId: 'user-id',
+      });
+      expect(sentQb.andWhere).toHaveBeenCalledWith('e."occurredAt" >= :start', {
+        start: DEFAULT_START,
+      });
+      expect(sentQb.andWhere).toHaveBeenCalledWith('e."occurredAt" <= :end', {
+        end: DEFAULT_END,
+      });
+      expect(claimedQb.where).toHaveBeenCalledWith('e."eventType" = :type', {
+        type: EventType.INVITE_CLAIMED,
+      });
+      expect(claimedQb.andWhere).toHaveBeenCalledWith(
+        `e.metadata->>'inviterUserId' = :userId`,
+        { userId: 'user-id' },
+      );
+      expect(redisService.set).toHaveBeenCalledWith(
+        `analytics:invite-conversions:user-id:${DEFAULT_RANGE_KEY}`,
+        JSON.stringify(result),
+        60,
+      );
+    });
+
+    it('returns conversion_rate 0, not NaN, when no invites were sent', async () => {
+      const sentQb = createQueryBuilderMock();
+      const claimedQb = createQueryBuilderMock();
+      sentQb.getRawMany.mockResolvedValue([]);
+      claimedQb.getRawMany.mockResolvedValue([]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(sentQb as never)
+        .mockReturnValueOnce(claimedQb as never);
+      redisService.get.mockResolvedValue(null);
+
+      const result = await service.getInviteConversionStats('user-id', {});
+
+      expect(result).toEqual({
+        invites_sent: 0,
+        invites_claimed: 0,
+        conversion_rate: 0,
+      });
+      expect(Number.isNaN(result.conversion_rate)).toBe(false);
+    });
+
+    it('excludes claimed invite IDs not present in the sent set within range', async () => {
+      const sentQb = createQueryBuilderMock();
+      const claimedQb = createQueryBuilderMock();
+      sentQb.getRawMany.mockResolvedValue([{ inviteId: 'invite-1' }]);
+      claimedQb.getRawMany.mockResolvedValue([
+        { inviteId: 'invite-1' },
+        { inviteId: 'invite-outside-range' },
+      ]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(sentQb as never)
+        .mockReturnValueOnce(claimedQb as never);
+      redisService.get.mockResolvedValue(null);
+
+      const result = await service.getInviteConversionStats('user-id', {});
+
+      expect(result).toEqual({
+        invites_sent: 1,
+        invites_claimed: 1,
+        conversion_rate: 1,
+      });
+    });
+
+    it('falls through to recompute when cached JSON is malformed', async () => {
+      const sentQb = createQueryBuilderMock();
+      const claimedQb = createQueryBuilderMock();
+      sentQb.getRawMany.mockResolvedValue([
+        { inviteId: 'invite-1' },
+        { inviteId: 'invite-2' },
+      ]);
+      claimedQb.getRawMany.mockResolvedValue([{ inviteId: 'invite-1' }]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(sentQb as never)
+        .mockReturnValueOnce(claimedQb as never);
+      redisService.get.mockResolvedValue('{bad json');
+
+      const result = await service.getInviteConversionStats('user-id', {});
+
+      expect(result).toEqual({
+        invites_sent: 2,
+        invites_claimed: 1,
+        conversion_rate: 0.5,
+      });
+      expect(eventRepo.createQueryBuilder).toHaveBeenCalledTimes(2);
+      expect(redisService.set).toHaveBeenCalledWith(
+        `analytics:invite-conversions:user-id:${DEFAULT_RANGE_KEY}`,
+        JSON.stringify(result),
+        60,
+      );
+    });
+
+    it('logs Redis read errors and recomputes without throwing', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const sentQb = createQueryBuilderMock();
+      const claimedQb = createQueryBuilderMock();
+      sentQb.getRawMany.mockResolvedValue([]);
+      claimedQb.getRawMany.mockResolvedValue([]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(sentQb as never)
+        .mockReturnValueOnce(claimedQb as never);
+      redisService.get.mockRejectedValue(new Error('read failed'));
+
+      await expect(
+        service.getInviteConversionStats('user-id', {}),
+      ).resolves.toEqual({
+        invites_sent: 0,
+        invites_claimed: 0,
+        conversion_rate: 0,
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Redis cache read failed: read failed',
+      );
+      warnSpy.mockRestore();
+    });
+
+    it('logs Redis write errors without throwing', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const sentQb = createQueryBuilderMock();
+      const claimedQb = createQueryBuilderMock();
+      sentQb.getRawMany.mockResolvedValue([
+        { inviteId: 'invite-1' },
+        { inviteId: 'invite-2' },
+      ]);
+      claimedQb.getRawMany.mockResolvedValue([{ inviteId: 'invite-2' }]);
+      eventRepo.createQueryBuilder
+        .mockReturnValueOnce(sentQb as never)
+        .mockReturnValueOnce(claimedQb as never);
+      redisService.get.mockResolvedValue(null);
+      redisService.set.mockRejectedValue(new Error('write failed'));
+
+      await expect(
+        service.getInviteConversionStats('user-id', {}),
+      ).resolves.toEqual({
+        invites_sent: 2,
+        invites_claimed: 1,
+        conversion_rate: 0.5,
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Redis cache write failed: write failed',
+      );
+      warnSpy.mockRestore();
+    });
+  });
 });

@@ -24,12 +24,20 @@ export class EmailService {
     try {
       const html = renderWaitlistEmail();
 
-      const data = await this.resend.emails.send({
+      const { data, error } = await this.resend.emails.send({
         from: env.MAIL_FROM,
         to,
         subject: "You're on the OpenProfile wait list!",
         html,
       });
+
+      if (error) {
+        this.logger.error(
+          `Failed to send invite email to ${to}:`,
+          error.message,
+        );
+        return { success: false, error: error.message };
+      }
 
       return { success: true, data };
     } catch (err: unknown) {

@@ -12,6 +12,8 @@ import {
   ApiOperation,
   ApiTags,
   ApiParam,
+  ApiCreatedResponse,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { InvitesService } from './invites.service';
@@ -20,11 +22,10 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { CreateInviteResponseDto } from './dto/create-invite-response.dto';
 import { InviteLookupResponseDto } from './dto/invite-lookup-response.dto';
+import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 interface AuthRequest extends Request {
-  user: {
-    sub: string;
-  };
+  user: AuthenticatedUser;
 }
 
 @ApiTags('Invites')
@@ -36,6 +37,7 @@ export class InvitesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT')
   @ApiOperation({ summary: 'Generate and send an invite to a recipient email' })
+  @ApiCreatedResponse({ type: CreateInviteResponseDto })
   async createInvite(
     @Req() req: AuthRequest,
     @Body() dto: CreateInviteDto,
@@ -53,6 +55,7 @@ export class InvitesController {
     name: 'token',
     description: 'The invite token from the signup URL',
   })
+  @ApiOkResponse({ type: InviteLookupResponseDto })
   async getInvite(
     @Param('token') token: string,
   ): Promise<InviteLookupResponseDto> {

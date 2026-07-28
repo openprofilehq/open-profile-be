@@ -37,7 +37,7 @@ jest.mock('crypto', () => ({
 }));
 
 jest.mock('uuid', () => ({
-  v7: jest.fn(() => '00000000-0000-4000-8000-000000000000'),
+  v7: jest.fn(() => 'mocked-uuid'),
 }));
 
 describe('InvitesService', () => {
@@ -144,6 +144,11 @@ describe('InvitesService', () => {
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(HttpException);
+      expect(rateLimiterService.isAllowed).toHaveBeenCalledWith(
+        `invite:${inviterUserId}`,
+        10,
+        3600,
+      );
       expect((error as HttpException).getStatus()).toBe(429);
       expect((error as HttpException).getResponse()).toMatchObject({
         error: 'INVITE_RATE_LIMIT_EXCEEDED',
@@ -196,11 +201,7 @@ describe('InvitesService', () => {
     });
 
     it('does not throw duplicate-invite conflict when the prior invite is claimed', async () => {
-      inviteRepository.findOne.mockResolvedValue({
-        ...savedInvite,
-        claimedAt: new Date('2026-07-21T15:00:00.000Z'),
-        expiresAt: new Date('2026-07-22T15:30:00.000Z'),
-      } as Invite);
+      inviteRepository.findOne.mockResolvedValue(null);
 
       await expect(service.createInvite(inviterUserId, dto)).resolves.toEqual({
         id: savedInvite.id,

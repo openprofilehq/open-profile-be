@@ -269,12 +269,13 @@ export class AnalyticsService {
   ): Promise<InviteConversionStatsDto> {
     const { start, end } = resolveDateRange(query);
     const cacheKey = `analytics:invite-conversions:${userId}:${start.toISOString()}:${end.toISOString()}`;
-
     let cached: string | null = null;
     try {
       cached = await this.redis.get(cacheKey);
-    } catch {
-      // ignore cache read errors
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     if (cached) {
       try {

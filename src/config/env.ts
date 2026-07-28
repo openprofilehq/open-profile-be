@@ -69,7 +69,8 @@ export const env = createEnv({
     INVITE_EXPIRY_DAYS: z
       .string()
       .default('7')
-      .transform((val) => parseInt(val, 10)),
+      .transform((val) => parseInt(val, 10))
+      .pipe(z.number().int().positive()),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

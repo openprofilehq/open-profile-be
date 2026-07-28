@@ -39,6 +39,18 @@ export class CreateInviteSystem1784994046406 implements MigrationInterface {
     );
   }
 
+  /**
+   * NOTE: This rollback recreates the pre-invite `events_eventtype_enum`
+   * (PROFILE_VIEWED, LINK_CLICKED, SEARCH_PERFORMED only) and casts the
+   * `events."eventType"` column back onto it.
+   *
+   * This will fail with `invalid input value for enum` if any `events`
+   * rows already have eventType = 'INVITE_SENT' or 'INVITE_CLAIMED',
+   * since those values don't exist in the old enum and Postgres cannot
+   * cast them. This is an inherent limitation of enum-value removal,
+   * not a bug in this migration — it is safe to run only on a fresh
+   * table or after those rows have been deleted/reassigned.
+   */
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       `ALTER TABLE "invites" DROP CONSTRAINT IF EXISTS "FK_af03728911bd28935cbb2642280"`,
@@ -49,9 +61,14 @@ export class CreateInviteSystem1784994046406 implements MigrationInterface {
     await queryRunner.query(
       `DROP INDEX IF EXISTS "public"."IDX_events_profileId_eventType_occurredAt"`,
     );
-    await queryRunner.query(
-      `CREATE TYPE IF NOT EXISTS "public"."events_eventtype_enum_old" AS ENUM('PROFILE_VIEWED', 'LINK_CLICKED', 'SEARCH_PERFORMED')`,
-    );
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        CREATE TYPE "public"."events_eventtype_enum_old" AS ENUM('PROFILE_VIEWED', 'LINK_CLICKED', 'SEARCH_PERFORMED');
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
+    `);
     await queryRunner.query(
       `ALTER TABLE "events" ALTER COLUMN "eventType" TYPE "public"."events_eventtype_enum_old" USING "eventType"::"text"::"public"."events_eventtype_enum_old"`,
     );

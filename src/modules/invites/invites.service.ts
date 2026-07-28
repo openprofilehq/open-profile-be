@@ -3,6 +3,7 @@ import {
   ConflictException,
   InternalServerErrorException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -28,6 +29,8 @@ import { InviteLookupResponseDto } from './dto/invite-lookup-response.dto';
 
 @Injectable()
 export class InvitesService {
+  private readonly logger = new Logger(InvitesService.name);
+
   constructor(
     @InjectRepository(Invite)
     private readonly inviteRepository: Repository<Invite>,
@@ -79,11 +82,7 @@ export class InvitesService {
       order: { createdAt: 'DESC' },
     });
 
-    if (
-      existingInvite &&
-      !existingInvite.claimedAt &&
-      existingInvite.expiresAt > new Date()
-    ) {
+    if (existingInvite && existingInvite.expiresAt > new Date()) {
       throw new ConflictException({
         message: 'You already have a pending invite to this email address.',
         expiresAt: existingInvite.expiresAt,
@@ -101,7 +100,24 @@ export class InvitesService {
       token,
       expiresAt,
     });
-    const saved = await this.inviteRepository.save(invite);
+
+    let saved: Invite;
+    try {
+      saved = await this.inviteRepository.save(invite);
+    } catch (err: unknown) {
+      const isUniqueViolation =
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code?: string }).code === '23505';
+
+      if (isUniqueViolation) {
+        throw new ConflictException({
+          message: 'You already have a pending invite to this email address.',
+        });
+      }
+      throw err;
+    }
 
     const signupUrl = `${env.FRONTEND_URL}/auth/register?email=${encodeURIComponent(dto.recipientEmail)}&invite=${token}`;
 
@@ -125,7 +141,11 @@ export class InvitesService {
         actorId: inviterUserId,
         metadata: { inviteId: saved.id },
       })
-      .catch(() => {});
+      .catch((err: unknown) =>
+        this.logger.warn(
+          `Failed to record INVITE_SENT for inviteId=${saved.id}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
 
     return {
       id: saved.id,
@@ -138,7 +158,8 @@ export class InvitesService {
     const result: { id: string; inviterUserId: string }[] =
       await this.inviteRepository.query(
         `UPDATE invites SET "claimedAt" = now(), "claimedByUserId" = $1
-       WHERE token = $2 AND "claimedAt" IS NULL AND "expiresAt" > now()
+      WHERE token = $2 AND "claimedAt" IS NULL AND "expiresAt" > now()
+       AND "inviterUserId" <> $1
        RETURNING id, "inviterUserId"`,
         [claimantUserId, token],
       );
@@ -157,7 +178,11 @@ export class InvitesService {
         actorId: claimantUserId,
         metadata: { inviteId, inviterUserId },
       })
-      .catch(() => {});
+      .catch((err: unknown) =>
+        this.logger.warn(
+          `Failed to record INVITE_CLAIMED for inviteId=${inviteId}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
 
     void this.notificationService
       .dispatch({
@@ -167,7 +192,11 @@ export class InvitesService {
         body: 'Someone you invited just joined Open Profile.',
         dedupeKey: `INVITE_CLAIMED_${inviteId}`,
       })
-      .catch(() => {});
+      .catch((err: unknown) =>
+        this.logger.warn(
+          `Failed to notify inviter=${inviterUserId} for inviteId=${inviteId}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
   }
 
   async recordInviteClick(token: string): Promise<InviteLookupResponseDto> {
