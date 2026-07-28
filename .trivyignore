@@ -1,8 +1,0 @@
-# GHSA-mh99-v99m-4gvg — brace-expansion DoS
-# Accepted risk: only reachable via minimatch@3.1.5/9.0.9 in TypeORM's
-# migration-file glob discovery, eslint, and jest — dev/build-time
-# tooling only, not exposed to untrusted runtime input.
-# No pre-5.x patched brace-expansion release exists; forcing 5.x
-# breaks minimatch@9.0.9's braceExpand() (see revert commit <hash>).
-# Blocked upstream on TypeORM bumping its glob/minimatch dependency.
-GHSA-mh99-v99m-4gvg
