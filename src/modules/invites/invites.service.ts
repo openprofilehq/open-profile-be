@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { Invite } from './entities/invite.entity';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { CreateInviteResponseDto } from './dto/create-invite-response.dto';
@@ -96,11 +96,12 @@ export class InvitesService {
       this.configService.get<number>('app.inviteExpiryDays') ?? 7;
     const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
     const token = randomUUID();
+    const tokenHash = createHash('sha256').update(token).digest('hex');
 
     const invite = this.inviteRepository.create({
       inviterUserId,
       recipientEmail: dto.recipientEmail,
-      token,
+      token: tokenHash,
       expiresAt,
     });
 
@@ -158,13 +159,14 @@ export class InvitesService {
   }
 
   async claimInvite(token: string, claimantUserId: string): Promise<void> {
+    const tokenHash = createHash('sha256').update(token).digest('hex');
     const result: { id: string; inviterUserId: string }[] =
       await this.inviteRepository.query(
         `UPDATE invites SET "claimedAt" = now(), "claimedByUserId" = $1
       WHERE token = $2 AND "claimedAt" IS NULL AND "expiresAt" > now()
        AND "inviterUserId" <> $1
        RETURNING id, "inviterUserId"`,
-        [claimantUserId, token],
+        [claimantUserId, tokenHash],
       );
 
     if (result.length === 0) {
@@ -203,7 +205,10 @@ export class InvitesService {
   }
 
   async recordInviteClick(token: string): Promise<InviteLookupResponseDto> {
-    const invite = await this.inviteRepository.findOne({ where: { token } });
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const invite = await this.inviteRepository.findOne({
+      where: { token: tokenHash },
+    });
 
     if (!invite) {
       throw new BadRequestException('This invite link is invalid.');

@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { createHash } from 'crypto';
 import { Repository } from 'typeorm';
 import { env } from '../../config/env';
 import { EventType } from '../events/entities/event.entity';
@@ -40,6 +41,9 @@ jest.mock('uuid', () => ({
   v7: jest.fn(() => 'mocked-uuid'),
 }));
 
+const sha256 = (value: string) =>
+  createHash('sha256').update(value).digest('hex');
+
 describe('InvitesService', () => {
   let service: InvitesService;
   let inviteRepository: jest.Mocked<
@@ -58,12 +62,18 @@ describe('InvitesService', () => {
   const inviterUserId = 'inviter-user-id';
   const claimantUserId = 'claimant-user-id';
   const recipientEmail = 'friend+invite@example.com';
+  const generatedInviteToken = 'generated-invite-token';
+  const generatedInviteTokenHash = sha256(generatedInviteToken);
+  const rawClickToken = 'raw-click-token';
+  const rawClickTokenHash = sha256(rawClickToken);
+  const rawClaimToken = 'invite-token';
+  const rawClaimTokenHash = sha256(rawClaimToken);
   const now = new Date('2026-07-21T15:30:00.000Z');
   const savedInvite = {
     id: 'invite-id',
     inviterUserId,
     recipientEmail,
-    token: 'generated-invite-token',
+    token: generatedInviteTokenHash,
     expiresAt: new Date('2026-07-28T15:30:00.000Z'),
     clickedAt: null,
     claimedAt: null,
@@ -243,13 +253,13 @@ describe('InvitesService', () => {
       expect(inviteRepository.create).toHaveBeenCalledWith({
         inviterUserId,
         recipientEmail,
-        token: 'generated-invite-token',
+        token: generatedInviteTokenHash,
         expiresAt: expectedExpiresAt,
       });
       expect(inviteRepository.save).toHaveBeenCalledWith({
         inviterUserId,
         recipientEmail,
-        token: 'generated-invite-token',
+        token: generatedInviteTokenHash,
         expiresAt: expectedExpiresAt,
       });
       expect(queueService.addJob).toHaveBeenCalledWith(
@@ -269,7 +279,7 @@ describe('InvitesService', () => {
       expect(signupUrl).toContain(
         `email=${encodeURIComponent(recipientEmail)}`,
       );
-      expect(signupUrl).toContain('invite=generated-invite-token');
+      expect(signupUrl).toContain(`invite=${generatedInviteToken}`);
       expect(eventsService.recordEvent).toHaveBeenCalledWith({
         eventType: EventType.INVITE_SENT,
         actorId: inviterUserId,
@@ -331,11 +341,11 @@ describe('InvitesService', () => {
         { id: 'invite-id', inviterUserId },
       ]);
 
-      await service.claimInvite('invite-token', claimantUserId);
+      await service.claimInvite(rawClaimToken, claimantUserId);
 
       expect(inviteRepository.query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE invites'),
-        [claimantUserId, 'invite-token'],
+        [claimantUserId, rawClaimTokenHash],
       );
       expect(inviteRepository.query.mock.calls[0][0]).toContain(
         'WHERE token = $2 AND "claimedAt" IS NULL AND "expiresAt" > now()',
@@ -379,7 +389,7 @@ describe('InvitesService', () => {
       );
 
       await expect(
-        service.claimInvite('invite-token', claimantUserId),
+        service.claimInvite(rawClaimToken, claimantUserId),
       ).resolves.toBeUndefined();
 
       expect(eventsService.recordEvent).toHaveBeenCalled();
@@ -390,10 +400,14 @@ describe('InvitesService', () => {
   describe('recordInviteClick', () => {
     it('throws when the invite link is invalid', async () => {
       inviteRepository.findOne.mockResolvedValue(null);
+      const missingToken = 'missing-token';
 
-      await expect(service.recordInviteClick('missing-token')).rejects.toThrow(
+      await expect(service.recordInviteClick(missingToken)).rejects.toThrow(
         new BadRequestException('This invite link is invalid.'),
       );
+      expect(inviteRepository.findOne).toHaveBeenCalledWith({
+        where: { token: sha256(missingToken) },
+      });
     });
 
     it('throws when the invite has already been used', async () => {
@@ -402,13 +416,14 @@ describe('InvitesService', () => {
         claimedAt: new Date('2026-07-21T15:00:00.000Z'),
       } as Invite);
 
-      await expect(
-        service.recordInviteClick(savedInvite.token),
-      ).rejects.toThrow(
+      await expect(service.recordInviteClick(rawClickToken)).rejects.toThrow(
         new BadRequestException(
           'This invite has already been used. Please log in instead.',
         ),
       );
+      expect(inviteRepository.findOne).toHaveBeenCalledWith({
+        where: { token: rawClickTokenHash },
+      });
     });
 
     it('throws with a fallback signup URL when the invite is expired', async () => {
@@ -418,7 +433,7 @@ describe('InvitesService', () => {
       } as Invite);
 
       const error = await service
-        .recordInviteClick(savedInvite.token)
+        .recordInviteClick(rawClickToken)
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(BadRequestException);
@@ -431,6 +446,9 @@ describe('InvitesService', () => {
           fallbackSignupUrl: expect.stringContaining('?'),
         }),
       );
+      expect(inviteRepository.findOne).toHaveBeenCalledWith({
+        where: { token: rawClickTokenHash },
+      });
     });
 
     it('records clickedAt on the first valid click and returns lookup data', async () => {
@@ -439,8 +457,11 @@ describe('InvitesService', () => {
         clickedAt: null,
       } as Invite);
 
-      const result = await service.recordInviteClick(savedInvite.token);
+      const result = await service.recordInviteClick(rawClickToken);
 
+      expect(inviteRepository.findOne).toHaveBeenCalledWith({
+        where: { token: rawClickTokenHash },
+      });
       expect(inviteRepository.update).toHaveBeenCalledWith(savedInvite.id, {
         clickedAt: now,
       });
@@ -456,8 +477,11 @@ describe('InvitesService', () => {
         clickedAt: new Date('2026-07-21T15:00:00.000Z'),
       } as Invite);
 
-      const result = await service.recordInviteClick(savedInvite.token);
+      const result = await service.recordInviteClick(rawClickToken);
 
+      expect(inviteRepository.findOne).toHaveBeenCalledWith({
+        where: { token: rawClickTokenHash },
+      });
       expect(inviteRepository.update).not.toHaveBeenCalled();
       expect(result).toEqual({
         recipientEmail: savedInvite.recipientEmail,
