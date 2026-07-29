@@ -282,6 +282,7 @@ describe('AuthService', () => {
       expect(invitesService.claimInvite).toHaveBeenCalledWith(
         dto.inviteToken,
         verifiedOtpUser.id,
+        dto.email.toLowerCase(),
       );
       expect(result).toEqual({
         status: 'success',
@@ -308,6 +309,7 @@ describe('AuthService', () => {
       expect(invitesService.claimInvite).toHaveBeenCalledWith(
         dto.inviteToken,
         verifiedOtpUser.id,
+        dto.email.toLowerCase(),
       );
       expect(warnSpy).toHaveBeenCalled();
       expect(result).toEqual({

@@ -158,15 +158,20 @@ export class InvitesService {
     };
   }
 
-  async claimInvite(token: string, claimantUserId: string): Promise<void> {
+  async claimInvite(
+    token: string,
+    claimantUserId: string,
+    verifiedEmail: string,
+  ): Promise<void> {
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const result: { id: string; inviterUserId: string }[] =
       await this.inviteRepository.query(
         `UPDATE invites SET "claimedAt" = now(), "claimedByUserId" = $1
       WHERE token = $2 AND "claimedAt" IS NULL AND "expiresAt" > now()
        AND "inviterUserId" <> $1
+       AND "recipientEmail" = $3
        RETURNING id, "inviterUserId"`,
-        [claimantUserId, tokenHash],
+        [claimantUserId, tokenHash, verifiedEmail],
       );
 
     if (result.length === 0) {

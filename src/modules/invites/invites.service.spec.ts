@@ -341,14 +341,17 @@ describe('InvitesService', () => {
         { id: 'invite-id', inviterUserId },
       ]);
 
-      await service.claimInvite(rawClaimToken, claimantUserId);
+      await service.claimInvite(rawClaimToken, claimantUserId, recipientEmail);
 
       expect(inviteRepository.query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE invites'),
-        [claimantUserId, rawClaimTokenHash],
+        [claimantUserId, rawClaimTokenHash, recipientEmail],
       );
       expect(inviteRepository.query.mock.calls[0][0]).toContain(
         'WHERE token = $2 AND "claimedAt" IS NULL AND "expiresAt" > now()',
+      );
+      expect(inviteRepository.query.mock.calls[0][0]).toContain(
+        'AND "recipientEmail" = $3',
       );
       expect(eventsService.recordEvent).toHaveBeenCalledWith({
         eventType: EventType.INVITE_CLAIMED,
@@ -368,7 +371,26 @@ describe('InvitesService', () => {
       inviteRepository.query.mockResolvedValue([]);
 
       await expect(
-        service.claimInvite('missing-token', claimantUserId),
+        service.claimInvite('missing-token', claimantUserId, recipientEmail),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'This invite is invalid, expired, or already claimed.',
+        ),
+      );
+
+      expect(eventsService.recordEvent).not.toHaveBeenCalled();
+      expect(notificationService.dispatch).not.toHaveBeenCalled();
+    });
+
+    it("throws when the verified email does not match the invite's recipientEmail", async () => {
+      inviteRepository.query.mockResolvedValue([]);
+
+      await expect(
+        service.claimInvite(
+          rawClaimToken,
+          claimantUserId,
+          'someone-else@example.com',
+        ),
       ).rejects.toThrow(
         new BadRequestException(
           'This invite is invalid, expired, or already claimed.',
@@ -389,7 +411,7 @@ describe('InvitesService', () => {
       );
 
       await expect(
-        service.claimInvite(rawClaimToken, claimantUserId),
+        service.claimInvite(rawClaimToken, claimantUserId, recipientEmail),
       ).resolves.toBeUndefined();
 
       expect(eventsService.recordEvent).toHaveBeenCalled();

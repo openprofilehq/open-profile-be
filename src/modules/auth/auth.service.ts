@@ -600,7 +600,11 @@ export class AuthService {
     await this.usersService.clearOtp(user.id);
     if (dto.inviteToken) {
       try {
-        await this.invitesService.claimInvite(dto.inviteToken, user.id);
+        await this.invitesService.claimInvite(
+          dto.inviteToken,
+          user.id,
+          lowercasedEmail,
+        );
       } catch (err) {
         this.logger.warn(
           `Failed to claim invite for userId=${user.id}: ${err instanceof Error ? err.message : String(err)}`,
