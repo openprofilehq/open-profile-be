@@ -9,6 +9,7 @@ allowBuilds:
   msgpackr-extract: true
   sharp: true
   unrs-resolver: true
+
 overrides:
   multer: "^2.2.0"
   js-yaml: "^4.3.0"

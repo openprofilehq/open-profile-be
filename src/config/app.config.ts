@@ -7,4 +7,5 @@ export const appConfig = registerAs('app', () => ({
   corsOrigins: env.CORS_ORIGINS,
   swaggerEnabled: env.SWAGGER_ENABLED,
   profileViewMilestones: env.PROFILE_VIEW_MILESTONES,
+  inviteExpiryDays: env.INVITE_EXPIRY_DAYS,
 }));

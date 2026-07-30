@@ -8,6 +8,7 @@ import { RedisService } from '../../common/redis/redis.service';
 import { normalizeUrl } from '../events/utils/normalize-url.util';
 import { LinkClickStatsDto } from './dto/link-click-stats.dto';
 import { SearchConversionStatsDto } from './dto/search-conversion-stats.dto';
+import { InviteConversionStatsDto } from './dto/invite-conversion-stats.dto';
 import {
   resolveDateRange,
   AnalyticsDateRangeQueryDto,
@@ -248,6 +249,81 @@ export class AnalyticsService {
     const result: SearchConversionStatsDto = {
       searches_surfaced,
       search_driven_views,
+      conversion_rate,
+    };
+
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(result), 60);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return result;
+  }
+
+  async getInviteConversionStats(
+    userId: string,
+    query: AnalyticsDateRangeQueryDto,
+  ): Promise<InviteConversionStatsDto> {
+    const { start, end } = resolveDateRange(query);
+    const cacheKey = `analytics:invite-conversions:${userId}:${start.toISOString()}:${end.toISOString()}`;
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (cached) {
+      try {
+        return JSON.parse(cached) as InviteConversionStatsDto;
+      } catch {
+        // ignore malformed cache, recompute
+      }
+    }
+
+    const [sentRows, claimedRows] = await Promise.all([
+      this.eventRepo
+        .createQueryBuilder('e')
+        .select(`e.metadata->>'inviteId'`, 'inviteId')
+        .where('e."eventType" = :type', { type: EventType.INVITE_SENT })
+        .andWhere('e."actorId" = :userId', { userId })
+        .andWhere('e."occurredAt" >= :start', { start })
+        .andWhere('e."occurredAt" <= :end', { end })
+        .getRawMany<{ inviteId: string | null }>(),
+      this.eventRepo
+        .createQueryBuilder('e')
+        .select(`e.metadata->>'inviteId'`, 'inviteId')
+        .where('e."eventType" = :type', { type: EventType.INVITE_CLAIMED })
+        .andWhere(`e.metadata->>'inviterUserId' = :userId`, { userId })
+        .andWhere('e."occurredAt" >= :start', { start })
+        .andWhere('e."occurredAt" <= :end', { end })
+        .getRawMany<{ inviteId: string | null }>(),
+    ]);
+
+    const sentIdSet = new Set(
+      sentRows.map((r) => r.inviteId).filter((id): id is string => id !== null),
+    );
+
+    const invites_sent = sentIdSet.size;
+
+    const claimedIdSet = new Set(
+      claimedRows
+        .map((r) => r.inviteId)
+        .filter((id): id is string => id !== null && sentIdSet.has(id)),
+    );
+
+    const invites_claimed = claimedIdSet.size;
+
+    const conversion_rate =
+      invites_sent > 0 ? invites_claimed / invites_sent : 0;
+
+    const result: InviteConversionStatsDto = {
+      invites_sent,
+      invites_claimed,
       conversion_rate,
     };
 

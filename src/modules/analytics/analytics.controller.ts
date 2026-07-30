@@ -1,9 +1,15 @@
 import { Controller, Get, Req, UseGuards, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AnalyticsService } from './analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AnalyticsDateRangeQueryDto } from './dto/analytics-range-query.dto';
+import { InviteConversionStatsDto } from './dto/invite-conversion-stats.dto';
 
 interface AuthRequest extends Request {
   user: {
@@ -53,5 +59,19 @@ export class AnalyticsController {
     @Query() query: AnalyticsDateRangeQueryDto,
   ) {
     return this.analyticsService.getSearchConversionStats(req.user.id, query);
+  }
+
+  @Get('invite-conversions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Get invite conversion analytics for the authenticated user',
+  })
+  @ApiOkResponse({ type: InviteConversionStatsDto })
+  async getInviteConversions(
+    @Req() req: AuthRequest,
+    @Query() query: AnalyticsDateRangeQueryDto,
+  ) {
+    return this.analyticsService.getInviteConversionStats(req.user.id, query);
   }
 }
