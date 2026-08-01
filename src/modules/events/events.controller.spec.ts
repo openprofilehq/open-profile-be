@@ -65,6 +65,7 @@ describe('EventsController', () => {
       profileId: PROFILE_ID,
       actorId: ACTOR_ID,
       metadata: { linkUrl: LINK_URL },
+      dedupKey: `link-click:${PROFILE_ID}:${LINK_URL}:${ACTOR_ID}`,
     });
   });
 
@@ -92,6 +93,7 @@ describe('EventsController', () => {
       profileId: PROFILE_ID,
       actorId: undefined,
       metadata: { linkUrl: LINK_URL },
+      dedupKey: `link-click:${PROFILE_ID}:${LINK_URL}:anon`,
     });
   });
 });

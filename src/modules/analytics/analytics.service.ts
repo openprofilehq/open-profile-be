@@ -1,228 +1,338 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Request } from 'express';
-import { hash as argon2Hash } from 'argon2';
-import { ProfileView } from './entities/profile-view.entity';
+import { Event, EventType } from '../events/entities/event.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { AnalyticsStatsDto } from './dto/analytics-stats.dto';
 import { RedisService } from '../../common/redis/redis.service';
+import { normalizeUrl } from '../events/utils/normalize-url.util';
+import { LinkClickStatsDto } from './dto/link-click-stats.dto';
+import { SearchConversionStatsDto } from './dto/search-conversion-stats.dto';
+import { InviteConversionStatsDto } from './dto/invite-conversion-stats.dto';
+import {
+  resolveDateRange,
+  AnalyticsDateRangeQueryDto,
+} from './dto/analytics-range-query.dto';
 
-type UniqueViewersRaw = {
-  count: string;
-};
-
-type DailyRow = {
-  date: string;
-  views: string;
-};
+type DailyRow = { date: string; views: string };
+type UniqueViewersRaw = { count: string };
+type LinkClickRow = { linkUrl: string | null; clicks: string };
 
 @Injectable()
 export class AnalyticsService {
   private readonly logger = new Logger(AnalyticsService.name);
 
   constructor(
-    @InjectRepository(ProfileView)
-    private readonly profileViewRepo: Repository<ProfileView>,
-
+    @InjectRepository(Event)
+    private readonly eventRepo: Repository<Event>,
     @InjectRepository(Profile)
     private readonly profileRepo: Repository<Profile>,
-
     private readonly redis: RedisService,
   ) {}
 
-  private extractIp(req: Request): string {
-    return req.ip ?? '0.0.0.0';
-  }
-
-  private async hashSensitive(value: string): Promise<string> {
-    const salt = Buffer.from('open-profile-log-salt-2024', 'utf8');
-    return argon2Hash(value, { salt, type: 2 });
-  }
-
-  async recordView(profileId: string, req: Request): Promise<void> {
-    const viewerIp = this.extractIp(req);
-    const userAgent = req.headers['user-agent'] ?? null;
-
-    const profile = await this.profileRepo.findOne({
-      where: { id: profileId },
-    });
-
-    if (!profile) {
-      throw new NotFoundException('Profile not found');
-    }
-
-    const dedupKey = `view:${profileId}:${viewerIp}`;
-    const isDuplicate = !(await this.redis.set(dedupKey, '1', 5 * 60, true));
-
-    if (isDuplicate) {
-      this.logger.log({
-        event: 'profile_view_deduplicated',
-        profileId,
-        viewerIp: await this.hashSensitive(viewerIp),
-      });
-      return;
-    }
-
-    const dbDedupKey = `${profileId}:${viewerIp}:${Math.floor(Date.now() / (5 * 60 * 1000))}`;
-    const result = await this.profileViewRepo
-      .createQueryBuilder()
-      .insert()
-      .into(ProfileView)
-      .values({
-        profileId,
-        viewerIp,
-        userAgent: userAgent || undefined,
-        dedupKey: dbDedupKey,
-      })
-      .orIgnore()
-      .execute();
-
-    if (result.identifiers.length === 0) {
-      this.logger.log({
-        event: 'profile_view_deduplicated',
-        profileId,
-        viewerIp: await this.hashSensitive(viewerIp),
-      });
-      return;
-    }
-
-    this.logger.log({
-      event: 'profile_view_recorded',
-      profileId,
-      viewerIp: await this.hashSensitive(viewerIp),
-      userAgent: userAgent
-        ? await this.hashSensitive(userAgent)
-        : 'not_provided',
-    });
-  }
-
-  async getStats(userId: string): Promise<AnalyticsStatsDto> {
-    // Find user's profile
-    const profile = await this.profileRepo.findOne({
-      where: { userId },
-    });
-
+  async getProfileViewStats(
+    userId: string,
+    query: AnalyticsDateRangeQueryDto,
+  ): Promise<AnalyticsStatsDto> {
+    const profile = await this.profileRepo.findOne({ where: { userId } });
     if (!profile) {
       throw new ForbiddenException('Profile not found');
     }
 
-    // Redis cache check (safe)
-    const cacheKey = `analytics:stats:${profile.id}`;
+    const { start, end } = resolveDateRange(query);
+    const cacheKey = `analytics:profile-views:${profile.id}:${start.toISOString()}:${end.toISOString()}`;
 
     let cached: string | null = null;
     try {
       cached = await this.redis.get(cacheKey);
     } catch {
-      // ignore cache read errors and continue with DB computation
+      // ignore cache read errors
     }
-
     if (cached) {
       try {
         return JSON.parse(cached) as AnalyticsStatsDto;
       } catch {
-        // ignore malformed cache payload and recompute
+        // ignore malformed cache, recompute
       }
     }
 
-    // UTC DATE BOUNDARIES (FIXED)
+    const total = profile.viewCount ?? 0;
 
-    const now = new Date();
+    const baseQuery = () =>
+      this.eventRepo
+        .createQueryBuilder('e')
+        .where('e."profileId" = :profileId', { profileId: profile.id })
+        .andWhere('e."eventType" = :type', { type: EventType.PROFILE_VIEWED })
+        .andWhere('e."occurredAt" >= :start', { start })
+        .andWhere('e."occurredAt" <= :end', { end });
 
-    const startOfToday = new Date(now);
-    startOfToday.setUTCHours(0, 0, 0, 0);
-
-    const startOfWeek = new Date(startOfToday);
-    startOfWeek.setUTCDate(startOfToday.getUTCDate() - 6);
-
-    const startOf30Days = new Date(startOfToday);
-    startOf30Days.setUTCDate(startOfToday.getUTCDate() - 29);
-
-    // TOTAL VIEWS
-
-    const total = await this.profileViewRepo.count({
-      where: { profileId: profile.id },
-    });
-
-    // TODAY
-
-    const today = await this.profileViewRepo
-      .createQueryBuilder('view')
-      .where('view.profile_id = :profileId', { profileId: profile.id })
-      .andWhere('view.viewed_at >= :today', { today: startOfToday })
-      .getCount();
-
-    // WEEK
-
-    const thisWeek = await this.profileViewRepo
-      .createQueryBuilder('view')
-      .where('view.profile_id = :profileId', { profileId: profile.id })
-      .andWhere('view.viewed_at >= :week', { week: startOfWeek })
-      .getCount();
-
-    // UNIQUE VIEWERS
-
-    const uniqueViewersRaw = (await this.profileViewRepo
-      .createQueryBuilder('view')
-      .select('COUNT(DISTINCT view.viewer_ip)', 'count')
-      .where('view.profile_id = :profileId', { profileId: profile.id })
-      .getRawOne()) as UniqueViewersRaw;
+    const [rangeTotal, uniqueViewersRaw, rows] = await Promise.all([
+      baseQuery().getCount(),
+      baseQuery()
+        .select(
+          'COUNT(DISTINCT COALESCE(e."actorId"::text, e."anonymousId"))',
+          'count',
+        )
+        .getRawOne<UniqueViewersRaw>(),
+      baseQuery()
+        .select('DATE(e."occurredAt")::text', 'date')
+        .addSelect('COUNT(*)', 'views')
+        .groupBy('date')
+        .orderBy('date', 'ASC')
+        .getRawMany<DailyRow>(),
+    ]);
 
     const unique_viewers = Number(uniqueViewersRaw?.count ?? 0);
 
-    // DAILY BREAKDOWN
-
-    const rows = await this.profileViewRepo
-      .createQueryBuilder('view')
-      .select(`DATE(view.viewed_at)`, 'date')
-      .addSelect('COUNT(*)', 'views')
-      .where('view.profile_id = :profileId', { profileId: profile.id })
-      .andWhere('view.viewed_at >= :startDate', {
-        startDate: startOf30Days,
-      })
-      .groupBy('date')
-      .orderBy('date', 'ASC')
-      .getRawMany<DailyRow>();
-
-    const map = new Map<string, number>();
-
-    for (const row of rows) {
-      map.set(row.date, Number(row.views));
-    }
-
-    const daily_breakdown: { date: string; views: number }[] = [];
-
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(now);
-      d.setUTCDate(now.getUTCDate() - i);
-
-      const key = d.toISOString().split('T')[0];
-
-      daily_breakdown.push({
-        date: key,
-        views: map.get(key) || 0,
-      });
-    }
+    const daily_breakdown = rows.map((row) => ({
+      date: row.date,
+      views: Number(row.views),
+    }));
 
     const result: AnalyticsStatsDto = {
       total,
-      today,
-      this_week: thisWeek,
+      range_total: rangeTotal,
       unique_viewers,
       daily_breakdown,
     };
 
-    // CACHE WRITE (SAFE)
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(result), 60);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return result;
+  }
+
+  async getLinkClickStats(
+    userId: string,
+    query: AnalyticsDateRangeQueryDto,
+  ): Promise<LinkClickStatsDto> {
+    const profile = await this.profileRepo.findOne({ where: { userId } });
+    if (!profile) {
+      throw new ForbiddenException('Profile not found');
+    }
+
+    const { start, end } = resolveDateRange(query);
+    const cacheKey = `analytics:link-clicks:${profile.id}:${start.toISOString()}:${end.toISOString()}`;
+
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (cached) {
+      try {
+        return JSON.parse(cached) as LinkClickStatsDto;
+      } catch {
+        // ignore malformed cache, recompute
+      }
+    }
+
+    const rows = await this.eventRepo
+      .createQueryBuilder('e')
+      .select(`e.metadata->>'linkUrl'`, 'linkUrl')
+      .addSelect('COUNT(*)', 'clicks')
+      .where('e."profileId" = :profileId', { profileId: profile.id })
+      .andWhere('e."eventType" = :type', { type: EventType.LINK_CLICKED })
+      .andWhere('e."occurredAt" >= :start', { start })
+      .andWhere('e."occurredAt" <= :end', { end })
+      .andWhere(`e.metadata->>'linkUrl' IS NOT NULL`)
+      .groupBy(`e.metadata->>'linkUrl'`)
+      .getRawMany<LinkClickRow>();
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      if (!row.linkUrl) continue;
+      const key = normalizeUrl(row.linkUrl);
+      counts.set(key, (counts.get(key) ?? 0) + Number(row.clicks));
+    }
+
+    const links = [...counts.entries()]
+      .map(([linkUrl, clicks]) => ({ linkUrl, clicks }))
+      .sort((a, b) => b.clicks - a.clicks);
+
+    const range_total = links.reduce((sum, l) => sum + l.clicks, 0);
+
+    const result: LinkClickStatsDto = { range_total, links };
 
     try {
       await this.redis.set(cacheKey, JSON.stringify(result), 60);
     } catch (err) {
-      console.error('Redis cache write failed:', err);
+      this.logger.warn(
+        `Redis cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return result;
+  }
+
+  async getSearchConversionStats(
+    userId: string,
+    query: AnalyticsDateRangeQueryDto,
+  ): Promise<SearchConversionStatsDto> {
+    const profile = await this.profileRepo.findOne({ where: { userId } });
+    if (!profile) {
+      throw new ForbiddenException('Profile not found');
+    }
+
+    const { start, end } = resolveDateRange(query);
+    const cacheKey = `analytics:search-conversions:${profile.id}:${start.toISOString()}:${end.toISOString()}`;
+
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (cached) {
+      try {
+        return JSON.parse(cached) as SearchConversionStatsDto;
+      } catch {
+        // ignore malformed cache, recompute
+      }
+    }
+    const [surfacingSearchIds, allReferrerSearchIds] = await Promise.all([
+      this.eventRepo
+        .createQueryBuilder('e')
+        .select(`e.metadata->>'searchId'`, 'searchId')
+        .where('e."eventType" = :type', { type: EventType.SEARCH_PERFORMED })
+        .andWhere('e."occurredAt" >= :start', { start })
+        .andWhere('e."occurredAt" <= :end', { end })
+        .andWhere(`e.metadata->'resultProfileIds' ? :profileId`, {
+          profileId: profile.id,
+        })
+        .getRawMany<{ searchId: string | null }>(),
+      this.eventRepo
+        .createQueryBuilder('e')
+        .select(`e.metadata->>'referrerSearchId'`, 'referrerSearchId')
+        .where('e."profileId" = :profileId', { profileId: profile.id })
+        .andWhere('e."eventType" = :type', { type: EventType.PROFILE_VIEWED })
+        .andWhere('e."occurredAt" >= :start', { start })
+        .andWhere('e."occurredAt" <= :end', { end })
+        .andWhere(`e.metadata->>'referrerSearchId' IS NOT NULL`)
+        .getRawMany<{ referrerSearchId: string | null }>(),
+    ]);
+
+    const surfacingSearchIdSet = new Set(
+      surfacingSearchIds
+        .map((row) => row.searchId)
+        .filter((id): id is string => id !== null),
+    );
+
+    const searches_surfaced = surfacingSearchIdSet.size;
+
+    // search_driven_views counts distinct surfacing searchIds that led to at
+    // least one view (not total view count) — this keeps conversion_rate
+    // strictly bounded at [0, 1]: "what fraction of searches that surfaced
+    // this profile resulted in at least one click-through."
+    const convertedSearchIdSet = new Set(
+      allReferrerSearchIds
+        .map((row) => row.referrerSearchId)
+        .filter(
+          (id): id is string => id !== null && surfacingSearchIdSet.has(id),
+        ),
+    );
+
+    const search_driven_views = convertedSearchIdSet.size;
+
+    const conversion_rate =
+      searches_surfaced > 0 ? search_driven_views / searches_surfaced : 0;
+    const result: SearchConversionStatsDto = {
+      searches_surfaced,
+      search_driven_views,
+      conversion_rate,
+    };
+
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(result), 60);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return result;
+  }
+
+  async getInviteConversionStats(
+    userId: string,
+    query: AnalyticsDateRangeQueryDto,
+  ): Promise<InviteConversionStatsDto> {
+    const { start, end } = resolveDateRange(query);
+    const cacheKey = `analytics:invite-conversions:${userId}:${start.toISOString()}:${end.toISOString()}`;
+    let cached: string | null = null;
+    try {
+      cached = await this.redis.get(cacheKey);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (cached) {
+      try {
+        return JSON.parse(cached) as InviteConversionStatsDto;
+      } catch {
+        // ignore malformed cache, recompute
+      }
+    }
+
+    const [sentRows, claimedRows] = await Promise.all([
+      this.eventRepo
+        .createQueryBuilder('e')
+        .select(`e.metadata->>'inviteId'`, 'inviteId')
+        .where('e."eventType" = :type', { type: EventType.INVITE_SENT })
+        .andWhere('e."actorId" = :userId', { userId })
+        .andWhere('e."occurredAt" >= :start', { start })
+        .andWhere('e."occurredAt" <= :end', { end })
+        .getRawMany<{ inviteId: string | null }>(),
+      this.eventRepo
+        .createQueryBuilder('e')
+        .select(`e.metadata->>'inviteId'`, 'inviteId')
+        .where('e."eventType" = :type', { type: EventType.INVITE_CLAIMED })
+        .andWhere(`e.metadata->>'inviterUserId' = :userId`, { userId })
+        .andWhere('e."occurredAt" >= :start', { start })
+        .andWhere('e."occurredAt" <= :end', { end })
+        .getRawMany<{ inviteId: string | null }>(),
+    ]);
+
+    const sentIdSet = new Set(
+      sentRows.map((r) => r.inviteId).filter((id): id is string => id !== null),
+    );
+
+    const invites_sent = sentIdSet.size;
+
+    const claimedIdSet = new Set(
+      claimedRows
+        .map((r) => r.inviteId)
+        .filter((id): id is string => id !== null && sentIdSet.has(id)),
+    );
+
+    const invites_claimed = claimedIdSet.size;
+
+    const conversion_rate =
+      invites_sent > 0 ? invites_claimed / invites_sent : 0;
+
+    const result: InviteConversionStatsDto = {
+      invites_sent,
+      invites_claimed,
+      conversion_rate,
+    };
+
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(result), 60);
+    } catch (err) {
+      this.logger.warn(
+        `Redis cache write failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
 
     return result;

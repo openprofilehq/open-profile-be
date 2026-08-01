@@ -2,12 +2,22 @@ jest.mock('../../config/env', () => ({
   env: {},
 }));
 
+jest.mock('crypto', () => ({
+  randomUUID: jest.fn(() => 'search-id'),
+}));
+
+jest.mock('../../common/cookies/anonymous-id.util', () => ({
+  getOrSetAnonymousId: jest.fn(),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
+import type { Request, Response } from 'express';
 import { RedisService } from '../../common/redis/redis.service';
 import { SearchAction, PaginatedSearchResult } from './actions/search.action';
 import { SearchService } from './search.service';
 import { EventsService } from '../events/events.service';
 import { EventType } from '../events/entities/event.entity';
+import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
 
 describe('SearchService', () => {
   let service: SearchService;
@@ -21,6 +31,7 @@ describe('SearchService', () => {
   const result: PaginatedSearchResult = {
     results: [
       {
+        id: '1',
         username: 'ada',
         fullName: 'Ada Lovelace',
         bio: 'Mathematician',
@@ -31,6 +42,10 @@ describe('SearchService', () => {
     page: 2,
     limit: 10,
     totalPages: 1,
+  };
+  const publicResult = {
+    ...result,
+    results: result.results.map(({ id: _id, ...row }) => row),
   };
 
   beforeEach(async () => {
@@ -61,7 +76,10 @@ describe('SearchService', () => {
   it('returns cached search results without calling the action', async () => {
     redisService.get.mockResolvedValue(JSON.stringify(result));
 
-    await expect(service.searchProfiles(dto)).resolves.toEqual(result);
+    await expect(service.searchProfiles(dto)).resolves.toEqual({
+      ...publicResult,
+      searchId: 'search-id',
+    });
 
     expect(redisService.get).toHaveBeenCalledWith('search:ada:page=2:limit=10');
     expect(searchAction.searchProfiles).not.toHaveBeenCalled();
@@ -69,7 +87,12 @@ describe('SearchService', () => {
     expect(eventsService.recordEvent).toHaveBeenCalledWith({
       eventType: EventType.SEARCH_PERFORMED,
       actorId: undefined,
-      metadata: { query: 'Ada' },
+      anonymousId: undefined,
+      metadata: {
+        query: 'Ada',
+        searchId: 'search-id',
+        resultProfileIds: ['1'],
+      },
     });
   });
 
@@ -77,15 +100,21 @@ describe('SearchService', () => {
     redisService.get.mockResolvedValue(null);
     searchAction.searchProfiles.mockResolvedValue(result);
 
-    await expect(service.searchProfiles(dto, 'user-id')).resolves.toEqual(
-      result,
-    );
+    await expect(service.searchProfiles(dto, 'user-id')).resolves.toEqual({
+      ...publicResult,
+      searchId: 'search-id',
+    });
 
     expect(searchAction.searchProfiles).toHaveBeenCalledWith(dto);
     expect(eventsService.recordEvent).toHaveBeenCalledWith({
       eventType: EventType.SEARCH_PERFORMED,
       actorId: 'user-id',
-      metadata: { query: 'Ada' },
+      anonymousId: undefined,
+      metadata: {
+        query: 'Ada',
+        searchId: 'search-id',
+        resultProfileIds: ['1'],
+      },
     });
     expect(redisService.set).toHaveBeenCalledWith(
       'search:ada:page=2:limit=10',
@@ -108,6 +137,33 @@ describe('SearchService', () => {
     expect(redisService.get).toHaveBeenCalledWith(
       'search:react:page=1:limit=5',
     );
+  });
+
+  it('records anonymous search events with the anonymous id cookie value', async () => {
+    const req = { cookies: {} } as unknown as Request;
+    const res = { cookie: jest.fn() } as unknown as Response;
+    (getOrSetAnonymousId as jest.Mock).mockReturnValue('anonymous-id');
+    redisService.get.mockResolvedValue(null);
+    searchAction.searchProfiles.mockResolvedValue(result);
+
+    await expect(
+      service.searchProfiles(dto, undefined, req, res),
+    ).resolves.toEqual({
+      ...publicResult,
+      searchId: 'search-id',
+    });
+
+    expect(getOrSetAnonymousId).toHaveBeenCalledWith(req, res);
+    expect(eventsService.recordEvent).toHaveBeenCalledWith({
+      eventType: EventType.SEARCH_PERFORMED,
+      actorId: undefined,
+      anonymousId: 'anonymous-id',
+      metadata: {
+        query: 'Ada',
+        searchId: 'search-id',
+        resultProfileIds: ['1'],
+      },
+    });
   });
 
   it('deletes matching cache keys by lowercased query pattern', async () => {

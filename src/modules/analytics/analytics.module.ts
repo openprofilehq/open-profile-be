@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ProfileView } from './entities/profile-view.entity';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { Profile } from '../profile/entities/profile.entity';
+import { Event } from '../events/entities/event.entity';
 import { RedisModule } from '../../common/redis/redis.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProfileView, Profile]),
+    TypeOrmModule.forFeature([Event, Profile]),
     RedisModule,
     AuthModule,
   ],

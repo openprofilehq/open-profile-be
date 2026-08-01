@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
-import { QueryFailedError } from 'typeorm';
+import { DataSource, EntityNotFoundError, QueryFailedError } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 import { UserModelAction } from './actions/user.action';
 import { ResetPasswordModelAction } from './actions/reset-password.action';
@@ -18,11 +18,20 @@ import { UpdateEmailResponseDto } from './dto/update-email-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserSettingsResponseDto } from './dto/user-settings-response.dto';
 import { BillingInfoResponseDto } from './dto/billing-info-response.dto';
+import {
+  UserPreferencesDto,
+  UserPreferencesResponseDto,
+} from './dto/user-preferences.dto';
 import { AuthProvider, User } from './entities/user.entity';
 import { ResetPassword } from '../auth/entities/reset-password.entity';
 
 const NO_TRANSACTION = {
   transactionOptions: { useTransaction: false as const },
+};
+
+const DEFAULT_PREFERENCES: UserPreferencesResponseDto = {
+  mode: 'system',
+  colorTheme: 'default',
 };
 
 export const EMAIL_ALREADY_EXISTS = 'EMAIL_ALREADY_EXISTS';
@@ -32,6 +41,7 @@ export class UsersService {
   constructor(
     private readonly userModelAction: UserModelAction,
     private readonly resetPasswordAction: ResetPasswordModelAction,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(dto: CreateUserDto): Promise<User> {
@@ -312,6 +322,45 @@ export class UsersService {
   async getBillingInfo(userId: string): Promise<BillingInfoResponseDto> {
     await this.findOne(userId);
     return { plan: 'Free', nextBillingDate: null };
+  }
+
+  async getPreferences(userId: string): Promise<UserPreferencesResponseDto> {
+    const user = await this.findOne(userId);
+    return { ...DEFAULT_PREFERENCES, ...user.preferences };
+  }
+
+  async updatePreferences(
+    userId: string,
+    dto: UserPreferencesDto,
+  ): Promise<UserPreferencesResponseDto> {
+    await this.findOne(userId);
+
+    const merged = await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(User);
+      const locked = await repo
+        .createQueryBuilder('u')
+        .where('u.id = :id', { id: userId })
+        .setLock('pessimistic_write')
+        .getOneOrFail()
+        .catch((error) => {
+          if (error instanceof EntityNotFoundError) {
+            throw new InternalServerErrorException(
+              'Failed to update preferences',
+            );
+          }
+          throw error;
+        });
+
+      const mergedPreferences: UserPreferencesDto = { ...locked.preferences };
+      if (dto.mode !== undefined) mergedPreferences.mode = dto.mode;
+      if (dto.colorTheme !== undefined)
+        mergedPreferences.colorTheme = dto.colorTheme;
+
+      await repo.save({ ...locked, preferences: mergedPreferences });
+      return mergedPreferences;
+    });
+
+    return { ...DEFAULT_PREFERENCES, ...merged };
   }
 
   async updateEmail(

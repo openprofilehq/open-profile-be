@@ -62,6 +62,15 @@ export const env = createEnv({
     BREVO_SMTP_PASSWORD: z.string().min(1),
     /** Production only: shared parent domain for API cookies (e.g. .open-profile.hng14.com). Ignored in staging/dev. */
     COOKIE_DOMAIN: z.string().default(''),
+    PROFILE_VIEW_MILESTONES: z
+      .string()
+      .default('10,50,100')
+      .transform((val) => val.split(',').map((v) => parseInt(v.trim(), 10))),
+    INVITE_EXPIRY_DAYS: z
+      .string()
+      .default('7')
+      .transform((val) => parseInt(val, 10))
+      .pipe(z.number().int().positive()),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

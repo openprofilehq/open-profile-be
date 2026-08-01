@@ -12,6 +12,8 @@ export class QueueService {
   private readonly logger = new Logger(QueueService.name);
   constructor(
     @InjectQueue(QUEUE_NAMES.EMAIL) private readonly emailQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.ANNOUNCEMENT)
+    private readonly announcementQueue: Queue,
   ) {}
 
   async addJob<T>(
@@ -50,6 +52,8 @@ export class QueueService {
     switch (queueName) {
       case QUEUE_NAMES.EMAIL:
         return this.emailQueue;
+      case QUEUE_NAMES.ANNOUNCEMENT:
+        return this.announcementQueue;
       default:
         throw new Error(`Unknown queue name: ${String(queueName)}`);
     }

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { IsNull } from 'typeorm';
 import { EventsService } from './events.service';
 import { Event, EventType } from './entities/event.entity';
@@ -7,6 +8,8 @@ import { FailedEvent } from './entities/failed-event.entity';
 import { Profile } from '../profile/entities/profile.entity';
 import { RedisService } from '../../common/redis/redis.service';
 import { DEFAULT_RETRY_CONFIG } from './utils/event-retry.util';
+import { NotificationService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/enums/notification-type.enum';
 
 jest.mock('../../common/redis/redis.service', () => ({
   RedisService: class RedisService {},
@@ -21,6 +24,8 @@ describe('EventsService', () => {
   let failedEventRepository: Record<string, jest.Mock>;
   let profileRepository: Record<string, jest.Mock>;
   let redisService: Record<string, jest.Mock>;
+  let notificationService: Record<string, jest.Mock>;
+  let configService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     eventRepository = {
@@ -35,12 +40,22 @@ describe('EventsService', () => {
 
     profileRepository = {
       findOne: jest.fn(),
+      increment: jest.fn(),
+      query: jest.fn(),
     };
 
     redisService = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(true),
       del: jest.fn().mockResolvedValue(undefined),
+    };
+
+    notificationService = {
+      dispatch: jest.fn(),
+    };
+
+    configService = {
+      get: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -61,6 +76,14 @@ describe('EventsService', () => {
         {
           provide: RedisService,
           useValue: redisService,
+        },
+        {
+          provide: NotificationService,
+          useValue: notificationService,
+        },
+        {
+          provide: ConfigService,
+          useValue: configService,
         },
       ],
     }).compile();
@@ -190,6 +213,90 @@ describe('EventsService', () => {
         expect(failedEventRepository.save).toHaveBeenCalledTimes(1);
       });
     });
+
+    describe('profile view milestones', () => {
+      it('increments the view count and dispatches when the new count matches a configured milestone', async () => {
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+        profileRepository.query.mockResolvedValue([
+          { view_count: 100, user_id: ACTOR_ID },
+        ]);
+        configService.get.mockReturnValue([10, 100, 1000]);
+
+        await service.recordEvent({
+          eventType: EventType.PROFILE_VIEWED,
+          profileId: PROFILE_ID,
+        });
+
+        expect(profileRepository.query).toHaveBeenCalledWith(
+          'UPDATE profiles SET view_count = view_count + 1 WHERE id = $1 RETURNING view_count, user_id',
+          [PROFILE_ID],
+        );
+        expect(configService.get).toHaveBeenCalledWith(
+          'app.profileViewMilestones',
+        );
+        expect(notificationService.dispatch).toHaveBeenCalledWith({
+          userId: ACTOR_ID,
+          type: NotificationType.PROFILE_VIEW_MILESTONE,
+          title: 'Milestone reached!',
+          body: 'Your profile has been viewed 100 times.',
+          metadata: { viewCount: 100 },
+          dedupeKey: `MILESTONE_${PROFILE_ID}_100`,
+        });
+      });
+
+      it("doesn't dispatch when the new count does not match any milestone", async () => {
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+        profileRepository.query.mockResolvedValue([
+          { view_count: 99, user_id: ACTOR_ID },
+        ]);
+        configService.get.mockReturnValue([10, 100, 1000]);
+
+        await service.recordEvent({
+          eventType: EventType.PROFILE_VIEWED,
+          profileId: PROFILE_ID,
+        });
+
+        expect(profileRepository.query).toHaveBeenCalledWith(
+          'UPDATE profiles SET view_count = view_count + 1 WHERE id = $1 RETURNING view_count, user_id',
+          [PROFILE_ID],
+        );
+        expect(notificationService.dispatch).not.toHaveBeenCalled();
+      });
+
+      it('logs and does not propagate errors from the milestone flow', async () => {
+        const warnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(jest.fn());
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+        profileRepository.query.mockRejectedValue(new Error('db down'));
+
+        await expect(
+          service.recordEvent({
+            eventType: EventType.PROFILE_VIEWED,
+            profileId: PROFILE_ID,
+          }),
+        ).resolves.toBeUndefined();
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          `Failed to check profile view milestone for ${PROFILE_ID}: db down`,
+        );
+        expect(notificationService.dispatch).not.toHaveBeenCalled();
+
+        warnSpy.mockRestore();
+      });
+
+      it('skips the milestone check when profileId is missing', async () => {
+        eventRepository.save.mockResolvedValue({ id: 'event-id' });
+
+        await service.recordEvent({
+          eventType: EventType.PROFILE_VIEWED,
+        });
+
+        expect(profileRepository.increment).not.toHaveBeenCalled();
+        expect(profileRepository.findOne).not.toHaveBeenCalled();
+        expect(notificationService.dispatch).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('isValidProfileLink', () => {
@@ -260,7 +367,7 @@ describe('EventsService', () => {
       ).resolves.toBe(true);
     });
 
-    it('normalizes case and trailing slashes before comparing URLs', async () => {
+    it('normalizes scheme/host case and trailing slashes before comparing URLs', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
           links: {
@@ -282,12 +389,12 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/Link'),
       ).resolves.toBe(true);
       await expect(
         service.isValidProfileLink(
           PROFILE_ID,
-          'https://github.com/example/project',
+          'https://github.com/Example/Project',
         ),
       ).resolves.toBe(true);
       await expect(
@@ -296,9 +403,12 @@ describe('EventsService', () => {
       await expect(
         service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
       ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
+      ).resolves.toBe(false);
     });
 
-    it('normalizes non-URL values by lowercasing and trimming a trailing slash', async () => {
+    it('normalizes non-URL values by trimming a trailing slash while preserving case', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
           links: {
@@ -308,11 +418,14 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'mailto:hello@example.com'),
+        service.isValidProfileLink(PROFILE_ID, 'mailto:Hello@Example.com'),
       ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, 'mailto:hello@example.com'),
+      ).resolves.toBe(false);
     });
 
-    it('falls back to string normalization for non-parseable values', async () => {
+    it('falls back to case-sensitive string normalization for non-parseable values', async () => {
       profileRepository.findOne.mockResolvedValue({
         content: {
           links: { items: [{ url: '/Relative/Path/' }] },
@@ -320,8 +433,11 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, '/relative/path'),
+        service.isValidProfileLink(PROFILE_ID, '/Relative/Path'),
       ).resolves.toBe(true);
+      await expect(
+        service.isValidProfileLink(PROFILE_ID, '/relative/path'),
+      ).resolves.toBe(false);
     });
 
     it('returns true for project repository and live URLs', async () => {

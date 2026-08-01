@@ -23,6 +23,7 @@ import {
   ApiParam,
   ApiHeader,
   ApiResponse,
+  ApiQuery,
   ApiTags,
   ApiBody,
 } from '@nestjs/swagger';
@@ -74,6 +75,7 @@ import {
   ReorderAwardsDto,
 } from './dto/award.dto';
 import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
+import { parseReferrerSource } from '../../common/utils/parse-referrer.util';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
@@ -342,11 +344,25 @@ export class ProfileController {
     status: 429,
     description: 'Too many requests — rate limit of 60 req/min exceeded',
   })
+  @ApiQuery({
+    name: 'referrerSearchId',
+    required: false,
+    description:
+      'searchId from a prior search response, if this view originated from search results',
+  })
+  @ApiQuery({
+    name: 'src',
+    required: false,
+    description:
+      'Explicit share source (e.g. whatsapp, twitter) set by share-button links; falls back to Referer header parsing if omitted',
+  })
   async getPublicProfile(
     @Param('username') username: string,
     @Headers('if-none-match') ifNoneMatch: string | undefined,
     @Res({ passthrough: true }) res: Response,
     @Req() req: Request,
+    @Query('referrerSearchId') referrerSearchId?: string,
+    @Query('src') src?: string,
   ) {
     const { profileId, userId, data, etag, fromCache } =
       await this.profileService.getPublicProfile(username);
@@ -364,8 +380,12 @@ export class ProfileController {
 
     if (!isOwner) {
       const anonymousId = actorId ? undefined : getOrSetAnonymousId(req, res);
-
       const dedupIdentifier = actorId ?? anonymousId;
+
+      const referrerSource = src ?? parseReferrerSource(req.headers.referer);
+      const metadata: Record<string, unknown> = {};
+      if (referrerSearchId) metadata.referrerSearchId = referrerSearchId;
+      if (referrerSource) metadata.referrerSource = referrerSource;
 
       void this.eventsService
         .recordEvent({
@@ -376,6 +396,7 @@ export class ProfileController {
           dedupKey: dedupIdentifier
             ? `event-dedup:PROFILE_VIEWED:${profileId}:${dedupIdentifier}`
             : undefined,
+          metadata: Object.keys(metadata).length ? metadata : undefined,
         })
         .catch((err) =>
           this.logger?.warn(`Failed to record PROFILE_VIEWED event: ${err}`),

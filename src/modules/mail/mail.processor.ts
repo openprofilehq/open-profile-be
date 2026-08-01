@@ -15,6 +15,10 @@ import { renderVerificationOtpEmail } from './templates/verification-otp.templat
 import { renderPasswordChangedEmail } from './templates/password-changed.template';
 import { renderAccountLockedEmail } from './templates/account-locked.template';
 import { renderNewIpLoginEmail } from './templates/new-ip-login.template';
+import { renderNotificationEmail } from './templates/notification.template';
+import { NotificationEmailData } from './interfaces/notification-email.interface';
+import { renderInviteEmail } from './templates/invite.template';
+import { InviteEmailData } from './interfaces/invite-email.interface';
 
 @Processor(QUEUE_NAMES.EMAIL)
 export class MailProcessor extends WorkerHost {
@@ -53,6 +57,16 @@ export class MailProcessor extends WorkerHost {
             fullName: string;
           },
         );
+        break;
+
+      case QUEUE_JOB_NAMES.EMAIL.SEND_NOTIFICATION_EMAIL:
+        await this.handleSendNotificationEmail(
+          job.data as NotificationEmailData,
+        );
+        break;
+
+      case QUEUE_JOB_NAMES.EMAIL.SEND_INVITE_EMAIL:
+        await this.handleSendInviteEmail(job.data as InviteEmailData);
         break;
 
       default:
@@ -104,6 +118,19 @@ export class MailProcessor extends WorkerHost {
     const html = renderVerificationOtpEmail(data.fullName, data.otp);
 
     await this.mailService.sendEmail(data.to, OTP_EMAIL_SUBJECT, html);
+  }
+
+  private async handleSendNotificationEmail(data: NotificationEmailData) {
+    const { to, title, body } = data;
+    const html = renderNotificationEmail(title, body);
+    await this.mailService.sendEmail(to, title, html);
+  }
+
+  private async handleSendInviteEmail(data: InviteEmailData) {
+    const { to, signupUrl } = data;
+    const subject = "You've been invited to Open Profile";
+    const html = renderInviteEmail(signupUrl);
+    await this.mailService.sendEmail(to, subject, html);
   }
 
   @OnWorkerEvent('completed')

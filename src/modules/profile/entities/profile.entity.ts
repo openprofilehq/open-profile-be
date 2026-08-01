@@ -102,6 +102,9 @@ export class Profile {
   @OneToMany(() => Award, (award) => award.profile)
   awards: Award[];
 
+  @Column({ name: 'view_count', type: 'int', default: 0 })
+  viewCount: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

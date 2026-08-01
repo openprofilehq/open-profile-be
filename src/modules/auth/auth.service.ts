@@ -39,6 +39,7 @@ import { NewIpLoginEmailData } from '../mail/interfaces/new-ip-login-email.inter
 import { GoogleUser } from './interfaces/google.interface';
 import { EventsService } from '../events/events.service';
 import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
+import { InvitesService } from '../invites/invites.service';
 
 const FORGOT_PASSWORD_GENERIC_MSG =
   'If an account exists for this email, a verification code has been sent.';
@@ -81,6 +82,7 @@ export class AuthService {
     private readonly redisService: RedisService,
     private readonly tokenService: TokenService,
     private readonly eventsService: EventsService,
+    private readonly invitesService: InvitesService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterSuccessResponse> {
@@ -596,6 +598,19 @@ export class AuthService {
     }
 
     await this.usersService.clearOtp(user.id);
+    if (dto.inviteToken) {
+      try {
+        await this.invitesService.claimInvite(
+          dto.inviteToken,
+          user.id,
+          lowercasedEmail,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Failed to claim invite for userId=${user.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     // Issue tokens via TokenService — per-device refresh token
     const accessToken = await this.tokenService.generateAccessToken(user);

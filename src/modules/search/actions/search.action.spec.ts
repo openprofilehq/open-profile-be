@@ -64,6 +64,7 @@ describe('SearchAction', () => {
   it('searches published, active profiles and returns pagination metadata', async () => {
     const rows: PaginatedSearchResult['results'] = [
       {
+        id: '1',
         username: 'ada',
         fullName: 'Ada Lovelace',
         bio: 'Mathematician',

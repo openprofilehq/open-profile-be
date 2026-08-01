@@ -19,14 +19,10 @@ export class AnalyticsStatsDto {
   total: number;
 
   @ApiProperty({
-    example: 38,
-  })
-  today: number;
-
-  @ApiProperty({
     example: 214,
+    description: 'Views within the requested range',
   })
-  this_week: number;
+  range_total: number;
 
   @ApiProperty({
     example: 890,

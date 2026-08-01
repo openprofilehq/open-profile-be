@@ -4,6 +4,7 @@ jest.mock('../../config/env', () => ({
 
 import { SearchController } from './search.controller';
 import { SearchService } from './search.service';
+import type { Request, Response } from 'express';
 
 describe('SearchController', () => {
   let controller: SearchController;
@@ -27,14 +28,22 @@ describe('SearchController', () => {
       page: 1,
       limit: 5,
       totalPages: 0,
+      searchId: 'search-id',
     };
     searchService.searchProfiles.mockResolvedValue(result);
+    const req = {
+      user: { sub: 'user-id' },
+    } as unknown as Request;
+    const res = {
+      cookie: jest.fn(),
+    } as unknown as Response;
 
-    await expect(
-      controller.search(dto, {
-        user: { sub: 'user-id' },
-      } as unknown as Request),
-    ).resolves.toEqual(result);
-    expect(searchService.searchProfiles).toHaveBeenCalledWith(dto, 'user-id');
+    await expect(controller.search(dto, req, res)).resolves.toEqual(result);
+    expect(searchService.searchProfiles).toHaveBeenCalledWith(
+      dto,
+      'user-id',
+      req,
+      res,
+    );
   });
 });
