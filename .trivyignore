@@ -6,7 +6,7 @@
 # braceExpand(), used by TypeORM's migration file discovery. The
 # 1.x/2.x brace-expansion lines (also affected by this advisory,
 # via minimatch@3.1.5/9.0.9) were fixed for real via scoped
-# pnpm.overrides — see pnpm-workspace.yaml and commit <this fix's hash>.
+# pnpm.overrides — see pnpm-workspace.yaml and commit d663381.
 # Blocked upstream on eslint/@angular-devkit bumping to a
 # brace-expansion 5.x-compatible minimatch across the whole chain.
 GHSA-rgw5-rvv9-x895
