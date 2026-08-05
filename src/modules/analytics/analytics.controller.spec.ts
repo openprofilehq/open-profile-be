@@ -21,7 +21,7 @@ describe('AnalyticsController', () => {
   >;
 
   const req = {
-    user: { id: 'user-id' },
+    user: { sub: 'user-id' },
   } as Parameters<AnalyticsController['getProfileViews']>[0];
 
   beforeEach(() => {

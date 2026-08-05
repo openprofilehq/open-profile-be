@@ -13,7 +13,7 @@ import { InviteConversionStatsDto } from './dto/invite-conversion-stats.dto';
 
 interface AuthRequest extends Request {
   user: {
-    id: string;
+    sub: string;
   };
 }
 
@@ -31,7 +31,7 @@ export class AnalyticsController {
     @Req() req: AuthRequest,
     @Query() query: AnalyticsDateRangeQueryDto,
   ) {
-    const userId = req.user.id;
+    const userId = req.user.sub;
     return this.analyticsService.getProfileViewStats(userId, query);
   }
   @Get('link-clicks')
@@ -44,7 +44,7 @@ export class AnalyticsController {
     @Req() req: AuthRequest,
     @Query() query: AnalyticsDateRangeQueryDto,
   ) {
-    return this.analyticsService.getLinkClickStats(req.user.id, query);
+    return this.analyticsService.getLinkClickStats(req.user.sub, query);
   }
 
   @Get('search-conversions')
@@ -58,7 +58,7 @@ export class AnalyticsController {
     @Req() req: AuthRequest,
     @Query() query: AnalyticsDateRangeQueryDto,
   ) {
-    return this.analyticsService.getSearchConversionStats(req.user.id, query);
+    return this.analyticsService.getSearchConversionStats(req.user.sub, query);
   }
 
   @Get('invite-conversions')
@@ -72,6 +72,6 @@ export class AnalyticsController {
     @Req() req: AuthRequest,
     @Query() query: AnalyticsDateRangeQueryDto,
   ) {
-    return this.analyticsService.getInviteConversionStats(req.user.id, query);
+    return this.analyticsService.getInviteConversionStats(req.user.sub, query);
   }
 }

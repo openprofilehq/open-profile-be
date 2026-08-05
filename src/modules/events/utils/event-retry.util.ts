@@ -54,7 +54,7 @@ export async function writeEventWithRetry<T>(
   writeFn: () => Promise<T>,
   onExhausted: (err: unknown, attempts: number) => Promise<void>,
   config: RetryConfig = DEFAULT_RETRY_CONFIG,
-): Promise<void> {
+): Promise<boolean> {
   let attempt = 0;
 
   while (true) {
@@ -63,14 +63,14 @@ export async function writeEventWithRetry<T>(
       if (attempt > 0) {
         logger.log(`Event write succeeded on retry attempt ${attempt}`);
       }
-      return;
+      return true;
     } catch (err) {
       if (!isRetryableError(err)) {
         logger.error(
           `Non-retryable error, dead-lettering immediately: ${(err as Error)?.message}`,
         );
         await safeOnExhausted(onExhausted, err, attempt + 1);
-        return;
+        return false;
       }
 
       if (attempt >= config.maxRetries) {
@@ -80,7 +80,7 @@ export async function writeEventWithRetry<T>(
           }`,
         );
         await safeOnExhausted(onExhausted, err, attempt + 1);
-        return;
+        return false;
       }
 
       const baseDelay =

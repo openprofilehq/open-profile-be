@@ -57,7 +57,7 @@ export class EventsService {
       metadata: params.metadata ?? null,
     };
 
-    await writeEventWithRetry(
+    const written = await writeEventWithRetry(
       () => this.eventRepository.save(this.eventRepository.create(payload)),
       async (err, attempts) => {
         const errorCode =
@@ -76,7 +76,11 @@ export class EventsService {
       },
     );
 
-    if (params.eventType === EventType.PROFILE_VIEWED && params.profileId) {
+    if (
+      written &&
+      params.eventType === EventType.PROFILE_VIEWED &&
+      params.profileId
+    ) {
       await this.checkProfileViewMilestone(params.profileId);
     }
   }
