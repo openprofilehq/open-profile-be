@@ -19,7 +19,15 @@ export class RedisIoAdapter extends IoAdapter {
     this.pubClient = new Redis(env.REDIS_URL, { lazyConnect: true });
     this.subClient = this.pubClient.duplicate();
 
-    await Promise.all([this.pubClient.connect(), this.subClient.connect()]);
+    try {
+      await Promise.all([this.pubClient.connect(), this.subClient.connect()]);
+    } catch (err) {
+      this.logger.error(
+        `Redis connection failed during startup, cleaning up partial connections: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      await this.closeQuietly();
+      throw err;
+    }
 
     this.adapterConstructor = createAdapter(this.pubClient, this.subClient);
     this.logger.log('Redis adapter connected for Socket.IO');
@@ -34,7 +42,26 @@ export class RedisIoAdapter extends IoAdapter {
     return server;
   }
 
+  /**
+   * Closes both Redis clients, logging (not throwing) on failure.
+   * Safe to call from signal handlers and from startup-failure cleanup.
+   */
   async close(): Promise<void> {
-    await Promise.all([this.pubClient?.quit(), this.subClient?.quit()]);
+    const results = await Promise.allSettled([
+      this.pubClient?.quit(),
+      this.subClient?.quit(),
+    ]);
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        this.logger.error(
+          `Failed to close a Redis client during shutdown: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        );
+      }
+    }
+  }
+
+  private async closeQuietly(): Promise<void> {
+    await this.close();
   }
 }
