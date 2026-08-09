@@ -37,7 +37,7 @@ import { PasswordChangedEmailData } from '../mail/interfaces/password-changed-em
 import { AccountLockedEmailData } from '../mail/interfaces/account-locked-email.interface';
 import { NewIpLoginEmailData } from '../mail/interfaces/new-ip-login-email.interface';
 import { GoogleUser } from './interfaces/google.interface';
-import { EventsService } from '../events/events.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
 import { InvitesService } from '../invites/invites.service';
 
@@ -81,7 +81,7 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly redisService: RedisService,
     private readonly tokenService: TokenService,
-    private readonly eventsService: EventsService,
+    private readonly eventEmitter: EventEmitter2,
     private readonly invitesService: InvitesService,
   ) {}
 
@@ -666,13 +666,7 @@ export class AuthService {
 
     if (!anonymousId) return;
 
-    void this.eventsService
-      .mergeAnonymousEvents(anonymousId, userId)
-      .catch((err) =>
-        this.logger.warn(
-          `Failed to merge anonymous events for userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-      );
+    this.eventEmitter.emit('auth.identity.merged', { anonymousId, userId });
   }
 
   async loginGoogle(

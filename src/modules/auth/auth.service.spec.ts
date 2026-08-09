@@ -13,6 +13,7 @@ jest.mock('argon2', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { validate } from 'class-validator';
@@ -26,7 +27,6 @@ import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
 import { MailService } from '../mail/mail.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { TokenService } from './services/token.service';
-import { EventsService } from '../events/events.service';
 import { InvitesService } from '../invites/invites.service';
 import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
 import {
@@ -54,7 +54,7 @@ describe('AuthService', () => {
   let tokenService: Record<string, jest.Mock>;
   let jwtService: Record<string, jest.Mock>;
   let redisService: Record<string, jest.Mock>;
-  let eventsService: Record<string, jest.Mock>;
+  let eventEmitter: Record<string, jest.Mock>;
   let invitesService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
@@ -91,8 +91,8 @@ describe('AuthService', () => {
       del: jest.fn(),
     };
 
-    const mockEventsService = {
-      mergeAnonymousEvents: jest.fn().mockResolvedValue(undefined),
+    const mockEventEmitter = {
+      emit: jest.fn().mockReturnValue(true),
     };
 
     const mockInvitesService = {
@@ -109,7 +109,7 @@ describe('AuthService', () => {
         { provide: MailService, useValue: {} },
         { provide: RedisService, useValue: mockRedisService },
         { provide: TokenService, useValue: mockTokenService },
-        { provide: EventsService, useValue: mockEventsService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: InvitesService, useValue: mockInvitesService },
       ],
     }).compile();
@@ -120,7 +120,7 @@ describe('AuthService', () => {
     tokenService = module.get(TokenService);
     jwtService = module.get(JwtService);
     redisService = module.get(RedisService);
-    eventsService = module.get(EventsService);
+    eventEmitter = module.get(EventEmitter2);
     invitesService = module.get(InvitesService);
     jest.clearAllMocks();
   });
@@ -157,40 +157,42 @@ describe('AuthService', () => {
       tokenService.setTokenCookies.mockReturnValue(undefined);
     });
 
-    it('merges anonymous events when an anonymous_id cookie is present', async () => {
+    it('emits an identity merge event when an anonymous_id cookie is present', async () => {
       const { req, res } = buildReqRes({
         [ANONYMOUS_ID_COOKIE]: 'anon-uuid-123',
       });
 
       await service.login(loginDto, ip, req, res);
 
-      expect(eventsService.mergeAnonymousEvents).toHaveBeenCalledWith(
-        'anon-uuid-123',
-        verifiedUser.id,
-      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith('auth.identity.merged', {
+        anonymousId: 'anon-uuid-123',
+        userId: verifiedUser.id,
+      });
     });
 
-    it('does not attempt a merge when no anonymous_id cookie is present', async () => {
+    it('does not emit a merge event when no anonymous_id cookie is present', async () => {
       const { req, res } = buildReqRes({});
 
       await service.login(loginDto, ip, req, res);
 
-      expect(eventsService.mergeAnonymousEvents).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+        'auth.identity.merged',
+        expect.anything(),
+      );
     });
 
-    it('still returns a successful login when the anonymous-event merge fails', async () => {
+    it('still returns a successful login after emitting the anonymous merge event', async () => {
       const { req, res } = buildReqRes({
         [ANONYMOUS_ID_COOKIE]: 'anon-uuid-123',
       });
-      eventsService.mergeAnonymousEvents.mockRejectedValue(
-        new Error('merge failed'),
-      );
 
       const result = await service.login(loginDto, ip, req, res);
 
       expect(result).toMatchObject({ status: 'success' });
-      // let the fire-and-forget .catch() settle before the test ends
-      await new Promise((resolve) => setImmediate(resolve));
+      expect(eventEmitter.emit).toHaveBeenCalledWith('auth.identity.merged', {
+        anonymousId: 'anon-uuid-123',
+        userId: verifiedUser.id,
+      });
     });
   });
 

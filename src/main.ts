@@ -12,6 +12,7 @@ import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import * as fs from 'fs';
 import * as express from 'express';
+import { RedisIoAdapter } from './realtime/adapters/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -23,6 +24,9 @@ async function bootstrap() {
   app.use(helmet());
   app.use(compression());
   app.use(cookieParser());
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
   const allowedOrigins = new Set(env.CORS_ORIGINS);
 
   const corsOrigin = (

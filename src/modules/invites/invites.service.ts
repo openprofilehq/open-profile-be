@@ -13,11 +13,8 @@ import { Invite } from './entities/invite.entity';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { CreateInviteResponseDto } from './dto/create-invite-response.dto';
 import { UsersService } from '../users/users.service';
-import { EventsService } from '../events/events.service';
-import { EventType } from '../events/entities/event.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { QueueService } from '../queue/queue.service';
-import { NotificationService } from '../notifications/notifications.service';
-import { NotificationType } from '../notifications/enums/notification-type.enum';
 import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import {
@@ -35,10 +32,9 @@ export class InvitesService {
     @InjectRepository(Invite)
     private readonly inviteRepository: Repository<Invite>,
     private readonly usersService: UsersService,
-    private readonly eventsService: EventsService,
+    private readonly eventEmitter: EventEmitter2,
     private readonly queueService: QueueService,
     private readonly configService: ConfigService,
-    private readonly notificationService: NotificationService,
     private readonly rateLimiterService: RateLimiterService,
   ) {}
 
@@ -139,17 +135,10 @@ export class InvitesService {
       );
     }
 
-    void this.eventsService
-      .recordEvent({
-        eventType: EventType.INVITE_SENT,
-        actorId: inviterUserId,
-        metadata: { inviteId: saved.id },
-      })
-      .catch((err: unknown) =>
-        this.logger.warn(
-          `Failed to record INVITE_SENT for inviteId=${saved.id}: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-      );
+    this.eventEmitter.emit('invite.sent', {
+      inviterUserId,
+      inviteId: saved.id,
+    });
 
     return {
       id: saved.id,
@@ -164,15 +153,26 @@ export class InvitesService {
     verifiedEmail: string,
   ): Promise<void> {
     const tokenHash = createHash('sha256').update(token).digest('hex');
-    const result: { id: string; inviterUserId: string }[] =
-      await this.inviteRepository.query(
-        `UPDATE invites SET "claimedAt" = now(), "claimedByUserId" = $1
+    const rawResult: unknown = await this.inviteRepository.query(
+      `UPDATE invites SET "claimedAt" = now(), "claimedByUserId" = $1
       WHERE token = $2 AND "claimedAt" IS NULL AND "expiresAt" > now()
        AND "inviterUserId" <> $1
        AND "recipientEmail" = $3
        RETURNING id, "inviterUserId"`,
-        [claimantUserId, tokenHash, verifiedEmail],
-      );
+      [claimantUserId, tokenHash, verifiedEmail],
+    );
+
+    type Row = { id: string; inviterUserId: string };
+    let result: Row[];
+
+    if (Array.isArray(rawResult)) {
+      result =
+        rawResult.length > 0 && Array.isArray(rawResult[0])
+          ? (rawResult[0] as Row[])
+          : (rawResult as Row[]);
+    } else {
+      result = (rawResult as { rows?: Row[] })?.rows ?? [];
+    }
 
     if (result.length === 0) {
       throw new BadRequestException(
@@ -181,32 +181,11 @@ export class InvitesService {
     }
 
     const { id: inviteId, inviterUserId } = result[0];
-
-    void this.eventsService
-      .recordEvent({
-        eventType: EventType.INVITE_CLAIMED,
-        actorId: claimantUserId,
-        metadata: { inviteId, inviterUserId },
-      })
-      .catch((err: unknown) =>
-        this.logger.warn(
-          `Failed to record INVITE_CLAIMED for inviteId=${inviteId}: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-      );
-
-    void this.notificationService
-      .dispatch({
-        userId: inviterUserId,
-        type: NotificationType.INVITE_CLAIMED,
-        title: 'Your invite was accepted!',
-        body: 'Someone you invited just joined Open Profile.',
-        dedupeKey: `INVITE_CLAIMED_${inviteId}`,
-      })
-      .catch((err: unknown) =>
-        this.logger.warn(
-          `Failed to notify inviter=${inviterUserId} for inviteId=${inviteId}: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-      );
+    this.eventEmitter.emit('invite.claimed', {
+      inviteId,
+      inviterUserId,
+      claimantUserId,
+    });
   }
 
   async recordInviteClick(token: string): Promise<InviteLookupResponseDto> {

@@ -8,9 +8,14 @@ import { AnnouncementController } from './announcements.controller';
 import { AnnouncementFanoutProcessor } from '../queue/processors/announcement-fanout.processor';
 import { User } from '../users/entities/user.entity';
 import { QueueModule } from '../queue/queue.module';
+import { RealtimeModule } from '../../realtime/realtime.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Notification, User]), QueueModule],
+  imports: [
+    TypeOrmModule.forFeature([Notification, User]),
+    QueueModule,
+    RealtimeModule,
+  ],
   providers: [
     NotificationService,
     AnnouncementService,

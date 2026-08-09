@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { Notification } from '../../notifications/entities/notification.entity';
 import { NotificationType } from '../../notifications/enums/notification-type.enum';
 import { QUEUE_NAMES } from '../config/queue-names.constant';
+import { NotificationsGateway } from '../../../realtime/gateways/notifications.gateway';
 
 interface FanoutBatchData {
   announcementId: string;
@@ -21,6 +22,7 @@ export class AnnouncementFanoutProcessor extends WorkerHost {
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepo: Repository<Notification>,
+    private readonly gateway: NotificationsGateway,
   ) {
     super();
   }
@@ -40,17 +42,29 @@ export class AnnouncementFanoutProcessor extends WorkerHost {
       return;
     }
 
-    await this.notificationRepo
+    const result = (await this.notificationRepo
       .createQueryBuilder()
       .insert()
       .into(Notification)
       .values(rows)
       .orIgnore()
-      .execute();
+      .returning(['userId'])
+      .execute()) as { raw: { userId: string }[] };
+
+    const insertedUserIds = result.raw.map((row) => row.userId);
 
     this.logger.log(
-      `Fanned out announcement ${announcementId} to ${userIds.length} users`,
+      `Fanned out announcement ${announcementId}: ${insertedUserIds.length}/${userIds.length} users (new/attempted)`,
     );
+    if (insertedUserIds.length === 0) {
+      return;
+    }
+
+    this.gateway.emitToUsers(insertedUserIds, 'notification:new', {
+      type: NotificationType.SYSTEM_ANNOUNCEMENT,
+      title,
+      body,
+    });
   }
 
   @OnWorkerEvent('failed')
