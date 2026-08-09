@@ -37,6 +37,7 @@ import { HttpMetricsInterceptor } from './modules/metrics/http-metrics.intercept
 import { ValidationError } from 'class-validator';
 import { EventsModule } from './modules/events/events.module';
 import { NotificationModule } from './modules/notifications/notifications.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { NotificationModule } from './modules/notifications/notifications.module
     MetricsModule,
     EventsModule,
     NotificationModule,
+    AdminModule,
   ],
   providers: [
     // Must stay registered before the ValidationPipe: global pipes run in
