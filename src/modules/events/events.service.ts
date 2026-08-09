@@ -151,6 +151,20 @@ export class EventsService {
     );
   }
 
+  @OnEvent('auth.identity.merged')
+  async handleIdentityMerged(payload: {
+    anonymousId: string;
+    userId: string;
+  }): Promise<void> {
+    try {
+      await this.mergeAnonymousEvents(payload.anonymousId, payload.userId);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to merge anonymous events for userId=${payload.userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   @OnEvent('invite.sent')
   async handleInviteSent(payload: {
     inviterUserId: string;

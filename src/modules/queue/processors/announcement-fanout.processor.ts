@@ -48,23 +48,21 @@ export class AnnouncementFanoutProcessor extends WorkerHost {
       .into(Notification)
       .values(rows)
       .orIgnore()
-      .returning(['userId'])
+      .returning('*')
       .execute()) as { raw: { userId: string }[] };
 
-    const insertedUserIds = result.raw.map((row) => row.userId);
+    const insertedRows = result.raw;
 
     this.logger.log(
-      `Fanned out announcement ${announcementId}: ${insertedUserIds.length}/${userIds.length} users (new/attempted)`,
+      `Fanned out announcement ${announcementId}: ${insertedRows.length}/${userIds.length} users (new/attempted)`,
     );
-    if (insertedUserIds.length === 0) {
+    if (insertedRows.length === 0) {
       return;
     }
 
-    this.gateway.emitToUsers(insertedUserIds, 'notification:new', {
-      type: NotificationType.SYSTEM_ANNOUNCEMENT,
-      title,
-      body,
-    });
+    for (const row of insertedRows) {
+      this.gateway.emitToUser(row.userId, 'notification:new', row);
+    }
   }
 
   @OnWorkerEvent('failed')

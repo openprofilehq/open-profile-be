@@ -27,6 +27,8 @@ async function bootstrap() {
   const redisIoAdapter = new RedisIoAdapter(app);
   await redisIoAdapter.connectToRedis();
   app.useWebSocketAdapter(redisIoAdapter);
+  process.on('SIGTERM', () => void redisIoAdapter.close());
+  process.on('SIGINT', () => void redisIoAdapter.close());
   const allowedOrigins = new Set(env.CORS_ORIGINS);
 
   const corsOrigin = (
