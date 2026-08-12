@@ -38,6 +38,7 @@ import { ValidationError } from 'class-validator';
 import { EventsModule } from './modules/events/events.module';
 import { NotificationModule } from './modules/notifications/notifications.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
     MetricsModule,
     EventsModule,
     NotificationModule,
+    AdminModule,
   ],
   providers: [
     // Must stay registered before the ValidationPipe: global pipes run in
