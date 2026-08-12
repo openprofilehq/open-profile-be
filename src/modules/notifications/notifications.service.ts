@@ -11,6 +11,7 @@ import {
 } from '../queue/config/queue-names.constant';
 import { Logger } from '@nestjs/common';
 import { NotificationsGateway } from '../../realtime/gateways/notifications.gateway';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 export interface DispatchNotificationParams {
   userId: string;
@@ -82,7 +83,7 @@ export class NotificationService {
     return notification;
   }
 
-  @OnEvent('invite.claimed')
+  @OnEvent(EVENT_NAMES.INVITE.CLAIMED)
   async handleInviteClaimedNotify(payload: {
     inviteId: string;
     inviterUserId: string;

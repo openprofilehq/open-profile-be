@@ -40,6 +40,7 @@ import { GoogleUser } from './interfaces/google.interface';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
 import { InvitesService } from '../invites/invites.service';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 const FORGOT_PASSWORD_GENERIC_MSG =
   'If an account exists for this email, a verification code has been sent.';
@@ -666,7 +667,10 @@ export class AuthService {
 
     if (!anonymousId) return;
 
-    this.eventEmitter.emit('auth.identity.merged', { anonymousId, userId });
+    this.eventEmitter.emit(EVENT_NAMES.AUTH.IDENTITY_MERGED, {
+      anonymousId,
+      userId,
+    });
   }
 
   async loginGoogle(

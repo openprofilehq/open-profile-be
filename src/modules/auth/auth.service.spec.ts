@@ -29,6 +29,7 @@ import { RedisService } from '../../common/redis/redis.service';
 import { TokenService } from './services/token.service';
 import { InvitesService } from '../invites/invites.service';
 import { ANONYMOUS_ID_COOKIE } from '../../common/cookies/anonymous-id.util';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 import {
   QUEUE_NAMES,
   QUEUE_JOB_NAMES,
@@ -164,10 +165,13 @@ describe('AuthService', () => {
 
       await service.login(loginDto, ip, req, res);
 
-      expect(eventEmitter.emit).toHaveBeenCalledWith('auth.identity.merged', {
-        anonymousId: 'anon-uuid-123',
-        userId: verifiedUser.id,
-      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.AUTH.IDENTITY_MERGED,
+        {
+          anonymousId: 'anon-uuid-123',
+          userId: verifiedUser.id,
+        },
+      );
     });
 
     it('does not emit a merge event when no anonymous_id cookie is present', async () => {
@@ -176,7 +180,7 @@ describe('AuthService', () => {
       await service.login(loginDto, ip, req, res);
 
       expect(eventEmitter.emit).not.toHaveBeenCalledWith(
-        'auth.identity.merged',
+        EVENT_NAMES.AUTH.IDENTITY_MERGED,
         expect.anything(),
       );
     });
@@ -189,10 +193,13 @@ describe('AuthService', () => {
       const result = await service.login(loginDto, ip, req, res);
 
       expect(result).toMatchObject({ status: 'success' });
-      expect(eventEmitter.emit).toHaveBeenCalledWith('auth.identity.merged', {
-        anonymousId: 'anon-uuid-123',
-        userId: verifiedUser.id,
-      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.AUTH.IDENTITY_MERGED,
+        {
+          anonymousId: 'anon-uuid-123',
+          userId: verifiedUser.id,
+        },
+      );
     });
   });
 

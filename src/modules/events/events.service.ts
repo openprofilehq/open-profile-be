@@ -12,6 +12,7 @@ import { NotificationService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification-type.enum';
 import { normalizeUrl } from './utils/normalize-url.util';
 import { OnEvent } from '@nestjs/event-emitter';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 interface RecordEventParams {
   eventType: EventType;
@@ -151,7 +152,7 @@ export class EventsService {
     );
   }
 
-  @OnEvent('auth.identity.merged')
+  @OnEvent(EVENT_NAMES.AUTH.IDENTITY_MERGED)
   async handleIdentityMerged(payload: {
     anonymousId: string;
     userId: string;
@@ -165,7 +166,7 @@ export class EventsService {
     }
   }
 
-  @OnEvent('invite.sent')
+  @OnEvent(EVENT_NAMES.INVITE.SENT)
   async handleInviteSent(payload: {
     inviterUserId: string;
     inviteId: string;
@@ -183,7 +184,7 @@ export class EventsService {
     }
   }
 
-  @OnEvent('invite.claimed')
+  @OnEvent(EVENT_NAMES.INVITE.CLAIMED)
   async handleInviteClaimed(payload: {
     inviteId: string;
     inviterUserId: string;

@@ -22,6 +22,7 @@ import { UsersService } from '../users/users.service';
 import { Invite } from './entities/invite.entity';
 import { InvitesService } from './invites.service';
 import { Job } from 'bullmq';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 jest.mock('../../config/env', () => ({
   env: {
@@ -270,7 +271,7 @@ describe('InvitesService', () => {
         `email=${encodeURIComponent(recipientEmail)}`,
       );
       expect(signupUrl).toContain(`invite=${generatedInviteToken}`);
-      expect(eventEmitter.emit).toHaveBeenCalledWith('invite.sent', {
+      expect(eventEmitter.emit).toHaveBeenCalledWith(EVENT_NAMES.INVITE.SENT, {
         inviterUserId,
         inviteId: savedInvite.id,
       });
@@ -324,11 +325,14 @@ describe('InvitesService', () => {
       expect(inviteRepository.query.mock.calls[0][0]).toContain(
         'AND "recipientEmail" = $3',
       );
-      expect(eventEmitter.emit).toHaveBeenCalledWith('invite.claimed', {
-        inviteId: 'invite-id',
-        inviterUserId,
-        claimantUserId,
-      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.INVITE.CLAIMED,
+        {
+          inviteId: 'invite-id',
+          inviterUserId,
+          claimantUserId,
+        },
+      );
     });
 
     it('throws when the invite is invalid, expired, or already claimed', async () => {
@@ -371,11 +375,14 @@ describe('InvitesService', () => {
 
       await service.claimInvite(rawClaimToken, claimantUserId, recipientEmail);
 
-      expect(eventEmitter.emit).toHaveBeenCalledWith('invite.claimed', {
-        inviteId: 'invite-id',
-        inviterUserId,
-        claimantUserId,
-      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.INVITE.CLAIMED,
+        {
+          inviteId: 'invite-id',
+          inviterUserId,
+          claimantUserId,
+        },
+      );
     });
 
     it('correctly unwraps a { rows: [...] } object result shape', async () => {
@@ -385,11 +392,14 @@ describe('InvitesService', () => {
 
       await service.claimInvite(rawClaimToken, claimantUserId, recipientEmail);
 
-      expect(eventEmitter.emit).toHaveBeenCalledWith('invite.claimed', {
-        inviteId: 'invite-id',
-        inviterUserId,
-        claimantUserId,
-      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.INVITE.CLAIMED,
+        {
+          inviteId: 'invite-id',
+          inviterUserId,
+          claimantUserId,
+        },
+      );
     });
   });
 

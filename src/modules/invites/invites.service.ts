@@ -23,6 +23,7 @@ import {
 } from '../queue/config/queue-names.constant';
 import { env } from '../../config/env';
 import { InviteLookupResponseDto } from './dto/invite-lookup-response.dto';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 @Injectable()
 export class InvitesService {
@@ -135,7 +136,7 @@ export class InvitesService {
       );
     }
 
-    this.eventEmitter.emit('invite.sent', {
+    this.eventEmitter.emit(EVENT_NAMES.INVITE.SENT, {
       inviterUserId,
       inviteId: saved.id,
     });
@@ -181,7 +182,7 @@ export class InvitesService {
     }
 
     const { id: inviteId, inviterUserId } = result[0];
-    this.eventEmitter.emit('invite.claimed', {
+    this.eventEmitter.emit(EVENT_NAMES.INVITE.CLAIMED, {
       inviteId,
       inviterUserId,
       claimantUserId,
