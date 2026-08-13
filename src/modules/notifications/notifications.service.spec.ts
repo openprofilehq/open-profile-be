@@ -10,6 +10,7 @@ import {
   QUEUE_NAMES,
   QUEUE_JOB_NAMES,
 } from '../queue/config/queue-names.constant';
+import { NotificationsGateway } from '../../realtime/gateways/notifications.gateway';
 
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -17,6 +18,7 @@ describe('NotificationService', () => {
   let service: NotificationService;
   let repo: Record<string, jest.Mock>;
   let queueService: Record<string, jest.Mock>;
+  let gateway: Record<string, jest.Mock>;
   let queryBuilder: Record<string, jest.Mock>;
 
   beforeEach(async () => {
@@ -40,6 +42,10 @@ describe('NotificationService', () => {
       addJob: jest.fn(),
     };
 
+    gateway = {
+      emitToUser: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NotificationService,
@@ -50,6 +56,10 @@ describe('NotificationService', () => {
         {
           provide: QueueService,
           useValue: queueService,
+        },
+        {
+          provide: NotificationsGateway,
+          useValue: gateway,
         },
       ],
     }).compile();
@@ -91,6 +101,11 @@ describe('NotificationService', () => {
       });
       expect(queryBuilder.orIgnore).toHaveBeenCalled();
       expect(queryBuilder.returning).toHaveBeenCalledWith('*');
+      expect(gateway.emitToUser).toHaveBeenCalledWith(
+        USER_ID,
+        'notification:new',
+        notification,
+      );
       expect(queueService.addJob).not.toHaveBeenCalled();
     });
 
@@ -107,6 +122,7 @@ describe('NotificationService', () => {
         }),
       ).resolves.toBeNull();
 
+      expect(gateway.emitToUser).not.toHaveBeenCalled();
       expect(queueService.addJob).not.toHaveBeenCalled();
     });
 
