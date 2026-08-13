@@ -61,4 +61,21 @@ export class InvitesController {
   ): Promise<InviteLookupResponseDto> {
     return this.invitesService.recordInviteClick(token);
   }
+
+  @Post(':token/claim')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT')
+  @ApiOperation({
+    summary: 'Claim an invite as the authenticated user',
+  })
+  @ApiParam({
+    name: 'token',
+    description: 'The invite token from the signup URL',
+  })
+  async claimInvite(
+    @Req() req: AuthRequest,
+    @Param('token') token: string,
+  ): Promise<void> {
+    return this.invitesService.claimInvite(token, req.user.sub, req.user.email);
+  }
 }

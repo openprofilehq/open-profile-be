@@ -4,11 +4,14 @@ import { IsNull, Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { NotificationType } from './enums/notification-type.enum';
 import { QueueService } from '../queue/queue.service';
+import { OnEvent } from '@nestjs/event-emitter';
 import {
   QUEUE_NAMES,
   QUEUE_JOB_NAMES,
 } from '../queue/config/queue-names.constant';
 import { Logger } from '@nestjs/common';
+import { NotificationsGateway } from '../../realtime/gateways/notifications.gateway';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 export interface DispatchNotificationParams {
   userId: string;
@@ -32,6 +35,7 @@ export class NotificationService {
     @InjectRepository(Notification)
     private readonly repo: Repository<Notification>,
     private readonly queueService: QueueService,
+    private readonly gateway: NotificationsGateway,
   ) {}
 
   async dispatch(
@@ -59,6 +63,8 @@ export class NotificationService {
 
     const notification = result.raw[0];
 
+    this.gateway.emitToUser(params.userId, 'notification:new', notification);
+
     if (params.sendEmail && params.userEmail) {
       try {
         await this.queueService.addJob(
@@ -75,6 +81,26 @@ export class NotificationService {
     }
 
     return notification;
+  }
+
+  @OnEvent(EVENT_NAMES.INVITE.CLAIMED)
+  async handleInviteClaimedNotify(payload: {
+    inviteId: string;
+    inviterUserId: string;
+  }): Promise<void> {
+    try {
+      await this.dispatch({
+        userId: payload.inviterUserId,
+        type: NotificationType.INVITE_CLAIMED,
+        title: 'Your invite was accepted!',
+        body: 'Someone you invited just joined Open Profile.',
+        dedupeKey: `INVITE_CLAIMED_${payload.inviteId}`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to notify inviter=${payload.inviterUserId} for inviteId=${payload.inviteId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async findAllForUser(userId: string, page = 1, limit = 20) {

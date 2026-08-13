@@ -37,10 +37,12 @@ import { HttpMetricsInterceptor } from './modules/metrics/http-metrics.intercept
 import { ValidationError } from 'class-validator';
 import { EventsModule } from './modules/events/events.module';
 import { NotificationModule } from './modules/notifications/notifications.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
+    EventEmitterModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, databaseConfig, jwtConfig],
