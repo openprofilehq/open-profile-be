@@ -14,10 +14,13 @@ export class RollupProgress {
   id: string;
 
   @Column({ type: 'timestamptz', nullable: true })
-  lastHourlyRollupAt: Date | null;
+  lastDailyRollupAt: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
-  lastDailyRollupAt: Date | null;
+  lastWeeklyRollupAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastThirtyDayRollupAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
