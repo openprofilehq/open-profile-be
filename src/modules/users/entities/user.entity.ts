@@ -21,6 +21,14 @@ export enum AuthProvider {
   GOOGLE = 'google',
 }
 
+export enum UserStatus {
+  ACTIVE = 'active',
+  BLOCKED = 'blocked',
+  SUSPENDED = 'suspended',
+  DEACTIVATED = 'deactivated',
+  FLAGGED_FOR_REVIEW = 'flagged_for_review',
+}
+
 @Entity('users')
 export class User {
   @ApiProperty({ format: 'uuid' })
@@ -60,6 +68,14 @@ export class User {
   @ApiProperty({ enum: UserRole, nullable: true, default: null })
   @Column({ type: 'enum', enum: UserRole, nullable: true, default: null })
   role: UserRole | null;
+
+  @ApiProperty({ enum: UserStatus, default: UserStatus.ACTIVE })
+  @Column({
+    type: 'enum',
+    enum: UserStatus,
+    default: UserStatus.ACTIVE,
+  })
+  status: UserStatus;
 
   @ApiProperty({ enum: AuthProvider, default: AuthProvider.EMAIL })
   @Column({

@@ -4,6 +4,8 @@ import { DailyMetric } from './entities/daily-metric.entity';
 import { RollupProgress } from './entities/rollup-progress.entity';
 import { ThirtyDayMetric } from './entities/thirty-day-metric.entity';
 import { WeeklyMetric } from './entities/weekly-metric.entity';
+import { UserStatusHistory } from './entities/user-status-history.entity';
+import { PlatformDailySnapshot } from './entities/platform-daily-snapshot.entity';
 import { QueueModule } from '../queue/queue.module';
 import { MetricsRollupProcessor } from './processors/metrics-rollup.processor';
 import { MetricsRollupService } from './services/metrics-rollup.service';
@@ -19,6 +21,8 @@ import { AdminMetricsController } from './admin-metrics.controller';
       WeeklyMetric,
       ThirtyDayMetric,
       RollupProgress,
+      UserStatusHistory,
+      PlatformDailySnapshot,
     ]),
     QueueModule,
   ],
