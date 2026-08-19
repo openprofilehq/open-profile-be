@@ -3,6 +3,7 @@ import { Job } from 'bullmq';
 import { QUEUE_JOB_NAMES } from '../../queue/config/queue-names.constant';
 import { MetricsRollupProcessor } from './metrics-rollup.processor';
 import { MetricsRollupService } from '../services/metrics-rollup.service';
+import { PlatformSnapshotService } from '../services/platform-snapshot.service';
 
 jest.mock('@t3-oss/env-core', () => ({
   createEnv: () => ({}) as never,
@@ -22,17 +23,24 @@ describe('MetricsRollupProcessor', () => {
     runDailyRollup: jest.Mock;
     runDailyBackfill: jest.Mock;
   };
+  let platformSnapshotService: {
+    runDailySnapshot: jest.Mock;
+  };
 
   beforeEach(async () => {
     rollupService = {
       runDailyRollup: jest.fn(),
       runDailyBackfill: jest.fn(),
     };
+    platformSnapshotService = {
+      runDailySnapshot: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MetricsRollupProcessor,
         { provide: MetricsRollupService, useValue: rollupService },
+        { provide: PlatformSnapshotService, useValue: platformSnapshotService },
       ],
     }).compile();
 

@@ -6,12 +6,16 @@ import { ThirtyDayMetric } from './entities/thirty-day-metric.entity';
 import { WeeklyMetric } from './entities/weekly-metric.entity';
 import { UserStatusHistory } from './entities/user-status-history.entity';
 import { PlatformDailySnapshot } from './entities/platform-daily-snapshot.entity';
+import { User } from '../users/entities/user.entity';
 import { QueueModule } from '../queue/queue.module';
 import { MetricsRollupProcessor } from './processors/metrics-rollup.processor';
 import { MetricsRollupService } from './services/metrics-rollup.service';
 import { RollupScheduler } from './services/rollup-scheduler.service';
+import { PlatformSnapshotService } from './services/platform-snapshot.service';
+import { AccountStatusService } from './services/account-status.service';
 import { DailyMetricAction } from './actions/daily-metric.action';
 import { RollupProgressAction } from './actions/rollup-progress.action';
+import { PlatformSnapshotAction } from './actions/platform-snapshot.action';
 import { AdminMetricsController } from './admin-metrics.controller';
 
 @Module({
@@ -23,6 +27,7 @@ import { AdminMetricsController } from './admin-metrics.controller';
       RollupProgress,
       UserStatusHistory,
       PlatformDailySnapshot,
+      User,
     ]),
     QueueModule,
   ],
@@ -30,10 +35,13 @@ import { AdminMetricsController } from './admin-metrics.controller';
   providers: [
     DailyMetricAction,
     RollupProgressAction,
+    PlatformSnapshotAction,
     MetricsRollupService,
+    PlatformSnapshotService,
+    AccountStatusService,
     MetricsRollupProcessor,
     RollupScheduler,
   ],
-  exports: [TypeOrmModule, MetricsRollupService],
+  exports: [TypeOrmModule, MetricsRollupService, AccountStatusService],
 })
 export class AdminModule {}

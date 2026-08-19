@@ -25,6 +25,7 @@ export const QUEUE_JOB_NAMES = {
   METRICS: {
     DAILY_ROLLUP: 'daily-rollup',
     BACKFILL: 'backfill',
+    PLATFORM_SNAPSHOT: 'platform-snapshot',
   },
 } as const;
 

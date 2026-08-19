@@ -15,6 +15,7 @@ import { MetricsRollupService } from './metrics-rollup.service';
 
 const REPEAT_PATTERNS = {
   DAILY: '0 1 * * *',
+  SNAPSHOT: '0 2 * * *',
 } as const;
 
 @Injectable()
@@ -31,6 +32,11 @@ export class RollupScheduler implements OnModuleInit, OnApplicationBootstrap {
     await this.scheduleRepeatable(
       QUEUE_JOB_NAMES.METRICS.DAILY_ROLLUP,
       REPEAT_PATTERNS.DAILY,
+    );
+
+    await this.scheduleRepeatable(
+      QUEUE_JOB_NAMES.METRICS.PLATFORM_SNAPSHOT,
+      REPEAT_PATTERNS.SNAPSHOT,
     );
   }
 

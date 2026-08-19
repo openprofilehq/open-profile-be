@@ -6,12 +6,16 @@ import {
   QUEUE_NAMES,
 } from '../../queue/config/queue-names.constant';
 import { MetricsRollupService } from '../services/metrics-rollup.service';
+import { PlatformSnapshotService } from '../services/platform-snapshot.service';
 
 @Processor(QUEUE_NAMES.METRICS, { concurrency: 1 })
 export class MetricsRollupProcessor extends WorkerHost {
   private readonly logger = new Logger(MetricsRollupProcessor.name);
 
-  constructor(private readonly rollupService: MetricsRollupService) {
+  constructor(
+    private readonly rollupService: MetricsRollupService,
+    private readonly platformSnapshotService: PlatformSnapshotService,
+  ) {
     super();
   }
 
@@ -22,6 +26,9 @@ export class MetricsRollupProcessor extends WorkerHost {
         break;
       case QUEUE_JOB_NAMES.METRICS.BACKFILL:
         await this.rollupService.runDailyBackfill();
+        break;
+      case QUEUE_JOB_NAMES.METRICS.PLATFORM_SNAPSHOT:
+        await this.platformSnapshotService.runDailySnapshot();
         break;
       default:
         throw new Error(`Unknown metrics rollup job: ${String(job.name)}`);

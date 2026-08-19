@@ -51,14 +51,19 @@ describe('RollupScheduler', () => {
   });
 
   describe('onModuleInit', () => {
-    it('schedules the daily rollup job on module init', async () => {
+    it('schedules the daily rollup and snapshot jobs on module init', async () => {
       await scheduler.onModuleInit();
 
-      expect(metricsQueue.add).toHaveBeenCalledTimes(1);
+      expect(metricsQueue.add).toHaveBeenCalledTimes(2);
       expect(metricsQueue.add).toHaveBeenCalledWith(
         QUEUE_JOB_NAMES.METRICS.DAILY_ROLLUP,
         {},
         expect.objectContaining({ repeat: { pattern: '0 1 * * *' } }),
+      );
+      expect(metricsQueue.add).toHaveBeenCalledWith(
+        QUEUE_JOB_NAMES.METRICS.PLATFORM_SNAPSHOT,
+        {},
+        expect.objectContaining({ repeat: { pattern: '0 2 * * *' } }),
       );
     });
   });
