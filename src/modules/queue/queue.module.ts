@@ -13,6 +13,9 @@ import { bullConfig } from './config/bull.config';
     BullModule.registerQueue({
       name: QUEUE_NAMES.ANNOUNCEMENT,
     }),
+    BullModule.registerQueue({
+      name: QUEUE_NAMES.METRICS,
+    }),
   ],
   providers: [QueueService],
   exports: [BullModule, QueueService],
