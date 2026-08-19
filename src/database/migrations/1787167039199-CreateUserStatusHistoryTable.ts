@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateUserStatusHistoryTable1786656333775 implements MigrationInterface {
-  name = 'CreateUserStatusHistoryTable1786656333775';
+export class CreateUserStatusHistoryTable1787167039199 implements MigrationInterface {
+  name = 'CreateUserStatusHistoryTable1787167039199';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
@@ -26,7 +26,7 @@ export class CreateUserStatusHistoryTable1786656333775 implements MigrationInter
       `ALTER TABLE "user_status_history" DROP CONSTRAINT IF EXISTS "FK_user_status_history_user_id"`,
     );
     await queryRunner.query(
-      `DROP INDEX IF EXISTS "public"."IDX_user_status_history_user_id"`,
+      `DROP INDEX IF EXISTS "IDX_user_status_history_user_id"`,
     );
     await queryRunner.query(`DROP TABLE IF EXISTS "user_status_history"`);
   }

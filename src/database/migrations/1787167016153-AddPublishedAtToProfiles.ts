@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPublishedAtToProfiles1786656333775 implements MigrationInterface {
-  name = 'AddPublishedAtToProfiles1786656333775';
+export class AddPublishedAtToProfiles1787167016153 implements MigrationInterface {
+  name = 'AddPublishedAtToProfiles1787167016153';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

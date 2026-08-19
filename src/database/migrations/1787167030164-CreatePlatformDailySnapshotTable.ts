@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreatePlatformDailySnapshotTable1786656333775 implements MigrationInterface {
-  name = 'CreatePlatformDailySnapshotTable1786656333775';
+export class CreatePlatformDailySnapshotTable1787167030164 implements MigrationInterface {
+  name = 'CreatePlatformDailySnapshotTable1787167030164';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
