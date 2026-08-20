@@ -73,4 +73,28 @@ describe('PlatformSnapshotAction', () => {
       }
     });
   });
+
+  describe('getLatestBefore', () => {
+    it('returns the most recent snapshot before the given date', async () => {
+      const date = new Date('2026-08-19T00:00:00.000Z');
+      const snapshot = { periodDate: '2026-08-18', totalUsers: 100 };
+      snapshotRepo.query.mockResolvedValue([snapshot]);
+
+      await expect(action.getLatestBefore(date)).resolves.toEqual(snapshot);
+
+      const [sql, params] = snapshotRepo.query.mock.calls[0];
+      expect(sql).toContain('SELECT * FROM platform_daily_snapshot');
+      expect(sql).toContain('"periodDate" < $1');
+      expect(sql).toContain('ORDER BY "periodDate" DESC');
+      expect(sql).toContain('LIMIT 1');
+      expect(params).toEqual([date]);
+    });
+
+    it('returns null when no snapshot exists', async () => {
+      const date = new Date('2026-01-01T00:00:00.000Z');
+      snapshotRepo.query.mockResolvedValue([]);
+
+      await expect(action.getLatestBefore(date)).resolves.toBeNull();
+    });
+  });
 });

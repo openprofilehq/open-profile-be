@@ -4,6 +4,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -21,10 +22,16 @@ import {
 import { QueueService } from '../queue/queue.service';
 import { UserRole } from '../users/entities/user.entity';
 import {
+  AdminMetricsPlatformHealthResponseDto,
+  AdminMetricsRecentActivityResponseDto,
+  AdminMetricsSearchActivityResponseDto,
+  AdminMetricsSummaryResponseDto,
   MetricsBackfillResponseDto,
   MetricsHealthResponseDto,
 } from './dto/admin-metrics-response.dto';
+import { MetricsRangeQueryDto } from './dto/admin-metrics-query.dto';
 import { MetricsRollupService } from './services/metrics-rollup.service';
+import { AdminMetricsService } from './services/admin-metrics.service';
 
 @ApiTags('admin/metrics')
 @ApiBearerAuth('JWT')
@@ -35,6 +42,7 @@ export class AdminMetricsController {
   constructor(
     private readonly rollupService: MetricsRollupService,
     private readonly queueService: QueueService,
+    private readonly metricsService: AdminMetricsService,
   ) {}
 
   @Get('health')
@@ -88,6 +96,86 @@ export class AdminMetricsController {
       success: true,
       message: 'Metrics backfill enqueued',
       data: { jobId: job.id },
+    };
+  }
+
+  @Get('summary')
+  @ApiOperation({
+    summary: 'Platform summary with deltas',
+    description:
+      'Returns platform-wide totals (users, published profiles, completion rate, weekly active, invites) with current/previous window comparison.',
+  })
+  @ApiResponse({
+    status: 200,
+    type: AdminMetricsSummaryResponseDto,
+    description: 'Summary metrics returned',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required' })
+  async getSummary(@Query() query: MetricsRangeQueryDto) {
+    return {
+      success: true,
+      data: await this.metricsService.getSummary(query.range),
+    };
+  }
+
+  @Get('search-activity')
+  @ApiOperation({
+    summary: 'Search activity metrics',
+    description:
+      'Returns total searches and daily timeseries with delta comparison.',
+  })
+  @ApiResponse({
+    status: 200,
+    type: AdminMetricsSearchActivityResponseDto,
+    description: 'Search activity returned',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required' })
+  async getSearchActivity(@Query() query: MetricsRangeQueryDto) {
+    return {
+      success: true,
+      data: await this.metricsService.getSearchActivity(query.range),
+    };
+  }
+
+  @Get('recent-activity')
+  @ApiOperation({
+    summary: "Today's activity",
+    description:
+      "Returns today's stats: new users, published profiles, invites sent and claimed. No range parameter.",
+  })
+  @ApiResponse({
+    status: 200,
+    type: AdminMetricsRecentActivityResponseDto,
+    description: 'Recent activity returned',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required' })
+  async getRecentActivity() {
+    return {
+      success: true,
+      data: await this.metricsService.getRecentActivity(),
+    };
+  }
+
+  @Get('platform-health')
+  @ApiOperation({
+    summary: 'Platform health metrics',
+    description:
+      'Returns profile completion rate with delta and publishing activity timeseries.',
+  })
+  @ApiResponse({
+    status: 200,
+    type: AdminMetricsPlatformHealthResponseDto,
+    description: 'Platform health returned',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required' })
+  async getPlatformHealth(@Query() query: MetricsRangeQueryDto) {
+    return {
+      success: true,
+      data: await this.metricsService.getPlatformHealth(query.range),
     };
   }
 }
