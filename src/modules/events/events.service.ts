@@ -11,6 +11,8 @@ import { writeEventWithRetry } from './utils/event-retry.util';
 import { NotificationService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/enums/notification-type.enum';
 import { normalizeUrl } from './utils/normalize-url.util';
+import { OnEvent } from '@nestjs/event-emitter';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 interface RecordEventParams {
   eventType: EventType;
@@ -57,7 +59,7 @@ export class EventsService {
       metadata: params.metadata ?? null,
     };
 
-    await writeEventWithRetry(
+    const written = await writeEventWithRetry(
       () => this.eventRepository.save(this.eventRepository.create(payload)),
       async (err, attempts) => {
         const errorCode =
@@ -76,7 +78,11 @@ export class EventsService {
       },
     );
 
-    if (params.eventType === EventType.PROFILE_VIEWED && params.profileId) {
+    if (
+      written &&
+      params.eventType === EventType.PROFILE_VIEWED &&
+      params.profileId
+    ) {
       await this.checkProfileViewMilestone(params.profileId);
     }
   }
@@ -144,6 +150,60 @@ export class EventsService {
       { anonymousId, actorId: IsNull() },
       { actorId },
     );
+  }
+
+  @OnEvent(EVENT_NAMES.AUTH.IDENTITY_MERGED)
+  async handleIdentityMerged(payload: {
+    anonymousId: string;
+    userId: string;
+  }): Promise<void> {
+    try {
+      await this.mergeAnonymousEvents(payload.anonymousId, payload.userId);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to merge anonymous events for userId=${payload.userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  @OnEvent(EVENT_NAMES.INVITE.SENT)
+  async handleInviteSent(payload: {
+    inviterUserId: string;
+    inviteId: string;
+  }): Promise<void> {
+    try {
+      await this.recordEvent({
+        eventType: EventType.INVITE_SENT,
+        actorId: payload.inviterUserId,
+        metadata: { inviteId: payload.inviteId },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record INVITE_SENT for inviteId=${payload.inviteId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  @OnEvent(EVENT_NAMES.INVITE.CLAIMED)
+  async handleInviteClaimed(payload: {
+    inviteId: string;
+    inviterUserId: string;
+    claimantUserId: string;
+  }): Promise<void> {
+    try {
+      await this.recordEvent({
+        eventType: EventType.INVITE_CLAIMED,
+        actorId: payload.claimantUserId,
+        metadata: {
+          inviteId: payload.inviteId,
+          inviterUserId: payload.inviterUserId,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record INVITE_CLAIMED for inviteId=${payload.inviteId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private buildLinkSet(content: ProfileContentDto): Set<string> {

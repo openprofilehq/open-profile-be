@@ -179,6 +179,7 @@ describe('EventsService', () => {
           }),
         );
         expect(failedEventRepository.save).toHaveBeenCalledTimes(1);
+        expect(profileRepository.query).not.toHaveBeenCalled();
       });
 
       it('dead-letters after exhausting retries on a persistent transient error', async () => {

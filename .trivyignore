@@ -1,9 +1,12 @@
-# GHSA-mh99-v99m-4gvg — brace-expansion DoS
-# Accepted risk: only reachable via minimatch@3.1.5/9.0.9 in TypeORM's
-# migration-file glob discovery, eslint, and jest — dev/build-time
-# tooling only, not exposed to untrusted runtime input.
-# No pre-5.x patched brace-expansion release exists; forcing 5.x
-# breaks minimatch@9.0.9's braceExpand() (see revert commit <hash>).
-# Blocked upstream on TypeORM bumping its glob/minimatch dependency.
-GHSA-mh99-v99m-4gvg
-CVE-2026-14257
+# GHSA-rgw5-rvv9-x895 — brace-expansion DoS, bypasses CVE-2026-14257 mitigation
+# Accepted risk: only reachable via minimatch@10.2.5 in eslint's
+# @eslint/config-array chain and @nestjs/cli's glob dependency —
+# dev/lint tooling only, not exposed to untrusted runtime input.
+# Patched version is 5.0.9; forcing 5.x breaks minimatch@9.0.9's
+# braceExpand(), used by TypeORM's migration file discovery. The
+# 1.x/2.x brace-expansion lines (also affected by this advisory,
+# via minimatch@3.1.5/9.0.9) were fixed for real via scoped
+# pnpm.overrides — see pnpm-workspace.yaml and commit d663381.
+# Blocked upstream on eslint/@angular-devkit bumping to a
+# brace-expansion 5.x-compatible minimatch across the whole chain.
+GHSA-rgw5-rvv9-x895

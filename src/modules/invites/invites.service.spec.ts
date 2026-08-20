@@ -5,15 +5,12 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
 import { Repository } from 'typeorm';
 import { env } from '../../config/env';
-import { EventType } from '../events/entities/event.entity';
-import { EventsService } from '../events/events.service';
-import { NotificationType } from '../notifications/enums/notification-type.enum';
-import { NotificationService } from '../notifications/notifications.service';
 import {
   QUEUE_JOB_NAMES,
   QUEUE_NAMES,
@@ -25,6 +22,7 @@ import { UsersService } from '../users/users.service';
 import { Invite } from './entities/invite.entity';
 import { InvitesService } from './invites.service';
 import { Job } from 'bullmq';
+import { EVENT_NAMES } from '../../common/events/event-names.constant';
 
 jest.mock('../../config/env', () => ({
   env: {
@@ -53,10 +51,9 @@ describe('InvitesService', () => {
     >
   >;
   let usersService: jest.Mocked<Pick<UsersService, 'findByEmail'>>;
-  let eventsService: jest.Mocked<Pick<EventsService, 'recordEvent'>>;
+  let eventEmitter: jest.Mocked<Pick<EventEmitter2, 'emit'>>;
   let queueService: jest.Mocked<Pick<QueueService, 'addJob'>>;
   let configService: jest.Mocked<Pick<ConfigService, 'get'>>;
-  let notificationService: jest.Mocked<Pick<NotificationService, 'dispatch'>>;
   let rateLimiterService: jest.Mocked<Pick<RateLimiterService, 'isAllowed'>>;
 
   const inviterUserId = 'inviter-user-id';
@@ -98,17 +95,14 @@ describe('InvitesService', () => {
     usersService = {
       findByEmail: jest.fn(),
     };
-    eventsService = {
-      recordEvent: jest.fn(),
+    eventEmitter = {
+      emit: jest.fn().mockReturnValue(true),
     };
     queueService = {
       addJob: jest.fn(),
     };
     configService = {
       get: jest.fn(),
-    };
-    notificationService = {
-      dispatch: jest.fn(),
     };
     rateLimiterService = {
       isAllowed: jest.fn(),
@@ -119,10 +113,9 @@ describe('InvitesService', () => {
         InvitesService,
         { provide: getRepositoryToken(Invite), useValue: inviteRepository },
         { provide: UsersService, useValue: usersService },
-        { provide: EventsService, useValue: eventsService },
+        { provide: EventEmitter2, useValue: eventEmitter },
         { provide: QueueService, useValue: queueService },
         { provide: ConfigService, useValue: configService },
-        { provide: NotificationService, useValue: notificationService },
         { provide: RateLimiterService, useValue: rateLimiterService },
       ],
     }).compile();
@@ -134,8 +127,6 @@ describe('InvitesService', () => {
     inviteRepository.findOne.mockResolvedValue(null);
     inviteRepository.save.mockResolvedValue(savedInvite);
     queueService.addJob.mockResolvedValue({} as Job);
-    eventsService.recordEvent.mockResolvedValue(undefined);
-    notificationService.dispatch.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -167,7 +158,7 @@ describe('InvitesService', () => {
       expect(inviteRepository.findOne).not.toHaveBeenCalled();
       expect(inviteRepository.create).not.toHaveBeenCalled();
       expect(queueService.addJob).not.toHaveBeenCalled();
-      expect(eventsService.recordEvent).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('throws account-exists ConflictException with login redirect without creating an invite', async () => {
@@ -280,10 +271,9 @@ describe('InvitesService', () => {
         `email=${encodeURIComponent(recipientEmail)}`,
       );
       expect(signupUrl).toContain(`invite=${generatedInviteToken}`);
-      expect(eventsService.recordEvent).toHaveBeenCalledWith({
-        eventType: EventType.INVITE_SENT,
-        actorId: inviterUserId,
-        metadata: { inviteId: savedInvite.id },
+      expect(eventEmitter.emit).toHaveBeenCalledWith(EVENT_NAMES.INVITE.SENT, {
+        inviterUserId,
+        inviteId: savedInvite.id,
       });
       expect(result).toEqual({
         id: savedInvite.id,
@@ -313,30 +303,12 @@ describe('InvitesService', () => {
       );
 
       expect(inviteRepository.delete).toHaveBeenCalledWith(savedInvite.id);
-      expect(eventsService.recordEvent).not.toHaveBeenCalled();
-    });
-
-    it('still returns successfully when recording the sent event fails', async () => {
-      eventsService.recordEvent.mockRejectedValue(
-        new Error('event write failed'),
-      );
-
-      await expect(service.createInvite(inviterUserId, dto)).resolves.toEqual({
-        id: savedInvite.id,
-        recipientEmail: savedInvite.recipientEmail,
-        expiresAt: savedInvite.expiresAt,
-      });
-
-      expect(eventsService.recordEvent).toHaveBeenCalledWith({
-        eventType: EventType.INVITE_SENT,
-        actorId: inviterUserId,
-        metadata: { inviteId: savedInvite.id },
-      });
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
   });
 
   describe('claimInvite', () => {
-    it('atomically claims an invite, records the event, and notifies the inviter', async () => {
+    it('atomically claims an invite and emits the claimed event', async () => {
       inviteRepository.query.mockResolvedValue([
         { id: 'invite-id', inviterUserId },
       ]);
@@ -353,18 +325,14 @@ describe('InvitesService', () => {
       expect(inviteRepository.query.mock.calls[0][0]).toContain(
         'AND "recipientEmail" = $3',
       );
-      expect(eventsService.recordEvent).toHaveBeenCalledWith({
-        eventType: EventType.INVITE_CLAIMED,
-        actorId: claimantUserId,
-        metadata: { inviteId: 'invite-id', inviterUserId },
-      });
-      expect(notificationService.dispatch).toHaveBeenCalledWith({
-        userId: inviterUserId,
-        type: NotificationType.INVITE_CLAIMED,
-        title: 'Your invite was accepted!',
-        body: 'Someone you invited just joined Open Profile.',
-        dedupeKey: 'INVITE_CLAIMED_invite-id',
-      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.INVITE.CLAIMED,
+        {
+          inviteId: 'invite-id',
+          inviterUserId,
+          claimantUserId,
+        },
+      );
     });
 
     it('throws when the invite is invalid, expired, or already claimed', async () => {
@@ -378,8 +346,7 @@ describe('InvitesService', () => {
         ),
       );
 
-      expect(eventsService.recordEvent).not.toHaveBeenCalled();
-      expect(notificationService.dispatch).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it("throws when the verified email does not match the invite's recipientEmail", async () => {
@@ -397,25 +364,42 @@ describe('InvitesService', () => {
         ),
       );
 
-      expect(eventsService.recordEvent).not.toHaveBeenCalled();
-      expect(notificationService.dispatch).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
-    it('still resolves when event recording and notification dispatch fail', async () => {
+    it('correctly unwraps a [rows, rowCount] tuple result shape', async () => {
       inviteRepository.query.mockResolvedValue([
-        { id: 'invite-id', inviterUserId },
+        [{ id: 'invite-id', inviterUserId }],
+        1,
       ]);
-      eventsService.recordEvent.mockRejectedValue(new Error('event failed'));
-      notificationService.dispatch.mockRejectedValue(
-        new Error('notification failed'),
+
+      await service.claimInvite(rawClaimToken, claimantUserId, recipientEmail);
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.INVITE.CLAIMED,
+        {
+          inviteId: 'invite-id',
+          inviterUserId,
+          claimantUserId,
+        },
       );
+    });
 
-      await expect(
-        service.claimInvite(rawClaimToken, claimantUserId, recipientEmail),
-      ).resolves.toBeUndefined();
+    it('correctly unwraps a { rows: [...] } object result shape', async () => {
+      inviteRepository.query.mockResolvedValue({
+        rows: [{ id: 'invite-id', inviterUserId }],
+      });
 
-      expect(eventsService.recordEvent).toHaveBeenCalled();
-      expect(notificationService.dispatch).toHaveBeenCalled();
+      await service.claimInvite(rawClaimToken, claimantUserId, recipientEmail);
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        EVENT_NAMES.INVITE.CLAIMED,
+        {
+          inviteId: 'invite-id',
+          inviterUserId,
+          claimantUserId,
+        },
+      );
     });
   });
 

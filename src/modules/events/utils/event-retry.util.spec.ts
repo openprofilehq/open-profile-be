@@ -30,9 +30,9 @@ describe('writeEventWithRetry', () => {
       .fn()
       .mockRejectedValue(new Error('failed_events insert also failed'));
 
-    await expect(
-      writeEventWithRetry(writeFn, onExhausted),
-    ).resolves.toBeUndefined();
+    await expect(writeEventWithRetry(writeFn, onExhausted)).resolves.toBe(
+      false,
+    );
 
     expect(writeFn).toHaveBeenCalledTimes(1);
     expect(onExhausted).toHaveBeenCalledTimes(1);
