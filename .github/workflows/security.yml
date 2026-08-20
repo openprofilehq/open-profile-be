@@ -18,7 +18,9 @@ jobs:
     name: Security — Trivy & SARIF
     runs-on: ubuntu-latest
     permissions:
-      security-events: write   # needed to upload SARIF to GitHub Security tab
+      contents: read
+      security-events: write
+   
 
     steps:
       - name: Checkout code
