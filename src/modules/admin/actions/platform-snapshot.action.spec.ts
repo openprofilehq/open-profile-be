@@ -44,9 +44,9 @@ describe('PlatformSnapshotAction', () => {
       expect(sql).toContain('INSERT INTO platform_daily_snapshot');
       expect(sql).toContain('FROM users u');
       expect(sql).toContain('LEFT JOIN profiles p');
-      expect(sql).toContain('ON CONFLICT ("periodDate") DO UPDATE');
+      expect(sql).toContain('ON CONFLICT ("period_date") DO UPDATE');
       expect(sql).toContain(
-        '"profileCompletionRate" = EXCLUDED."profileCompletionRate"',
+        '"profile_completion_rate" = EXCLUDED."profile_completion_rate"',
       );
       expect(sql).toContain('portfolio_items pi WHERE pi."user_id" = u."id"');
       expect(sql).toContain('we."profile_id" = p."id"');
@@ -59,15 +59,15 @@ describe('PlatformSnapshotAction', () => {
       const [sql] = snapshotRepo.query.mock.calls[0];
 
       for (const column of [
-        '"periodDate"',
-        '"totalUsers"',
-        '"publishedProfiles"',
-        '"profileCompletionRate"',
-        '"weeklyActiveProfiles"',
-        '"newUsersToday"',
-        '"profilesPublishedToday"',
-        '"flaggedForReview"',
-        '"activeSuspensions"',
+        '"period_date"',
+        '"total_users"',
+        '"published_profiles"',
+        '"profile_completion_rate"',
+        '"weekly_active_profiles"',
+        '"new_users_today"',
+        '"profiles_published_today"',
+        '"flagged_for_review"',
+        '"active_suspensions"',
       ]) {
         expect(sql).toContain(column);
       }
@@ -84,8 +84,8 @@ describe('PlatformSnapshotAction', () => {
 
       const [sql, params] = snapshotRepo.query.mock.calls[0];
       expect(sql).toContain('SELECT * FROM platform_daily_snapshot');
-      expect(sql).toContain('"periodDate" < $1');
-      expect(sql).toContain('ORDER BY "periodDate" DESC');
+      expect(sql).toContain('"period_date" < $1');
+      expect(sql).toContain('ORDER BY "period_date" DESC');
       expect(sql).toContain('LIMIT 1');
       expect(params).toEqual([date]);
     });

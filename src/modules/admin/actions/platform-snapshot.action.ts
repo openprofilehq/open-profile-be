@@ -27,42 +27,42 @@ const UPSERT_SNAPSHOT_SQL = `
     WHERE u."deleted_at" IS NULL
   )
   INSERT INTO platform_daily_snapshot (
-    "periodDate", "totalUsers", "publishedProfiles", "profileCompletionRate",
-    "weeklyActiveProfiles", "newUsersToday", "profilesPublishedToday",
-    "flaggedForReview", "activeSuspensions"
+    "period_date", "total_users", "published_profiles", "profile_completion_rate",
+    "weekly_active_profiles", "new_users_today", "profiles_published_today",
+    "flagged_for_review", "active_suspensions"
   )
   SELECT
-    $1::date AS "periodDate",
-    COUNT(*)::int AS "totalUsers",
-    COUNT(*) FILTER (WHERE "published")::int AS "publishedProfiles",
-    ROUND(AVG("filledSections"::numeric) * 100.0 / 9, 2) AS "profileCompletionRate",
+    $1::date AS "period_date",
+    COUNT(*)::int AS "total_users",
+    COUNT(*) FILTER (WHERE "published")::int AS "published_profiles",
+    ROUND(AVG("filledSections"::numeric) * 100.0 / 9, 2) AS "profile_completion_rate",
     (
       SELECT COUNT(DISTINCT e."profileId")::int
       FROM events e
       JOIN profiles ap ON ap."id" = e."profileId" AND ap."deleted_at" IS NULL
       WHERE e."eventType" IN ('PROFILE_VIEWED', 'LINK_CLICKED')
         AND e."occurredAt" >= now() - interval '7 days'
-    ) AS "weeklyActiveProfiles",
-    COUNT(*) FILTER (WHERE "createdAt"::date = $1::date)::int AS "newUsersToday",
+    ) AS "weekly_active_profiles",
+    COUNT(*) FILTER (WHERE "createdAt"::date = $1::date)::int AS "new_users_today",
     (
       SELECT COUNT(*)::int
       FROM profiles pp
       WHERE pp."published_at"::date = $1::date AND pp."deleted_at" IS NULL
-    ) AS "profilesPublishedToday",
-    COUNT(*) FILTER (WHERE "status" = 'flagged_for_review')::int AS "flaggedForReview",
-    COUNT(*) FILTER (WHERE "status" = 'suspended')::int AS "activeSuspensions"
+    ) AS "profiles_published_today",
+    COUNT(*) FILTER (WHERE "status" = 'flagged_for_review')::int AS "flagged_for_review",
+    COUNT(*) FILTER (WHERE "status" = 'suspended')::int AS "active_suspensions"
   FROM user_completion
-  ON CONFLICT ("periodDate") DO UPDATE SET
-    "totalUsers" = EXCLUDED."totalUsers",
-    "publishedProfiles" = EXCLUDED."publishedProfiles",
-    "profileCompletionRate" = EXCLUDED."profileCompletionRate",
-    "weeklyActiveProfiles" = EXCLUDED."weeklyActiveProfiles",
-    "newUsersToday" = EXCLUDED."newUsersToday",
-    "profilesPublishedToday" = EXCLUDED."profilesPublishedToday",
-    "flaggedForReview" = EXCLUDED."flaggedForReview",
-    "activeSuspensions" = EXCLUDED."activeSuspensions",
-    "updatedAt" = now()
-  RETURNING "periodDate"
+  ON CONFLICT ("period_date") DO UPDATE SET
+    "total_users" = EXCLUDED."total_users",
+    "published_profiles" = EXCLUDED."published_profiles",
+    "profile_completion_rate" = EXCLUDED."profile_completion_rate",
+    "weekly_active_profiles" = EXCLUDED."weekly_active_profiles",
+    "new_users_today" = EXCLUDED."new_users_today",
+    "profiles_published_today" = EXCLUDED."profiles_published_today",
+    "flagged_for_review" = EXCLUDED."flagged_for_review",
+    "active_suspensions" = EXCLUDED."active_suspensions",
+    "updated_at" = now()
+  RETURNING "period_date"
 `;
 
 @Injectable()
@@ -80,7 +80,7 @@ export class PlatformSnapshotAction extends AbstractModelAction<PlatformDailySna
 
   async getLatestBefore(date: Date): Promise<PlatformDailySnapshot | null> {
     const rows = await this.repository.query<PlatformDailySnapshot[]>(
-      `SELECT * FROM platform_daily_snapshot WHERE "periodDate" < $1 ORDER BY "periodDate" DESC LIMIT 1`,
+      `SELECT * FROM platform_daily_snapshot WHERE "period_date" < $1 ORDER BY "period_date" DESC LIMIT 1`,
       [date],
     );
     return rows[0] ?? null;
