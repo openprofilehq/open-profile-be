@@ -17,6 +17,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { User } from '../users/entities/user.entity';
 import { forwardRef } from '@nestjs/common';
 import { InvitesModule } from '../invites/invites.module';
 
@@ -27,7 +28,7 @@ import { InvitesModule } from '../invites/invites.module';
       secret: env.JWT_ACCESS_SECRET,
       signOptions: { expiresIn: env.JWT_ACCESS_EXPIRES_IN as StringValue },
     }),
-    TypeOrmModule.forFeature([RefreshToken]),
+    TypeOrmModule.forFeature([RefreshToken, User]),
     UsersModule,
     MailModule,
     QueueModule,
