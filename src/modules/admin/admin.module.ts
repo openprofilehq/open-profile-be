@@ -7,15 +7,18 @@ import { WeeklyMetric } from './entities/weekly-metric.entity';
 import { UserStatusHistory } from './entities/user-status-history.entity';
 import { PlatformDailySnapshot } from './entities/platform-daily-snapshot.entity';
 import { User } from '../users/entities/user.entity';
+import { Invite } from '../invites/entities/invite.entity';
 import { QueueModule } from '../queue/queue.module';
 import { MetricsRollupProcessor } from './processors/metrics-rollup.processor';
 import { MetricsRollupService } from './services/metrics-rollup.service';
 import { RollupScheduler } from './services/rollup-scheduler.service';
 import { PlatformSnapshotService } from './services/platform-snapshot.service';
 import { AccountStatusService } from './services/account-status.service';
+import { AdminMetricsService } from './services/admin-metrics.service';
 import { DailyMetricAction } from './actions/daily-metric.action';
 import { RollupProgressAction } from './actions/rollup-progress.action';
 import { PlatformSnapshotAction } from './actions/platform-snapshot.action';
+import { InviteMetricAction } from './actions/invite-metric.action';
 import { AdminMetricsController } from './admin-metrics.controller';
 
 @Module({
@@ -28,6 +31,7 @@ import { AdminMetricsController } from './admin-metrics.controller';
       UserStatusHistory,
       PlatformDailySnapshot,
       User,
+      Invite,
     ]),
     QueueModule,
   ],
@@ -36,9 +40,11 @@ import { AdminMetricsController } from './admin-metrics.controller';
     DailyMetricAction,
     RollupProgressAction,
     PlatformSnapshotAction,
+    InviteMetricAction,
     MetricsRollupService,
     PlatformSnapshotService,
     AccountStatusService,
+    AdminMetricsService,
     MetricsRollupProcessor,
     RollupScheduler,
   ],

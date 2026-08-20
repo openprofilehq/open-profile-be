@@ -31,6 +31,34 @@ export interface RollupBucketRow {
   count: string;
 }
 
+const SUM_IN_WINDOW_SQL = `
+  SELECT COALESCE(SUM("count"), 0)::bigint AS total
+  FROM daily_metrics
+  WHERE "metricType" = $1
+    AND "periodDate" >= $2
+    AND "periodDate" < $3
+`;
+
+const TIMESERIES_IN_WINDOW_SQL = `
+  SELECT
+    "periodDate" AS date,
+    "count"::bigint AS value
+  FROM daily_metrics
+  WHERE "metricType" = $1
+    AND "periodDate" >= $2
+    AND "periodDate" < $3
+  ORDER BY "periodDate" ASC
+`;
+
+export interface SumRow {
+  total: string;
+}
+
+export interface TimeseriesRow {
+  date: string;
+  value: string;
+}
+
 @Injectable()
 export class DailyMetricAction extends AbstractModelAction<DailyMetric> {
   constructor(
@@ -45,5 +73,30 @@ export class DailyMetricAction extends AbstractModelAction<DailyMetric> {
       from,
       to,
     ]);
+  }
+
+  async sumByTypeInWindow(
+    metricType: string,
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    const rows = await this.repository.query<SumRow[]>(SUM_IN_WINDOW_SQL, [
+      metricType,
+      start,
+      end,
+    ]);
+    return Number(rows[0].total);
+  }
+
+  async timeseriesByTypeInWindow(
+    metricType: string,
+    start: Date,
+    end: Date,
+  ): Promise<{ date: string; value: number }[]> {
+    const rows = await this.repository.query<TimeseriesRow[]>(
+      TIMESERIES_IN_WINDOW_SQL,
+      [metricType, start, end],
+    );
+    return rows.map((r) => ({ date: r.date, value: Number(r.value) }));
   }
 }

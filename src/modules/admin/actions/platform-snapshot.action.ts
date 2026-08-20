@@ -77,4 +77,12 @@ export class PlatformSnapshotAction extends AbstractModelAction<PlatformDailySna
   async computeAndUpsert(periodDate: Date | string): Promise<void> {
     await this.repository.query(UPSERT_SNAPSHOT_SQL, [periodDate]);
   }
+
+  async getLatestBefore(date: Date): Promise<PlatformDailySnapshot | null> {
+    const rows = await this.repository.query<PlatformDailySnapshot[]>(
+      `SELECT * FROM platform_daily_snapshot WHERE "periodDate" < $1 ORDER BY "periodDate" DESC LIMIT 1`,
+      [date],
+    );
+    return rows[0] ?? null;
+  }
 }
