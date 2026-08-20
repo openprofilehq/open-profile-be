@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
@@ -24,6 +24,8 @@ const INACTIVE_STATUSES: readonly string[] = [
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     private readonly redis: RedisService,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
@@ -64,8 +66,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     try {
       const cached = await this.redis.get(cacheKey);
       if (cached) return cached;
-    } catch {
-      // Redis unavailable — fall through to DB
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read user status from Redis: ${(error as Error).message}`,
+      );
     }
 
     const user = await this.userRepo.findOne({
@@ -77,8 +81,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     try {
       await this.redis.set(cacheKey, status, STATUS_CACHE_TTL_SECONDS);
-    } catch {
-      // Redis unavailable — ignore, next request will re-query DB
+    } catch (error) {
+      this.logger.warn(
+        `Failed to cache user status in Redis: ${(error as Error).message}`,
+      );
     }
 
     return status;
