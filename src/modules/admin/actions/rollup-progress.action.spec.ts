@@ -39,14 +39,38 @@ describe('RollupProgressAction', () => {
   });
 
   describe('setDailyProgress', () => {
-    it('upserts the singleton row with the daily watermark', async () => {
+    it('upserts the singleton row with the daily watermark and status', async () => {
+      const at = new Date('2026-07-21T00:00:00.000Z');
+
+      await action.setDailyProgress(at, 'success');
+
+      expect(progressRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT ("id") DO UPDATE'),
+        ['singleton', at, 'success'],
+      );
+    });
+
+    it('defaults status to success', async () => {
       const at = new Date('2026-07-21T00:00:00.000Z');
 
       await action.setDailyProgress(at);
 
       expect(progressRepo.query).toHaveBeenCalledWith(
         expect.stringContaining('ON CONFLICT ("id") DO UPDATE'),
-        ['singleton', at],
+        ['singleton', at, 'success'],
+      );
+    });
+  });
+
+  describe('setSnapshotProgress', () => {
+    it('upserts the singleton row with the snapshot timestamp and status', async () => {
+      const at = new Date('2026-07-21T00:00:00.000Z');
+
+      await action.setSnapshotProgress(at, 'success');
+
+      expect(progressRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('"lastSnapshotAt"'),
+        ['singleton', at, 'success'],
       );
     });
   });
