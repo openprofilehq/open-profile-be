@@ -161,11 +161,7 @@ export class AdminMetricsService {
       await Promise.all([
         this.snapshotAction.getLatestBefore(end),
         this.snapshotAction.getLatestBefore(prevEnd),
-        this.dailyMetricAction.timeseriesByTypeInWindow(
-          MetricType.PROFILE_VIEWS,
-          start,
-          end,
-        ),
+        this.snapshotAction.publishingTimeseriesInWindow(start, end),
       ]);
 
     const result: AdminMetricsPlatformHealthDto = {

@@ -25,6 +25,7 @@ describe('AdminMetricsController', () => {
   let controller: AdminMetricsController;
   let rollupService: {
     getWatermarkStatus: jest.Mock;
+    getFullHealthStatus: jest.Mock;
   };
   let queueService: {
     addJob: jest.Mock;
@@ -37,7 +38,10 @@ describe('AdminMetricsController', () => {
   };
 
   beforeEach(async () => {
-    rollupService = { getWatermarkStatus: jest.fn() };
+    rollupService = {
+      getWatermarkStatus: jest.fn(),
+      getFullHealthStatus: jest.fn(),
+    };
     queueService = { addJob: jest.fn() };
     metricsService = {
       getSummary: jest.fn(),
@@ -63,9 +67,21 @@ describe('AdminMetricsController', () => {
   });
 
   describe('getHealth', () => {
-    it('returns the rollup watermark status', async () => {
-      const status = { lastDailyRollupAt: null, lagMs: null };
-      rollupService.getWatermarkStatus.mockResolvedValue(status);
+    it('returns the full health status', async () => {
+      const status = {
+        lastDailyRollupAt: null,
+        lagMs: null,
+        rollupLastRunStatus: null,
+        backfillInProgress: false,
+        backfillStartedAt: null,
+        backfillLastCappedAt: null,
+        snapshotLastRunAt: null,
+        snapshotLastRunStatus: null,
+        snapshotLatestPeriodDate: null,
+        cacheReachable: true,
+        status: 'healthy',
+      };
+      rollupService.getFullHealthStatus = jest.fn().mockResolvedValue(status);
 
       await expect(controller.getHealth()).resolves.toEqual({
         success: true,

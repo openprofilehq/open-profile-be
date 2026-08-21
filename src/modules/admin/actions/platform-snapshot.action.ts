@@ -85,4 +85,18 @@ export class PlatformSnapshotAction extends AbstractModelAction<PlatformDailySna
     );
     return rows[0] ?? null;
   }
+
+  async publishingTimeseriesInWindow(
+    start: Date,
+    end: Date,
+  ): Promise<{ date: string; value: number }[]> {
+    const rows = await this.repository.query<{ date: string; value: number }[]>(
+      `SELECT "period_date" AS "date", "profiles_published_today" AS "value"
+       FROM platform_daily_snapshot
+       WHERE "period_date" >= $1::date AND "period_date" < $2::date
+       ORDER BY "period_date" ASC`,
+      [start, end],
+    );
+    return rows.map((r) => ({ date: String(r.date), value: Number(r.value) }));
+  }
 }

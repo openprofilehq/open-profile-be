@@ -16,6 +16,38 @@ export class MetricsHealthDto {
       'Milliseconds since the last successful daily rollup; null when no rollup has completed yet',
   })
   lagMs: number | null;
+
+  @ApiProperty({ example: 'success', enum: ['success', 'error', null] })
+  rollupLastRunStatus: string | null;
+
+  @ApiProperty({ example: false })
+  backfillInProgress: boolean;
+
+  @ApiProperty({ example: '2026-08-12T01:05:00.000Z', nullable: true })
+  backfillStartedAt: string | null;
+
+  @ApiProperty({ example: '2026-08-12T01:15:00.000Z', nullable: true })
+  backfillLastCappedAt: string | null;
+
+  @ApiProperty({ example: '2026-08-12T02:00:00.000Z', nullable: true })
+  snapshotLastRunAt: Date | null;
+
+  @ApiProperty({ example: 'success', enum: ['success', 'error', null] })
+  snapshotLastRunStatus: string | null;
+
+  @ApiProperty({ example: '2026-08-12', nullable: true })
+  snapshotLatestPeriodDate: string | null;
+
+  @ApiProperty({ example: true })
+  cacheReachable: boolean;
+
+  @ApiProperty({
+    example: 'healthy',
+    enum: ['healthy', 'degraded', 'unhealthy'],
+    description:
+      'Derived status: healthy when lag is within threshold and last runs succeeded; degraded when lag is elevated but backfill is in progress or cache is down; unhealthy when last run failed or lag is large with no backfill running',
+  })
+  status: 'healthy' | 'degraded' | 'unhealthy';
 }
 
 export class MetricsHealthResponseDto {

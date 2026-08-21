@@ -63,7 +63,7 @@ export class AdminMetricsController {
   async getHealth() {
     return {
       success: true,
-      data: await this.rollupService.getWatermarkStatus(),
+      data: await this.rollupService.getFullHealthStatus(),
     };
   }
 
