@@ -1,12 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PlatformSnapshotAction } from '../actions/platform-snapshot.action';
+import { RollupProgressAction } from '../actions/rollup-progress.action';
 import { PlatformSnapshotService } from './platform-snapshot.service';
 
 describe('PlatformSnapshotService', () => {
   let service: PlatformSnapshotService;
   let snapshotAction: {
     computeAndUpsert: jest.Mock;
+  };
+  let progressAction: {
+    setSnapshotProgress: jest.Mock;
   };
   let redis: {
     set: jest.Mock;
@@ -16,6 +20,7 @@ describe('PlatformSnapshotService', () => {
 
   beforeEach(async () => {
     snapshotAction = { computeAndUpsert: jest.fn() };
+    progressAction = { setSnapshotProgress: jest.fn() };
     redis = {
       set: jest.fn().mockResolvedValue(true),
       del: jest.fn(),
@@ -26,6 +31,7 @@ describe('PlatformSnapshotService', () => {
       providers: [
         PlatformSnapshotService,
         { provide: PlatformSnapshotAction, useValue: snapshotAction },
+        { provide: RollupProgressAction, useValue: progressAction },
         { provide: RedisService, useValue: redis },
       ],
     }).compile();
@@ -49,6 +55,10 @@ describe('PlatformSnapshotService', () => {
       true,
     );
     expect(snapshotAction.computeAndUpsert).toHaveBeenCalledWith(periodDate);
+    expect(progressAction.setSnapshotProgress).toHaveBeenCalledWith(
+      periodDate,
+      'success',
+    );
     expect(redis.del).toHaveBeenCalledWith('metrics:snapshot:daily:lock');
   });
 
@@ -69,10 +79,14 @@ describe('PlatformSnapshotService', () => {
     expect(redis.del).not.toHaveBeenCalled();
   });
 
-  it('releases the lock when the computation fails', async () => {
+  it('releases the lock and records error status when the computation fails', async () => {
     snapshotAction.computeAndUpsert.mockRejectedValue(new Error('boom'));
 
     await expect(service.runDailySnapshot()).rejects.toThrow('boom');
+    expect(progressAction.setSnapshotProgress).toHaveBeenCalledWith(
+      expect.any(Date),
+      'error',
+    );
     expect(redis.del).toHaveBeenCalledWith('metrics:snapshot:daily:lock');
   });
 });

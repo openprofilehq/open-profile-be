@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PlatformSnapshotAction } from '../actions/platform-snapshot.action';
+import { RollupProgressAction } from '../actions/rollup-progress.action';
 
 const SNAPSHOT_LOCK_KEY = 'metrics:snapshot:daily:lock';
 const LOCK_TTL_SECONDS = 15 * 60;
@@ -11,6 +12,7 @@ export class PlatformSnapshotService {
 
   constructor(
     private readonly snapshotAction: PlatformSnapshotAction,
+    private readonly progressAction: RollupProgressAction,
     private readonly redis: RedisService,
   ) {}
 
@@ -22,9 +24,13 @@ export class PlatformSnapshotService {
 
     try {
       await this.snapshotAction.computeAndUpsert(periodDate);
+      await this.progressAction.setSnapshotProgress(periodDate, 'success');
       this.logger.log(
         `Platform daily snapshot written for ${periodDate.toISOString().slice(0, 10)}`,
       );
+    } catch (error) {
+      await this.progressAction.setSnapshotProgress(periodDate, 'error');
+      throw error;
     } finally {
       await this.releaseLock();
     }
