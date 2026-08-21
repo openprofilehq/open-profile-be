@@ -25,10 +25,24 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     nx = false,
   ): Promise<boolean> {
     if (nx) {
-      const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+      if (ttlSeconds > 0) {
+        const result = await this.client.set(
+          key,
+          value,
+          'EX',
+          ttlSeconds,
+          'NX',
+        );
+        return result === 'OK';
+      }
+      const result = await this.client.set(key, value, 'NX');
       return result === 'OK';
     }
-    await this.client.set(key, value, 'EX', ttlSeconds);
+    if (ttlSeconds > 0) {
+      await this.client.set(key, value, 'EX', ttlSeconds);
+    } else {
+      await this.client.set(key, value);
+    }
     return true;
   }
 
