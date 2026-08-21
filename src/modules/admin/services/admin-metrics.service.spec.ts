@@ -19,6 +19,7 @@ describe('AdminMetricsService', () => {
   };
   let snapshotAction: {
     getLatestBefore: jest.Mock;
+    publishingTimeseriesInWindow: jest.Mock;
   };
   let inviteMetricAction: {
     conversionInWindow: jest.Mock;
@@ -33,7 +34,10 @@ describe('AdminMetricsService', () => {
       sumByTypeInWindow: jest.fn(),
       timeseriesByTypeInWindow: jest.fn(),
     };
-    snapshotAction = { getLatestBefore: jest.fn() };
+    snapshotAction = {
+      getLatestBefore: jest.fn(),
+      publishingTimeseriesInWindow: jest.fn(),
+    };
     inviteMetricAction = { conversionInWindow: jest.fn() };
     redis = { get: jest.fn(), set: jest.fn() };
 
@@ -188,7 +192,7 @@ describe('AdminMetricsService', () => {
       snapshotAction.getLatestBefore
         .mockResolvedValueOnce({ profileCompletionRate: 75.5 })
         .mockResolvedValueOnce({ profileCompletionRate: 70.0 });
-      dailyMetricAction.timeseriesByTypeInWindow.mockResolvedValue([
+      snapshotAction.publishingTimeseriesInWindow.mockResolvedValue([
         { date: '2026-08-17', value: 20 },
       ]);
 

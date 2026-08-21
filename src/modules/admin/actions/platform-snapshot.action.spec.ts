@@ -97,4 +97,26 @@ describe('PlatformSnapshotAction', () => {
       await expect(action.getLatestBefore(date)).resolves.toBeNull();
     });
   });
+
+  describe('publishingTimeseriesInWindow', () => {
+    it('returns formatted timeseries points in window', async () => {
+      const start = new Date('2026-08-01T00:00:00.000Z');
+      const end = new Date('2026-08-07T00:00:00.000Z');
+      snapshotRepo.query.mockResolvedValue([
+        { date: '2026-08-01', value: '3' },
+        { date: '2026-08-02', value: 5 },
+      ]);
+
+      const result = await action.publishingTimeseriesInWindow(start, end);
+
+      expect(result).toEqual([
+        { date: '2026-08-01', value: 3 },
+        { date: '2026-08-02', value: 5 },
+      ]);
+      expect(snapshotRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT "period_date" AS "date"'),
+        [start, end],
+      );
+    });
+  });
 });
