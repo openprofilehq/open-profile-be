@@ -8,8 +8,21 @@ import {
 } from '../entities/rollup-progress.entity';
 
 const UPSERT_DAILY_SQL = `
-  INSERT INTO rollup_progress ("id", "lastDailyRollupAt") VALUES ($1, $2)
-  ON CONFLICT ("id") DO UPDATE SET "lastDailyRollupAt" = EXCLUDED."lastDailyRollupAt", "updatedAt" = now()
+  INSERT INTO rollup_progress ("id", "lastDailyRollupAt", "lastDailyRollupStatus")
+  VALUES ($1, $2, $3)
+  ON CONFLICT ("id") DO UPDATE
+    SET "lastDailyRollupAt" = EXCLUDED."lastDailyRollupAt",
+        "lastDailyRollupStatus" = EXCLUDED."lastDailyRollupStatus",
+        "updatedAt" = now()
+`;
+
+const UPSERT_SNAPSHOT_SQL = `
+  INSERT INTO rollup_progress ("id", "lastSnapshotAt", "lastSnapshotStatus")
+  VALUES ($1, $2, $3)
+  ON CONFLICT ("id") DO UPDATE
+    SET "lastSnapshotAt" = EXCLUDED."lastSnapshotAt",
+        "lastSnapshotStatus" = EXCLUDED."lastSnapshotStatus",
+        "updatedAt" = now()
 `;
 
 @Injectable()
@@ -25,7 +38,22 @@ export class RollupProgressAction extends AbstractModelAction<RollupProgress> {
     return this.repository.findOne({ where: { id: ROLLUP_PROGRESS_ID } });
   }
 
-  async setDailyProgress(at: Date): Promise<void> {
-    await this.repository.query(UPSERT_DAILY_SQL, [ROLLUP_PROGRESS_ID, at]);
+  async setDailyProgress(at: Date, status: string = 'success'): Promise<void> {
+    await this.repository.query(UPSERT_DAILY_SQL, [
+      ROLLUP_PROGRESS_ID,
+      at,
+      status,
+    ]);
+  }
+
+  async setSnapshotProgress(
+    at: Date,
+    status: string = 'success',
+  ): Promise<void> {
+    await this.repository.query(UPSERT_SNAPSHOT_SQL, [
+      ROLLUP_PROGRESS_ID,
+      at,
+      status,
+    ]);
   }
 }

@@ -16,11 +16,20 @@ export class RollupProgress {
   @Column({ type: 'timestamptz', nullable: true })
   lastDailyRollupAt: Date | null;
 
+  @Column({ type: 'varchar', length: 20, default: 'success' })
+  lastDailyRollupStatus: string;
+
   @Column({ type: 'timestamptz', nullable: true })
   lastWeeklyRollupAt: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   lastThirtyDayRollupAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastSnapshotAt: Date | null;
+
+  @Column({ type: 'varchar', length: 20, default: 'success' })
+  lastSnapshotStatus: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
