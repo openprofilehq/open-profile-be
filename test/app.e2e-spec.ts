@@ -30,3 +30,26 @@ describe('Health (e2e)', () => {
     await app.close();
   });
 });
+
+describe('Admin Metrics Health (e2e)', () => {
+  let app: INestApplication<App>;
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+  });
+
+  it('GET /api/v1/admin/metrics/health without token → 401', () => {
+    return request(app.getHttpServer())
+      .get('/api/v1/admin/metrics/health')
+      .expect(401);
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+});
