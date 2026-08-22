@@ -86,11 +86,15 @@ src/
 ├── common/                  # Shared decorators, filters, interceptors, Redis, upload
 ├── database/                # Migrations, seeds, DataSource
 └── modules/
+    ├── admin/               # Admin dashboard: metrics rollup, user management
     ├── auth/                # Register, login, JWT, OAuth, OTP, password reset
     ├── users/               # User CRUD, stale user cleanup (cron)
     ├── profile/             # Profile onboarding, components, publish
     ├── portfolio/           # Portfolio items CRUD
     ├── analytics/           # Profile view tracking & stats
+    ├── events/              # Domain event capture (views, clicks, searches, invites)
+    ├── invites/             # Invite system (send, claim, track)
+    ├── notifications/       # In-app notifications (milestones, system)
     ├── search/              # Public profile search
     ├── contact/             # Contact form submissions
     ├── waitlist/            # Waitlist signup
@@ -115,27 +119,76 @@ src/
 
 All endpoints under `/api/v1/`.
 
-| Module    | Key Endpoints                                                                                               |
-| --------- | ----------------------------------------------------------------------------------------------------------- |
-| Auth      | register, login, logout, refresh, me, forgot-password, reset-password, verify-otp, resend-otp, Google OAuth |
-| Users     | CRUD, onboarding-complete                                                                                   |
-| Profiles  | Create (onboarding), publish, update, get public (cached), dashboard, component management                  |
-| Portfolio | Add / update portfolio items                                                                                |
-| Analytics | Record profile view (IP-deduplicated), get stats                                                            |
-| Search    | Full-text search on published profiles                                                                      |
-| Contact   | Submit contact form                                                                                         |
-| Waitlist  | Signup + list                                                                                               |
-| Usernames | Check availability                                                                                          |
-| Uploads   | Image upload (profiles, projects, portfolio categories)                                                     |
+| Module        | Key Endpoints                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| Auth          | register, login, logout, refresh, me, forgot-password, reset-password, verify-otp, resend-otp, Google OAuth |
+| Users         | CRUD, onboarding-complete                                                                                   |
+| Profiles      | Create (onboarding), publish, update, get public (cached), dashboard, component management                  |
+| Portfolio     | Add / update portfolio items                                                                                |
+| Analytics     | Record profile view (IP-deduplicated), get stats                                                            |
+| Search        | Full-text search on published profiles                                                                      |
+| Contact       | Submit contact form                                                                                         |
+| Waitlist      | Signup + list                                                                                               |
+| Usernames     | Check availability                                                                                          |
+| Uploads       | Image upload (profiles, projects, portfolio categories)                                                     |
+| Admin Metrics | health, backfill, summary, search-activity, recent-activity, platform-health                                |
+| Admin Users   | search users, get user detail, change user status                                                           |
+
+## Admin Endpoints
+
+All admin endpoints require the `admin` role and JWT authentication.
+
+### Metrics (`/api/v1/admin/metrics`)
+
+| Method | Path               | Description                                       |
+| ------ | ------------------ | ------------------------------------------------- |
+| GET    | `/health`          | Rollup watermark, lag, and system health status   |
+| POST   | `/backfill`        | Enqueue a one-off catch-up backfill job           |
+| GET    | `/summary`         | Platform summary with current/previous deltas     |
+| GET    | `/search-activity` | Search event totals and daily timeseries          |
+| GET    | `/recent-activity` | Today's stats (new users, publishes, invites)     |
+| GET    | `/platform-health` | Profile completion rate and publishing timeseries |
+
+Query params: `range` — `7d` (default), `30d`, or `90d`.
+
+### Users (`/api/v1/admin/users`)
+
+| Method | Path          | Description                                      |
+| ------ | ------------- | ------------------------------------------------ |
+| GET    | `/`           | Search users by name/username (paginated)        |
+| GET    | `/:id`        | User detail with per-user stats                  |
+| PATCH  | `/:id/status` | Change status (block, suspend, deactivate, etc.) |
 
 ## Database
 
-7 tables: `users`, `profiles`, `components`, `portfolio_items`, `refresh_tokens`, `reset_password`, `profile_views`.
+Core tables: `users`, `profiles`, `components`, `skills`, `education`, `work_experience`, `awards`, `portfolio_items`, `events`, `invites`, `notifications`, `waitlist`, `refresh_tokens`, `reset_password`.
+
+Admin/metrics tables: `daily_metrics`, `weekly_metrics`, `thirty_day_metrics`, `platform_daily_snapshots`, `rollup_progress`, `user_status_history`.
 
 - **User 1:1 Profile** — each user has one profile
 - **Profile 1:N Components** — ordered sections with JSONB metadata
-- **Profile 1:N ProfileViews** — IP-deduplicated view tracking
+- **Profile 1:N Skills / Education / WorkExperience / Awards** — structured profile data
+- **Events** — domain event log (views, clicks, searches, invites) with composite indexes on `occurredAt`
+- **DailyMetrics** — pre-aggregated daily rollups from the events table
 - **Soft deletes** on `users` and `profiles`
+
+## Seeding
+
+```bash
+# Seed all tables with realistic data (50 users, profiles, events, etc.)
+pnpm seed
+
+# Load test: seed 1.2M events + benchmark the daily rollup
+pnpm seed:loadtest
+```
+
+| Env Variable        | Default | Description                       |
+| ------------------- | ------- | --------------------------------- |
+| `SEED_USER_COUNT`   | `50`    | Number of users to seed           |
+| `SEED_EVENT_COUNT`  | `20000` | Number of events (`seed` default) |
+| `SEED_INVITE_COUNT` | `100`   | Number of invite records          |
+
+The load test script (`seed:loadtest`) overrides `SEED_EVENT_COUNT` to `1,200,000` and benchmarks the rollup pipeline, printing per-day chunk timings and verifying index usage via `EXPLAIN ANALYZE`.
 
 ## CI/CD
 
@@ -147,3 +200,5 @@ GitHub Actions workflows:
 ## Cron Jobs
 
 - **Daily midnight**: Deletes unverified accounts older than 30 days (`StaleUsersCleanupService`).
+- **Daily metrics rollup**: Aggregates events into `daily_metrics` using a bounded watermark window (`MetricsRollupProcessor`).
+- **Daily platform snapshot**: Captures platform-wide stats into `platform_daily_snapshots`.
