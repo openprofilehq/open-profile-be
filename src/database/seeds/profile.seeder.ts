@@ -15,14 +15,14 @@ export const profileSeeder: Seeder = {
     const existingCount = await profileRepo.count();
     if (existingCount > 0) {
       console.log(
-        `[ProfileSeeder] ${existingCount} profiles already exist — skipping`,
+        `[ProfileSeeder] ${existingCount} profiles already exist - skipping`,
       );
       return;
     }
 
     const users = await userRepo.find({ order: { createdAt: 'ASC' } });
     if (users.length === 0) {
-      console.log('[ProfileSeeder] no users found — skipping');
+      console.log('[ProfileSeeder] no users found - skipping');
       return;
     }
 

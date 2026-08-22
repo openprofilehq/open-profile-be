@@ -16,7 +16,7 @@ export const inviteSeeder: Seeder = {
     const existingCount = await repo.count();
     if (existingCount > 0) {
       console.log(
-        `[InviteSeeder] ${existingCount} invites already exist — skipping`,
+        `[InviteSeeder] ${existingCount} invites already exist - skipping`,
       );
       return;
     }
@@ -26,7 +26,7 @@ export const inviteSeeder: Seeder = {
       order: { createdAt: 'ASC' },
     });
     if (users.length < 2) {
-      console.log('[InviteSeeder] need ≥ 2 users — skipping');
+      console.log('[InviteSeeder] need >= 2 users - skipping');
       return;
     }
 

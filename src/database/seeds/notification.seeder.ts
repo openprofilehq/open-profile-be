@@ -13,7 +13,7 @@ export const notificationSeeder: Seeder = {
     const existingCount = await repo.count();
     if (existingCount > 0) {
       console.log(
-        `[NotificationSeeder] ${existingCount} notifications already exist — skipping`,
+        `[NotificationSeeder] ${existingCount} notifications already exist - skipping`,
       );
       return;
     }
@@ -23,7 +23,7 @@ export const notificationSeeder: Seeder = {
       order: { createdAt: 'ASC' },
     });
     if (users.length === 0) {
-      console.log('[NotificationSeeder] no users found — skipping');
+      console.log('[NotificationSeeder] no users found - skipping');
       return;
     }
 
@@ -33,7 +33,6 @@ export const notificationSeeder: Seeder = {
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
 
-      // Profile view milestone notification
       if (Math.random() > 0.4) {
         const milestone = [10, 50, 100, 500][Math.floor(Math.random() * 4)];
         entries.push({
@@ -47,7 +46,6 @@ export const notificationSeeder: Seeder = {
         });
       }
 
-      // Invite claimed notification
       if (Math.random() > 0.6) {
         entries.push({
           userId: user.id,
@@ -60,7 +58,6 @@ export const notificationSeeder: Seeder = {
         });
       }
 
-      // System announcement
       if (i < 10) {
         entries.push({
           userId: user.id,
@@ -75,7 +72,7 @@ export const notificationSeeder: Seeder = {
     }
 
     if (entries.length === 0) {
-      console.log('[NotificationSeeder] no notifications generated — done');
+      console.log('[NotificationSeeder] no notifications generated - done');
       return;
     }
 

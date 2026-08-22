@@ -15,8 +15,8 @@ import { notificationSeeder } from './notification.seeder';
 import { waitlistSeeder } from './waitlist.seeder';
 
 const seeders: Seeder[] = [
-  userSeeder, // admin account
-  usersSeeder, // bulk users
+  userSeeder,
+  usersSeeder,
   profileSeeder,
   educationSeeder,
   workExperienceSeeder,
@@ -31,10 +31,10 @@ const seeders: Seeder[] = [
 
 async function run() {
   await dataSource.initialize();
-  console.log('Running seeders…');
+  console.log('Running seeders...');
   const start = Date.now();
   for (const seeder of seeders) {
-    console.log(`→ ${seeder.name}`);
+    console.log(`> ${seeder.name}`);
     await seeder.run(dataSource);
   }
   await dataSource.destroy();

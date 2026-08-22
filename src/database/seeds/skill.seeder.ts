@@ -54,21 +54,20 @@ export const skillSeeder: Seeder = {
     const existingCount = await repo.count();
     if (existingCount > 0) {
       console.log(
-        `[SkillSeeder] ${existingCount} skills already exist — skipping`,
+        `[SkillSeeder] ${existingCount} skills already exist - skipping`,
       );
       return;
     }
 
     const profiles = await profileRepo.find({ select: ['id'] });
     if (profiles.length === 0) {
-      console.log('[SkillSeeder] no profiles found — skipping');
+      console.log('[SkillSeeder] no profiles found - skipping');
       return;
     }
 
     const entries: QueryDeepPartialEntity<Skill>[] = [];
     for (const profile of profiles) {
-      const count = 3 + Math.floor(Math.random() * 6); // 3-8
-      // Pick unique skills for this profile
+      const count = 3 + Math.floor(Math.random() * 6);
       const shuffled = [...SKILL_POOL].sort(() => Math.random() - 0.5);
       const picked = shuffled.slice(0, count);
 

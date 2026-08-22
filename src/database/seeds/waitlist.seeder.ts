@@ -13,7 +13,7 @@ export const waitlistSeeder: Seeder = {
     const existingCount = await repo.count();
     if (existingCount > 0) {
       console.log(
-        `[WaitlistSeeder] ${existingCount} entries already exist — skipping`,
+        `[WaitlistSeeder] ${existingCount} entries already exist - skipping`,
       );
       return;
     }

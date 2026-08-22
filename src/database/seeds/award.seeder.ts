@@ -39,20 +39,20 @@ export const awardSeeder: Seeder = {
     const existingCount = await repo.count();
     if (existingCount > 0) {
       console.log(
-        `[AwardSeeder] ${existingCount} awards already exist — skipping`,
+        `[AwardSeeder] ${existingCount} awards already exist - skipping`,
       );
       return;
     }
 
     const profiles = await profileRepo.find({ select: ['id'] });
     if (profiles.length === 0) {
-      console.log('[AwardSeeder] no profiles found — skipping');
+      console.log('[AwardSeeder] no profiles found - skipping');
       return;
     }
 
     const entries: QueryDeepPartialEntity<Award>[] = [];
     for (const profile of profiles) {
-      const count = Math.floor(Math.random() * 3); // 0-2
+      const count = Math.floor(Math.random() * 3);
       for (let j = 0; j < count; j++) {
         const year = 2018 + Math.floor(Math.random() * 6);
         const month = 1 + Math.floor(Math.random() * 12);
@@ -70,7 +70,7 @@ export const awardSeeder: Seeder = {
     }
 
     if (entries.length === 0) {
-      console.log('[AwardSeeder] no awards generated (random) — done');
+      console.log('[AwardSeeder] no awards generated (random) - done');
       return;
     }
 

@@ -4,22 +4,10 @@ import { Profile } from '../../modules/profile/entities/profile.entity';
 import { User } from '../../modules/users/entities/user.entity';
 import { Seeder } from './seeder.interface';
 
-/**
- * Default: 20 000 events for `pnpm seed` (fast).
- * Override with SEED_EVENT_COUNT for load testing (e.g. 1_200_000).
- */
 const EVENT_COUNT = parseInt(process.env.SEED_EVENT_COUNT ?? '20000', 10);
 const BATCH_SIZE = 5_000;
 const SPREAD_DAYS = 90;
 
-/*
- * Distribution:
- *   PROFILE_VIEWED   50%
- *   SEARCH_PERFORMED 25%
- *   LINK_CLICKED     15%
- *   INVITE_SENT       5%
- *   INVITE_CLAIMED    5%
- */
 const EVENT_TYPES: { type: string; weight: number }[] = [
   { type: 'PROFILE_VIEWED', weight: 0.5 },
   { type: 'SEARCH_PERFORMED', weight: 0.75 },
@@ -45,7 +33,7 @@ export const eventSeeder: Seeder = {
     const existing = Number(eventCount[0].count);
     if (existing >= EVENT_COUNT) {
       console.log(
-        `[EventSeeder] ${existing} events already exist (>= ${EVENT_COUNT}) — skipping`,
+        `[EventSeeder] ${existing} events already exist (>= ${EVENT_COUNT}) - skipping`,
       );
       return;
     }
@@ -59,7 +47,7 @@ export const eventSeeder: Seeder = {
     });
 
     if (profiles.length === 0 || users.length === 0) {
-      console.log('[EventSeeder] no profiles/users found — skipping');
+      console.log('[EventSeeder] no profiles/users found - skipping');
       return;
     }
 
@@ -71,14 +59,13 @@ export const eventSeeder: Seeder = {
     const spreadMs = SPREAD_DAYS * 24 * 60 * 60 * 1000;
 
     console.log(
-      `[EventSeeder] inserting ${toInsert.toLocaleString()} events in batches of ${BATCH_SIZE.toLocaleString()}…`,
+      `[EventSeeder] inserting ${toInsert.toLocaleString()} events in batches of ${BATCH_SIZE.toLocaleString()}...`,
     );
 
     let inserted = 0;
     while (inserted < toInsert) {
       const batchSize = Math.min(BATCH_SIZE, toInsert - inserted);
 
-      // Build raw VALUES for maximum insert throughput
       const values: string[] = [];
       const params: unknown[] = [];
       let paramIdx = 1;

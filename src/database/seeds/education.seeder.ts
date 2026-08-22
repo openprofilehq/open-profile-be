@@ -57,20 +57,20 @@ export const educationSeeder: Seeder = {
     const existingCount = await educationRepo.count();
     if (existingCount > 0) {
       console.log(
-        `[EducationSeeder] ${existingCount} entries already exist — skipping`,
+        `[EducationSeeder] ${existingCount} entries already exist - skipping`,
       );
       return;
     }
 
     const profiles = await profileRepo.find({ select: ['id'] });
     if (profiles.length === 0) {
-      console.log('[EducationSeeder] no profiles found — skipping');
+      console.log('[EducationSeeder] no profiles found - skipping');
       return;
     }
 
     const entries: QueryDeepPartialEntity<Education>[] = [];
     for (const profile of profiles) {
-      const count = 1 + Math.floor(Math.random() * 3); // 1-3
+      const count = 1 + Math.floor(Math.random() * 3);
       for (let j = 0; j < count; j++) {
         const startYear = 2010 + Math.floor(Math.random() * 10);
         entries.push({
@@ -85,7 +85,6 @@ export const educationSeeder: Seeder = {
       }
     }
 
-    // Batch insert in chunks
     const CHUNK = 500;
     for (let i = 0; i < entries.length; i += CHUNK) {
       await educationRepo

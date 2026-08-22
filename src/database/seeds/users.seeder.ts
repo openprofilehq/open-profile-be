@@ -137,7 +137,7 @@ export const usersSeeder: Seeder = {
     const existing = await repo.count();
     if (existing >= USER_COUNT) {
       console.log(
-        `[UsersSeeder] ${existing} users already exist (>= ${USER_COUNT}) — skipping`,
+        `[UsersSeeder] ${existing} users already exist (>= ${USER_COUNT}) - skipping`,
       );
       return;
     }
