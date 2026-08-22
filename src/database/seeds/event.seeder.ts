@@ -4,7 +4,7 @@ import { Profile } from '../../modules/profile/entities/profile.entity';
 import { User } from '../../modules/users/entities/user.entity';
 import { Seeder } from './seeder.interface';
 
-const EVENT_COUNT = parseInt(process.env.SEED_EVENT_COUNT ?? '20000', 10);
+const DEFAULT_EVENT_COUNT = 20000;
 const BATCH_SIZE = 5_000;
 const SPREAD_DAYS = 90;
 
@@ -24,16 +24,24 @@ function pickEventType(): string {
   return 'PROFILE_VIEWED';
 }
 
-export const eventSeeder: Seeder = {
+export interface EventSeeder extends Seeder {
+  run(dataSource: DataSource, customCount?: number): Promise<void>;
+}
+
+export const eventSeeder: EventSeeder = {
   name: 'EventSeeder',
-  async run(dataSource: DataSource) {
+  async run(dataSource: DataSource, customCount?: number) {
+    const targetCount =
+      customCount ??
+      parseInt(process.env.SEED_EVENT_COUNT ?? String(DEFAULT_EVENT_COUNT), 10);
+
     const eventCount = await dataSource.query<{ count: string }[]>(
       'SELECT COUNT(*)::bigint AS count FROM events',
     );
     const existing = Number(eventCount[0].count);
-    if (existing >= EVENT_COUNT) {
+    if (existing >= targetCount) {
       console.log(
-        `[EventSeeder] ${existing} events already exist (>= ${EVENT_COUNT}) - skipping`,
+        `[EventSeeder] ${existing} events already exist (>= ${targetCount}) - skipping`,
       );
       return;
     }
@@ -54,7 +62,7 @@ export const eventSeeder: Seeder = {
     const profileIds = profiles.map((p) => p.id);
     const userIds = users.map((u) => u.id);
 
-    const toInsert = EVENT_COUNT - existing;
+    const toInsert = targetCount - existing;
     const now = Date.now();
     const spreadMs = SPREAD_DAYS * 24 * 60 * 60 * 1000;
 
@@ -110,7 +118,7 @@ export const eventSeeder: Seeder = {
     }
 
     console.log(
-      `[EventSeeder] seeded ${toInsert.toLocaleString()} events (total: ${EVENT_COUNT.toLocaleString()})`,
+      `[EventSeeder] seeded ${toInsert.toLocaleString()} events (total: ${targetCount.toLocaleString()})`,
     );
   },
 };

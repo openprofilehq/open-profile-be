@@ -26,8 +26,7 @@ async function run() {
   await profileSeeder.run(dataSource);
 
   console.log(`\nPhase 2: Seeding ${TARGET_EVENTS.toLocaleString()} events...`);
-  process.env.SEED_EVENT_COUNT = String(TARGET_EVENTS);
-  await eventSeeder.run(dataSource);
+  await eventSeeder.run(dataSource, TARGET_EVENTS);
 
   const countResult = await dataSource.query<{ count: string }[]>(
     'SELECT COUNT(*)::bigint AS count FROM events',
@@ -38,12 +37,22 @@ async function run() {
   console.log('\nPhase 3: Benchmarking daily rollup...\n');
 
   const rangeResult = await dataSource.query<
-    { min_date: string; max_date: string }[]
+    { min_date: Date | string; max_date: Date | string }[]
   >(
-    `SELECT MIN("occurredAt")::date AS min_date, MAX("occurredAt")::date AS max_date FROM events`,
+    `SELECT MIN("occurredAt") AS min_date, MAX("occurredAt") AS max_date FROM events`,
   );
-  const minDate = new Date(rangeResult[0].min_date + 'T00:00:00.000Z');
-  const maxDate = new Date(rangeResult[0].max_date + 'T00:00:00.000Z');
+  const rawMin = rangeResult[0]?.min_date;
+  const rawMax = rangeResult[0]?.max_date;
+  if (!rawMin || !rawMax) {
+    console.log('No events found to rollup.');
+    await dataSource.destroy();
+    return;
+  }
+
+  const minDate = new Date(rawMin);
+  minDate.setUTCHours(0, 0, 0, 0);
+  const maxDate = new Date(rawMax);
+  maxDate.setUTCHours(0, 0, 0, 0);
   maxDate.setTime(maxDate.getTime() + DAY_MS);
 
   console.log(
