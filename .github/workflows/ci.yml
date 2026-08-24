@@ -14,9 +14,9 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: test_db
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
 
         ports:
           - 5432:5432
@@ -27,36 +27,36 @@ jobs:
           --health-retries 5
 
     env:
-      NODE_ENV: test
-      DATABASE_HOST: localhost
-      DATABASE_USER: test_user
-      DATABASE_PASSWORD: test_password
-      DATABASE_NAME: test_db
-      DATABASE_PORT: 5432
-      DATABASE_SYNC: false
-      DATABASE_LOGGING: false
-      DATABASE_SSL: false
-      JWT_ACCESS_SECRET: 40860055a0ebb58dde09264b53586655af735543321e3c7f8e73aaa4965d193d7e69da5e828222ddb1acf6cbb65238f47fe27bc55bfa580ba3b76c121fec54b6
-      JWT_ACCESS_EXPIRES_IN: 3600s
-      JWT_REFRESH_SECRET: 40860055a0ebb58dde09264b53586655af735543321e3c7f8e73aaa4965d193d7e69da5e828222ddb1acf6cbb65238f47fe27bc55bfa580ba3b76c121fec54b6
-      JWT_REFRESH_EXPIRES_IN: 7d
-      JWT_RESET_SECRET: 40860055a0ebb58dde09264b53586655af735543321e3c7f8e73aaa4965d193d7e69da5e828222ddb1acf6cbb65238f47fe27bc55bfa580ba3b76c121fec54b6
-      RESEND_API_KEY: your_resend_api_key
-      MAIL_FROM: example@gmail.com
-      FRONTEND_URL: http://localhost:3000
-      REDIS_URL: redis://localhost:6379
-      APP_URL: http://localhost:3000
-      CLIENT_ID: your_client_id
-      CLIENT_SECRET: your_client_secret
-      GOOGLE_CALLBACK_URL: http://localhost:3000/auth/google/callback
-      CONTACT_EMAIL: test@gmail.com
-      BREVO_SENDER_NAME: Open Profile
-      BREVO_SMTP_USER: your_brevo_smtp_user
-      BREVO_SMTP_PASSWORD: your_brevo_smtp_password
-      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
-      COOKIE_DOMAIN: test@example.com
-      PROFILE_VIEW_MILESTONES: 10,50,100
-      INVITE_EXPIRY_DAYS: 7
+      NODE_ENV: ${{ secrets.NODE_ENV }}
+      DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+      DATABASE_USER: ${{ secrets.DATABASE_USER }}
+      DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+      DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+      DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
+      DATABASE_SYNC: ${{ secrets.DATABASE_SYNC }}
+      DATABASE_LOGGING: ${{ secrets.DATABASE_LOGGING }}
+      DATABASE_SSL: ${{ secrets.DATABASE_SSL }}
+      JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+      JWT_ACCESS_EXPIRES_IN: ${{ secrets.JWT_ACCESS_EXPIRES_IN }}
+      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+      JWT_REFRESH_EXPIRES_IN: ${{ secrets.JWT_REFRESH_EXPIRES_IN }}
+      JWT_RESET_SECRET: ${{ secrets.JWT_RESET_SECRET }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      APP_URL: ${{ secrets.APP_URL }}
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+      GOOGLE_CALLBACK_URL: ${{ secrets.GOOGLE_CALLBACK_URL }}
+      CONTACT_EMAIL: ${{ secrets.CONTACT_EMAIL }}
+      BREVO_SENDER_NAME: ${{ secrets.BREVO_SENDER_NAME }}
+      BREVO_SMTP_USER: ${{ secrets.BREVO_SMTP_USER }}
+      BREVO_SMTP_PASSWORD: ${{ secrets.BREVO_SMTP_PASSWORD }}
+      CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+      COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
+      PROFILE_VIEW_MILESTONES: ${{ secrets.PROFILE_VIEW_MILESTONES }}
+      INVITE_EXPIRY_DAYS: ${{ secrets.INVITE_EXPIRY_DAYS }}
 
     steps:
       - name: Checkout code
