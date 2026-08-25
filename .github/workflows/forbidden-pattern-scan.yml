@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Search repo for forbidden substring
         run: bash scripts/forbidden-pattern-scan.sh "${{ github.workspace }}"
