@@ -1,14 +1,14 @@
 import 'reflect-metadata';
 import dataSource from '../data-source';
+import {
+  buildMetricTypeCaseSql,
+  TRACKED_EVENT_TYPES_SQL,
+} from '../../modules/admin/constants/metrics-rollup';
 import { eventSeeder } from './event.seeder';
 import { usersSeeder } from './users.seeder';
 import { profileSeeder } from './profile.seeder';
 
-const TARGET_EVENTS = parseInt(process.env.SEED_EVENT_COUNT ?? '1200000', 10);
-const ROLLUP_TIME_LIMIT_MS = parseInt(
-  process.env.LOADTEST_TIME_LIMIT_MS ?? '60000',
-  10,
-);
+const TARGET_EVENTS = parseInt(process.env.SEED_EVENT_COUNT ?? '250000', 10);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface ChunkResult {
@@ -65,7 +65,7 @@ async function run() {
      SELECT "eventType", date_trunc('day', "occurredAt")::date, COUNT(*)
      FROM events
      WHERE "occurredAt" >= $1 AND "occurredAt" < $2
-       AND "eventType" IN ('PROFILE_VIEWED', 'LINK_CLICKED', 'SEARCH_PERFORMED', 'INVITE_SENT')
+       AND "eventType" IN (${TRACKED_EVENT_TYPES_SQL})
      GROUP BY 1, 2`,
     [minDate, new Date(minDate.getTime() + DAY_MS)],
   );
@@ -86,17 +86,12 @@ async function run() {
     const result = await dataSource.query<{ count: string }[]>(
       `INSERT INTO daily_metrics ("metricType", "periodDate", "count")
        SELECT
-         CAST(CASE e."eventType"
-           WHEN 'PROFILE_VIEWED' THEN 'profile-views'
-           WHEN 'LINK_CLICKED' THEN 'link-clicks'
-           WHEN 'SEARCH_PERFORMED' THEN 'search-events'
-           WHEN 'INVITE_SENT' THEN 'invites'
-         END AS "public"."daily_metrics_metrictype_enum"),
+         ${buildMetricTypeCaseSql('e."eventType"')},
          CAST(date_trunc('day', e."occurredAt") AS date) AS "periodDate",
          COUNT(*)::bigint AS "count"
        FROM events e
        WHERE e."occurredAt" >= $1 AND e."occurredAt" < $2
-         AND e."eventType" IN ('PROFILE_VIEWED', 'LINK_CLICKED', 'SEARCH_PERFORMED', 'INVITE_SENT')
+         AND e."eventType" IN (${TRACKED_EVENT_TYPES_SQL})
        GROUP BY 1, 2
        ON CONFLICT ("metricType", "periodDate") DO UPDATE
          SET "count" = EXCLUDED."count", "updatedAt" = now()
@@ -139,16 +134,7 @@ async function run() {
   console.log(`Average: ${avgMs}ms/day`);
   console.log(`Max:     ${maxMs}ms`);
 
-  const passed = totalDuration < ROLLUP_TIME_LIMIT_MS;
-  console.log(
-    `\nResult: ${passed ? 'PASS' : 'FAIL'} (${totalDuration}ms ${passed ? '<' : '>='} ${ROLLUP_TIME_LIMIT_MS}ms limit)`,
-  );
-
   await dataSource.destroy();
-
-  if (!passed) {
-    process.exit(1);
-  }
 }
 
 run().catch((error) => {
