@@ -24,36 +24,38 @@ export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
   @Public()
   @Post('link-click')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async recordLinkClick(
     @Body() dto: RecordLinkClickDto,
     @Req() req: Request & { user?: { sub: string } },
     @Res({ passthrough: true }) res: Response,
-  ): Promise<void> {
+  ): Promise<{ recorded: boolean }> {
     const actorId = req.user?.sub ?? undefined;
     const anonymousId = !actorId ? getOrSetAnonymousId(req, res) : undefined;
 
-    const isValid = await this.eventsService.isValidProfileLink(
-      dto.profileId,
+    const { valid, profileId } = await this.eventsService.validateProfileLink(
+      dto.username,
       dto.linkUrl,
     );
 
-    if (!isValid) {
+    if (!valid || !profileId) {
       this.logger.warn(
-        `Rejected link-click: linkUrl not found on profile. profileId=${dto.profileId} linkUrl=${dto.linkUrl}`,
+        `Rejected link-click: linkUrl not found on profile. username=${dto.username} linkUrl=${dto.linkUrl}`,
       );
-      return;
+      return { recorded: false };
     }
 
     await this.eventsService.recordEvent({
       eventType: EventType.LINK_CLICKED,
-      profileId: dto.profileId,
+      profileId,
       actorId,
       anonymousId,
       metadata: { linkUrl: dto.linkUrl },
-      dedupKey: `link-click:${dto.profileId}:${dto.linkUrl}:${actorId ?? anonymousId ?? 'anon'}`,
+      dedupKey: `link-click:${profileId}:${dto.linkUrl}:${actorId ?? anonymousId ?? 'anon'}`,
     });
+
+    return { recorded: true };
   }
 }
