@@ -172,15 +172,19 @@ export class MetricsRollupService {
       ? Date.now() - lastDailyRollupAt.getTime()
       : null;
 
-    const backfillInProgress = await this.tryGetRedis(BACKFILL_IN_PROGRESS_KEY);
-    const backfillStartedAt = await this.tryGetRedis(BACKFILL_STARTED_AT_KEY);
-    const backfillLastCappedAt = await this.tryGetRedis(
-      BACKFILL_LAST_CAPPED_AT_KEY,
-    );
-
-    const cacheReachable = await this.probeCache();
-
-    const snapshotLatestPeriodDate = await this.getLatestSnapshotPeriodDate();
+    const [
+      backfillInProgress,
+      backfillStartedAt,
+      backfillLastCappedAt,
+      cacheReachable,
+      snapshotLatestPeriodDate,
+    ] = await Promise.all([
+      this.tryGetRedis(BACKFILL_IN_PROGRESS_KEY),
+      this.tryGetRedis(BACKFILL_STARTED_AT_KEY),
+      this.tryGetRedis(BACKFILL_LAST_CAPPED_AT_KEY),
+      this.probeCache(),
+      this.getLatestSnapshotPeriodDate(),
+    ]);
 
     const status = this.deriveStatus({
       lagMs,
