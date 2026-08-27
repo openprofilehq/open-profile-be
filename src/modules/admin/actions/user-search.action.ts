@@ -70,30 +70,31 @@ export class UserSearchAction extends AbstractModelAction<User> {
         pattern: `%${normalizedQ}%`,
       });
 
-    const total = await baseQuery.getCount();
-
-    const results = await baseQuery
-      .clone()
-      .select([
-        'u.id                                        AS "id"',
-        'u.full_name                                 AS "fullName"',
-        'u.username                                  AS "username"',
-        'u.email                                     AS "email"',
-        'u.role                                      AS "role"',
-        'u.status                                    AS "status"',
-        'u.is_published                              AS "isPublished"',
-        'u.photo_url                                 AS "photoUrl"',
-        'u.created_at                                AS "createdAt"',
-      ])
-      .orderBy(
-        'CASE WHEN lower(u.username) = lower(:q) THEN 1 ELSE 0 END',
-        'DESC',
-      )
-      .addOrderBy('u.created_at', 'DESC')
-      .setParameter('q', normalizedQ)
-      .limit(safeLimit)
-      .offset(offset)
-      .getRawMany<AdminUserSearchRow>();
+    const [total, results] = await Promise.all([
+      baseQuery.getCount(),
+      baseQuery
+        .clone()
+        .select([
+          'u.id                                        AS "id"',
+          'u.full_name                                 AS "fullName"',
+          'u.username                                  AS "username"',
+          'u.email                                     AS "email"',
+          'u.role                                      AS "role"',
+          'u.status                                    AS "status"',
+          'u.is_published                              AS "isPublished"',
+          'u.photo_url                                 AS "photoUrl"',
+          'u.created_at                                AS "createdAt"',
+        ])
+        .orderBy(
+          'CASE WHEN lower(u.username) = lower(:q) THEN 1 ELSE 0 END',
+          'DESC',
+        )
+        .addOrderBy('u.created_at', 'DESC')
+        .setParameter('q', normalizedQ)
+        .limit(safeLimit)
+        .offset(offset)
+        .getRawMany<AdminUserSearchRow>(),
+    ]);
 
     return {
       results,

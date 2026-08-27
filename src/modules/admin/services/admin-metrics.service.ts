@@ -38,15 +38,13 @@ export class AdminMetricsService {
 
     const { start, end, prevStart, prevEnd } = resolveMetricsRange(range);
 
-    const [currentSnapshot, prevSnapshot] = await Promise.all([
-      this.snapshotAction.getLatestBefore(end),
-      this.snapshotAction.getLatestBefore(prevEnd),
-    ]);
-
-    const [currentInvites, prevInvites] = await Promise.all([
-      this.inviteMetricAction.conversionInWindow(start, end),
-      this.inviteMetricAction.conversionInWindow(prevStart, prevEnd),
-    ]);
+    const [currentSnapshot, prevSnapshot, currentInvites, prevInvites] =
+      await Promise.all([
+        this.snapshotAction.getLatestBefore(end),
+        this.snapshotAction.getLatestBefore(prevEnd),
+        this.inviteMetricAction.conversionInWindow(start, end),
+        this.inviteMetricAction.conversionInWindow(prevStart, prevEnd),
+      ]);
 
     const result: AdminMetricsSummaryDto = {
       totalUsers: this.compareCount(
@@ -130,11 +128,10 @@ export class AdminMetricsService {
     const tomorrow = new Date(today);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-    const snapshot = await this.snapshotAction.getLatestBefore(tomorrow);
-    const invites = await this.inviteMetricAction.conversionInWindow(
-      today,
-      tomorrow,
-    );
+    const [snapshot, invites] = await Promise.all([
+      this.snapshotAction.getLatestBefore(tomorrow),
+      this.inviteMetricAction.conversionInWindow(today, tomorrow),
+    ]);
 
     const result: AdminMetricsRecentActivityDto = {
       newUsersToday: snapshot?.newUsersToday ?? 0,
