@@ -1,6 +1,7 @@
 export const QUEUE_NAMES = {
   EMAIL: 'email',
   ANNOUNCEMENT: 'announcement-fanout',
+  METRICS: 'metrics-rollup',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -21,8 +22,15 @@ export const QUEUE_JOB_NAMES = {
   ANNOUNCEMENT: {
     FANOUT_BATCH: 'fanout-batch',
   },
+  METRICS: {
+    DAILY_ROLLUP: 'daily-rollup',
+    BACKFILL: 'backfill',
+    PLATFORM_SNAPSHOT: 'platform-snapshot',
+  },
 } as const;
 
 export type QueueJobName = {
-  [K in keyof typeof QUEUE_JOB_NAMES]: (typeof QUEUE_JOB_NAMES)[K][keyof (typeof QUEUE_JOB_NAMES)[K]];
+  [
+    K in keyof typeof QUEUE_JOB_NAMES
+  ]: (typeof QUEUE_JOB_NAMES)[K][keyof (typeof QUEUE_JOB_NAMES)[K]];
 }[keyof typeof QUEUE_JOB_NAMES];

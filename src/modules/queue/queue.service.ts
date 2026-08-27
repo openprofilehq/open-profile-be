@@ -14,6 +14,8 @@ export class QueueService {
     @InjectQueue(QUEUE_NAMES.EMAIL) private readonly emailQueue: Queue,
     @InjectQueue(QUEUE_NAMES.ANNOUNCEMENT)
     private readonly announcementQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.METRICS)
+    private readonly metricsQueue: Queue,
   ) {}
 
   async addJob<T>(
@@ -54,6 +56,8 @@ export class QueueService {
         return this.emailQueue;
       case QUEUE_NAMES.ANNOUNCEMENT:
         return this.announcementQueue;
+      case QUEUE_NAMES.METRICS:
+        return this.metricsQueue;
       default:
         throw new Error(`Unknown queue name: ${String(queueName)}`);
     }
