@@ -16,11 +16,11 @@ export interface JwtPayload {
 }
 
 const STATUS_CACHE_TTL_SECONDS = 60;
-const INACTIVE_STATUSES: readonly string[] = [
+const INACTIVE_STATUSES = new Set<string>([
   UserStatus.BLOCKED,
   UserStatus.SUSPENDED,
   UserStatus.DEACTIVATED,
-];
+]);
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -48,7 +48,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   async validate(payload: JwtPayload): Promise<JwtPayload> {
     const status = await this.resolveStatus(payload.sub);
 
-    if (INACTIVE_STATUSES.includes(status)) {
+    if (INACTIVE_STATUSES.has(status)) {
       throw new UnauthorizedException('Account is not active');
     }
 
