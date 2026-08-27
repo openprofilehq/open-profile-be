@@ -228,19 +228,36 @@ export class EventsService {
     return normalizeUrl(url);
   }
 
-  async isValidProfileLink(
-    profileId: string,
+  async validateProfileLink(
+    username: string,
     linkUrl: string,
-  ): Promise<boolean> {
-    const cacheKey = `profile:links:${profileId}`;
-    const lockKey = `profile:links:lock:${profileId}`;
+  ): Promise<{ valid: boolean; profileId: string | null }> {
+    const normalizedUsername = username.toLowerCase();
+    const cacheKey = `profile:links:${normalizedUsername}`;
+    const lockKey = `profile:links:lock:${normalizedUsername}`;
     const normalizedInput = this.normalizeUrl(linkUrl);
+
+    const resolveFromDb = () =>
+      this.profileRepository.findOne({
+        where: {
+          username: normalizedUsername,
+          isPublished: true,
+          deletedAt: IsNull(),
+        },
+        select: ['id', 'content'],
+      });
 
     try {
       const cached = await this.redisService.get(cacheKey);
       if (cached) {
-        const linkSet = new Set<string>(JSON.parse(cached));
-        return linkSet.has(normalizedInput);
+        const parsed = JSON.parse(cached) as {
+          profileId: string | null;
+          links: string[];
+        };
+        return {
+          valid: parsed.links.includes(normalizedInput),
+          profileId: parsed.profileId,
+        };
       }
 
       const lockAcquired = await this.redisService.set(lockKey, '1', 5, true);
@@ -250,57 +267,58 @@ export class EventsService {
           await new Promise((resolve) => setTimeout(resolve, 100));
           const retried = await this.redisService.get(cacheKey);
           if (retried) {
-            const linkSet = new Set<string>(JSON.parse(retried));
-            return linkSet.has(normalizedInput);
+            const parsed = JSON.parse(retried) as {
+              profileId: string | null;
+              links: string[];
+            };
+            return {
+              valid: parsed.links.includes(normalizedInput),
+              profileId: parsed.profileId,
+            };
           }
         }
-        const fallbackProfile = await this.profileRepository.findOne({
-          where: { id: profileId, isPublished: true, deletedAt: IsNull() },
-          select: ['content'],
-        });
-        return (
-          !!fallbackProfile?.content &&
-          this.buildLinkSet(fallbackProfile.content).has(normalizedInput)
-        );
+        const profile = await resolveFromDb();
+        return {
+          valid:
+            !!profile?.content &&
+            this.buildLinkSet(profile.content).has(normalizedInput),
+          profileId: profile?.id ?? null,
+        };
       }
 
       try {
-        const profile = await this.profileRepository.findOne({
-          where: { id: profileId, isPublished: true, deletedAt: IsNull() },
-          select: ['content'],
-        });
+        const profile = await resolveFromDb();
 
         if (!profile?.content) {
           await this.redisService.set(
             cacheKey,
-            JSON.stringify([]),
+            JSON.stringify({ profileId: profile?.id ?? null, links: [] }),
             this.LINK_CACHE_TTL,
           );
-          return false;
+          return { valid: false, profileId: profile?.id ?? null };
         }
 
         const linkSet = this.buildLinkSet(profile.content);
         await this.redisService.set(
           cacheKey,
-          JSON.stringify([...linkSet]),
+          JSON.stringify({ profileId: profile.id, links: [...linkSet] }),
           this.LINK_CACHE_TTL,
         );
-        return linkSet.has(normalizedInput);
+        return { valid: linkSet.has(normalizedInput), profileId: profile.id };
       } finally {
         await this.redisService.del(lockKey);
       }
     } catch (err) {
       this.logger.warn(
-        `[isValidProfileLink] Redis error, falling back to DB: ${err instanceof Error ? err.message : String(err)}`,
+        `[validateProfileLink] Redis error, falling back to DB: ${err instanceof Error ? err.message : String(err)}`,
       );
-      const fallbackProfile = await this.profileRepository.findOne({
-        where: { id: profileId, isPublished: true, deletedAt: IsNull() },
-        select: ['content'],
-      });
-      return (
-        !!fallbackProfile?.content &&
-        this.buildLinkSet(fallbackProfile.content).has(normalizedInput)
-      );
+      const profile = await resolveFromDb();
+      return {
+        valid:
+          !!profile?.content &&
+          this.buildLinkSet(profile.content).has(normalizedInput),
+        profileId: profile?.id ?? null,
+      };
     }
   }
 }
