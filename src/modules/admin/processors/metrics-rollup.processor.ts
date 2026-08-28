@@ -5,8 +5,10 @@ import {
   QUEUE_JOB_NAMES,
   QUEUE_NAMES,
 } from '../../queue/config/queue-names.constant';
+import { RedisService } from '../../../common/redis/redis.service';
 import { MetricsRollupService } from '../services/metrics-rollup.service';
 import { PlatformSnapshotService } from '../services/platform-snapshot.service';
+import { ADMIN_METRICS_CACHE_PREFIX } from '../constants/cache-keys';
 
 @Processor(QUEUE_NAMES.METRICS, { concurrency: 1 })
 export class MetricsRollupProcessor extends WorkerHost {
@@ -15,6 +17,7 @@ export class MetricsRollupProcessor extends WorkerHost {
   constructor(
     private readonly rollupService: MetricsRollupService,
     private readonly platformSnapshotService: PlatformSnapshotService,
+    private readonly redis: RedisService,
   ) {
     super();
   }
@@ -34,6 +37,8 @@ export class MetricsRollupProcessor extends WorkerHost {
         throw new Error(`Unknown metrics rollup job: ${String(job.name)}`);
     }
 
+    await this.invalidateMetricsCache();
+
     this.logger.log(
       `Metrics rollup job ${String(job.name)} (${job.id}) completed`,
     );
@@ -45,5 +50,15 @@ export class MetricsRollupProcessor extends WorkerHost {
       `Metrics rollup job ${String(job.name)} (${job.id}) failed: ${error.message}`,
       error.stack,
     );
+  }
+
+  private async invalidateMetricsCache(): Promise<void> {
+    try {
+      await this.redis.delByPattern(`${ADMIN_METRICS_CACHE_PREFIX}*`);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to invalidate admin metrics cache: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }

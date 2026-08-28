@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { RedisService } from '../../../common/redis/redis.service';
 import { RollupProgress } from '../entities/rollup-progress.entity';
+import { PlatformDailySnapshot } from '../entities/platform-daily-snapshot.entity';
 import { DailyMetricAction } from '../actions/daily-metric.action';
 import { RollupProgressAction } from '../actions/rollup-progress.action';
 import { MetricsRollupService } from './metrics-rollup.service';
@@ -38,16 +40,23 @@ describe('MetricsRollupService', () => {
     getProgress: jest.Mock;
     setDailyProgress: jest.Mock;
   };
+  let snapshotRepo: {
+    createQueryBuilder: jest.Mock;
+  };
   let redis: {
     set: jest.Mock;
     del: jest.Mock;
     expire: jest.Mock;
+    get: jest.Mock;
   };
 
   const progress = (overrides: Partial<RollupProgress> = {}): RollupProgress =>
     ({
       id: 'singleton',
       lastDailyRollupAt: null,
+      lastDailyRollupStatus: 'success',
+      lastSnapshotAt: null,
+      lastSnapshotStatus: 'success',
       ...overrides,
     }) as RollupProgress;
 
@@ -57,13 +66,30 @@ describe('MetricsRollupService', () => {
       getProgress: jest.fn(),
       setDailyProgress: jest.fn(),
     };
-    redis = { set: jest.fn(), del: jest.fn(), expire: jest.fn() };
+    snapshotRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue(null),
+      }),
+    };
+    redis = {
+      set: jest.fn(),
+      del: jest.fn(),
+      expire: jest.fn(),
+      get: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MetricsRollupService,
         { provide: DailyMetricAction, useValue: dailyMetricAction },
         { provide: RollupProgressAction, useValue: progressAction },
+        {
+          provide: getRepositoryToken(PlatformDailySnapshot),
+          useValue: snapshotRepo,
+        },
         { provide: RedisService, useValue: redis },
       ],
     }).compile();
@@ -106,7 +132,10 @@ describe('MetricsRollupService', () => {
 
       expect(dailyMetricAction.rollupWindow).toHaveBeenCalledTimes(1);
       expect(dailyMetricAction.rollupWindow).toHaveBeenCalledWith(from, to);
-      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(to);
+      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(
+        to,
+        'success',
+      );
       expect(redis.del).toHaveBeenCalledWith('metrics:rollup:daily:lock');
     });
 
@@ -122,7 +151,10 @@ describe('MetricsRollupService', () => {
       await service.runDailyRollup();
 
       expect(dailyMetricAction.rollupWindow).toHaveBeenCalledWith(from, to);
-      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(to);
+      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(
+        to,
+        'success',
+      );
     });
 
     it('starts from the start of the present day when no watermark exists', async () => {
@@ -136,7 +168,10 @@ describe('MetricsRollupService', () => {
       await service.runDailyRollup();
 
       expect(dailyMetricAction.rollupWindow).toHaveBeenCalledWith(from, to);
-      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(to);
+      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(
+        to,
+        'success',
+      );
     });
 
     it('starts from the configured launch date when no watermark exists', async () => {
@@ -151,10 +186,13 @@ describe('MetricsRollupService', () => {
       await service.runDailyRollup();
 
       expect(dailyMetricAction.rollupWindow).toHaveBeenCalledWith(from, to);
-      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(to);
+      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(
+        to,
+        'success',
+      );
     });
 
-    it('releases the lock and does not advance the watermark when the rollup fails', async () => {
+    it('releases the lock and records error status when the rollup fails', async () => {
       redis.set.mockResolvedValue(true);
       progressAction.getProgress.mockResolvedValue(
         progress({ lastDailyRollupAt: new Date('2026-07-20T00:00:00.000Z') }),
@@ -162,8 +200,23 @@ describe('MetricsRollupService', () => {
       dailyMetricAction.rollupWindow.mockRejectedValue(new Error('boom'));
 
       await expect(service.runDailyRollup()).rejects.toThrow('boom');
+      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(
+        expect.any(Date),
+        'error',
+      );
       expect(redis.del).toHaveBeenCalledWith('metrics:rollup:daily:lock');
-      expect(progressAction.setDailyProgress).not.toHaveBeenCalled();
+    });
+
+    it('releases the lock when already caught up (no-op)', async () => {
+      redis.set.mockResolvedValue(true);
+      progressAction.getProgress.mockResolvedValue(
+        progress({ lastDailyRollupAt: new Date('2026-07-21T00:00:00.000Z') }),
+      );
+
+      await service.runDailyRollup();
+
+      expect(dailyMetricAction.rollupWindow).not.toHaveBeenCalled();
+      expect(redis.del).toHaveBeenCalledWith('metrics:rollup:daily:lock');
     });
   });
 
@@ -201,8 +254,16 @@ describe('MetricsRollupService', () => {
         day2,
         day3,
       );
-      expect(progressAction.setDailyProgress).toHaveBeenNthCalledWith(1, day2);
-      expect(progressAction.setDailyProgress).toHaveBeenNthCalledWith(2, day3);
+      expect(progressAction.setDailyProgress).toHaveBeenNthCalledWith(
+        1,
+        day2,
+        'success',
+      );
+      expect(progressAction.setDailyProgress).toHaveBeenNthCalledWith(
+        2,
+        day3,
+        'success',
+      );
       expect(redis.del).toHaveBeenCalledWith('metrics:rollup:daily:lock');
     });
 
@@ -246,8 +307,25 @@ describe('MetricsRollupService', () => {
       expect(dailyMetricAction.rollupWindow).toHaveBeenCalledTimes(1);
       expect(progressAction.setDailyProgress).toHaveBeenCalledWith(
         new Date('2026-07-20T00:00:00.000Z'),
+        'success',
       );
       expect(redis.del).toHaveBeenCalledWith('metrics:rollup:daily:lock');
+    });
+
+    it('records backfillLastCappedAt when max duration is hit', async () => {
+      env.METRICS_BACKFILL_MAX_DURATION_MS = 0;
+      redis.set.mockResolvedValue(true);
+      progressAction.getProgress.mockResolvedValue(
+        progress({ lastDailyRollupAt: new Date('2026-07-19T00:00:00.000Z') }),
+      );
+
+      await service.runDailyBackfill();
+
+      expect(redis.set).toHaveBeenCalledWith(
+        'admin:metrics:backfill:last-capped-at',
+        expect.any(String),
+        0,
+      );
     });
 
     it('refreshes the lock TTL between chunks', async () => {
@@ -277,6 +355,10 @@ describe('MetricsRollupService', () => {
       dailyMetricAction.rollupWindow.mockRejectedValue(new Error('boom'));
 
       await expect(service.runDailyBackfill()).rejects.toThrow('boom');
+      expect(progressAction.setDailyProgress).toHaveBeenCalledWith(
+        expect.any(Date),
+        'error',
+      );
       expect(redis.del).toHaveBeenCalledWith('metrics:rollup:daily:lock');
     });
 
@@ -304,6 +386,32 @@ describe('MetricsRollupService', () => {
       expect(delaySpy).toHaveBeenCalledWith(1000);
       expect(redis.expire).toHaveBeenCalled();
     });
+
+    it('sets backfill in-progress key on start and clears on completion', async () => {
+      redis.set.mockResolvedValue(true);
+      progressAction.getProgress.mockResolvedValue(
+        progress({ lastDailyRollupAt: new Date('2026-07-21T00:00:00.000Z') }),
+      );
+
+      await service.runDailyBackfill();
+
+      expect(redis.set).toHaveBeenCalledWith(
+        'admin:metrics:backfill:in-progress',
+        'true',
+        0,
+      );
+      expect(redis.set).toHaveBeenCalledWith(
+        'admin:metrics:backfill:started-at',
+        expect.any(String),
+        0,
+      );
+      expect(redis.del).toHaveBeenCalledWith(
+        'admin:metrics:backfill:in-progress',
+      );
+      expect(redis.del).toHaveBeenCalledWith(
+        'admin:metrics:backfill:started-at',
+      );
+    });
   });
 
   describe('getWatermarkStatus', () => {
@@ -325,6 +433,127 @@ describe('MetricsRollupService', () => {
         lastDailyRollupAt: null,
         lagMs: null,
       });
+    });
+  });
+
+  describe('getFullHealthStatus', () => {
+    it('returns healthy status when lag is within threshold and last runs succeeded', async () => {
+      progressAction.getProgress.mockResolvedValue(
+        progress({
+          lastDailyRollupAt: new Date('2026-07-20T23:00:00.000Z'),
+          lastDailyRollupStatus: 'success',
+          lastSnapshotAt: new Date('2026-07-21T02:00:00.000Z'),
+          lastSnapshotStatus: 'success',
+        }),
+      );
+      redis.get.mockResolvedValue(null);
+      redis.set.mockResolvedValue(true);
+      snapshotRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ period_date: '2026-07-21' }),
+      });
+
+      const result = await service.getFullHealthStatus();
+
+      expect(result.status).toBe('healthy');
+      expect(result.rollupLastRunStatus).toBe('success');
+      expect(result.snapshotLastRunStatus).toBe('success');
+      expect(result.cacheReachable).toBe(true);
+      expect(result.backfillInProgress).toBe(false);
+      expect(result.snapshotLatestPeriodDate).toBe('2026-07-21');
+    });
+
+    it('returns unhealthy when rollup last run errored', async () => {
+      progressAction.getProgress.mockResolvedValue(
+        progress({
+          lastDailyRollupAt: new Date('2026-07-20T00:00:00.000Z'),
+          lastDailyRollupStatus: 'error',
+        }),
+      );
+      redis.get.mockResolvedValue(null);
+      redis.set.mockResolvedValue(true);
+
+      const result = await service.getFullHealthStatus();
+
+      expect(result.status).toBe('unhealthy');
+      expect(result.rollupLastRunStatus).toBe('error');
+    });
+
+    it('returns unhealthy when snapshot last run errored', async () => {
+      progressAction.getProgress.mockResolvedValue(
+        progress({
+          lastDailyRollupAt: new Date('2026-07-20T23:00:00.000Z'),
+          lastDailyRollupStatus: 'success',
+          lastSnapshotStatus: 'error',
+        }),
+      );
+      redis.get.mockResolvedValue(null);
+      redis.set.mockResolvedValue(true);
+
+      const result = await service.getFullHealthStatus();
+
+      expect(result.status).toBe('unhealthy');
+      expect(result.snapshotLastRunStatus).toBe('error');
+    });
+
+    it('returns degraded when lag is large but backfill is in progress', async () => {
+      progressAction.getProgress.mockResolvedValue(
+        progress({
+          lastDailyRollupAt: new Date('2026-07-19T00:00:00.000Z'),
+          lastDailyRollupStatus: 'success',
+        }),
+      );
+      redis.get.mockImplementation(async (key: string) => {
+        if (key === 'admin:metrics:backfill:in-progress') return 'true';
+        return null;
+      });
+      redis.set.mockResolvedValue(true);
+
+      const result = await service.getFullHealthStatus();
+
+      expect(result.status).toBe('degraded');
+      expect(result.backfillInProgress).toBe(true);
+    });
+
+    it('returns unhealthy when lag is large and no backfill is running', async () => {
+      progressAction.getProgress.mockResolvedValue(
+        progress({
+          lastDailyRollupAt: new Date('2026-07-19T00:00:00.000Z'),
+          lastDailyRollupStatus: 'success',
+        }),
+      );
+      redis.get.mockResolvedValue(null);
+      redis.set.mockResolvedValue(true);
+
+      const result = await service.getFullHealthStatus();
+
+      expect(result.status).toBe('unhealthy');
+      expect(result.backfillInProgress).toBe(false);
+    });
+
+    it('returns degraded when cache is unreachable', async () => {
+      progressAction.getProgress.mockResolvedValue(
+        progress({
+          lastDailyRollupAt: new Date('2026-07-20T23:00:00.000Z'),
+          lastDailyRollupStatus: 'success',
+          lastSnapshotStatus: 'success',
+        }),
+      );
+      redis.get.mockResolvedValue(null);
+      redis.set.mockRejectedValue(new Error('ECONNREFUSED'));
+      snapshotRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ period_date: '2026-07-21' }),
+      });
+
+      const result = await service.getFullHealthStatus();
+
+      expect(result.status).toBe('degraded');
+      expect(result.cacheReachable).toBe(false);
     });
   });
 });

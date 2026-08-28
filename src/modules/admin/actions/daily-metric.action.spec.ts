@@ -49,4 +49,46 @@ describe('DailyMetricAction', () => {
       expect(params).toEqual([from, to]);
     });
   });
+
+  describe('sumByTypeInWindow', () => {
+    it('returns the sum of counts for the metric type in the window', async () => {
+      const start = new Date('2026-08-17T00:00:00.000Z');
+      const end = new Date('2026-08-24T00:00:00.000Z');
+      metricRepo.query.mockResolvedValue([{ total: '42' }]);
+
+      await expect(
+        action.sumByTypeInWindow('search-events', start, end),
+      ).resolves.toBe(42);
+
+      const [sql, params] = metricRepo.query.mock.calls[0];
+      expect(sql).toContain('SELECT COALESCE(SUM("count"), 0)');
+      expect(sql).toContain('FROM daily_metrics');
+      expect(sql).toContain('"metricType" = $1');
+      expect(params).toEqual(['search-events', start, end]);
+    });
+  });
+
+  describe('timeseriesByTypeInWindow', () => {
+    it('returns daily breakdown ordered by date', async () => {
+      const start = new Date('2026-08-17T00:00:00.000Z');
+      const end = new Date('2026-08-20T00:00:00.000Z');
+      metricRepo.query.mockResolvedValue([
+        { date: '2026-08-17', value: '10' },
+        { date: '2026-08-18', value: '15' },
+        { date: '2026-08-19', value: '8' },
+      ]);
+
+      await expect(
+        action.timeseriesByTypeInWindow('profile-views', start, end),
+      ).resolves.toEqual([
+        { date: '2026-08-17', value: 10 },
+        { date: '2026-08-18', value: 15 },
+        { date: '2026-08-19', value: 8 },
+      ]);
+
+      const [sql, params] = metricRepo.query.mock.calls[0];
+      expect(sql).toContain('ORDER BY "periodDate" ASC');
+      expect(params).toEqual(['profile-views', start, end]);
+    });
+  });
 });

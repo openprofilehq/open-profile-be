@@ -32,6 +32,7 @@
     "migration:show": "pnpm typeorm migration:show",
     "schema:drop": "pnpm typeorm schema:drop",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeds/run-seed.ts",
+    "seed:loadtest": "ts-node -r tsconfig-paths/register src/database/seeds/run-load-test.ts",
     "db:reset": "pnpm schema:drop && pnpm migration:run && pnpm seed",
     "release:staging": "node tools/release-cli.js staging dev",
     "release:prod": "node tools/release-cli.js production staging",
