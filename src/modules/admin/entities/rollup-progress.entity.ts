@@ -14,10 +14,22 @@ export class RollupProgress {
   id: string;
 
   @Column({ type: 'timestamptz', nullable: true })
-  lastHourlyRollupAt: Date | null;
+  lastDailyRollupAt: Date | null;
+
+  @Column({ type: 'varchar', length: 20, default: 'success' })
+  lastDailyRollupStatus: string;
 
   @Column({ type: 'timestamptz', nullable: true })
-  lastDailyRollupAt: Date | null;
+  lastWeeklyRollupAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastThirtyDayRollupAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastSnapshotAt: Date | null;
+
+  @Column({ type: 'varchar', length: 20, default: 'success' })
+  lastSnapshotStatus: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

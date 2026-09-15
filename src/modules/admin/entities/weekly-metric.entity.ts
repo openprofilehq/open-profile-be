@@ -8,23 +8,23 @@ import {
 } from 'typeorm';
 import { MetricType } from '../enums/metric-type.enum';
 
-@Entity('hourly_metrics')
+@Entity('weekly_metrics')
 @Index(
-  'IDX_hourly_metrics_metricType_periodStart',
+  'IDX_weekly_metrics_metricType_periodStart',
   ['metricType', 'periodStart'],
   {
     unique: true,
   },
 )
-export class HourlyMetric {
+export class WeeklyMetric {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'enum', enum: MetricType })
   metricType: MetricType;
 
-  @Column({ type: 'timestamptz' })
-  periodStart: Date;
+  @Column({ type: 'date' })
+  periodStart: string;
 
   @Column({ type: 'bigint', default: 0 })
   count: string;

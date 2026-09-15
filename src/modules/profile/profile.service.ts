@@ -1640,6 +1640,7 @@ export class ProfileService {
         themeSettings: draft.themeSettings ?? profile.themeSettings,
         appearance: draft.appearance ?? profile.appearance,
         isPublished: true,
+        publishedAt: new Date(),
         updatedAt: new Date(),
       });
 
@@ -1659,7 +1660,9 @@ export class ProfileService {
     });
 
     await this.invalidateCache(profile.username);
-    await this.redisService.del(`profile:links:${profile.id}`);
+    await this.redisService.del(
+      `profile:links:${profile.username.toLocaleLowerCase()}`,
+    );
 
     return result;
   }

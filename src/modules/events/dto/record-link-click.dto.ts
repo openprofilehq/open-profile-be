@@ -1,8 +1,10 @@
-import { IsUrl, IsUUID } from 'class-validator';
+// AFTER
+import { IsUrl, IsString, IsNotEmpty } from 'class-validator';
 
 export class RecordLinkClickDto {
-  @IsUUID()
-  profileId: string;
+  @IsString()
+  @IsNotEmpty()
+  username: string;
 
   @IsUrl()
   linkUrl: string;

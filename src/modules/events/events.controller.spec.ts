@@ -17,6 +17,7 @@ jest.mock('../../common/cookies/anonymous-id.util', () => ({
 
 const PROFILE_ID = '660e8400-e29b-41d4-a716-446655440001';
 const ACTOR_ID = '770e8400-e29b-41d4-a716-446655440002';
+const USERNAME = 'adalovelace';
 const LINK_URL = 'https://example.com/link';
 
 const mockRequest = (user?: {
@@ -32,7 +33,7 @@ describe('EventsController', () => {
 
   beforeEach(async () => {
     eventsService = {
-      isValidProfileLink: jest.fn(),
+      validateProfileLink: jest.fn(),
       recordEvent: jest.fn(),
     };
 
@@ -51,24 +52,29 @@ describe('EventsController', () => {
     controller = module.get<EventsController>(EventsController);
   });
 
-  it('responds with 204 No Content for link-click tracking requests', () => {
+  it('responds with 200 OK for link-click tracking requests', () => {
     expect(
       Reflect.getMetadata(HTTP_CODE_METADATA, controller.recordLinkClick),
-    ).toBe(204);
+    ).toBe(200);
   });
 
   it('records a link-click event when the link belongs to the profile', async () => {
-    eventsService.isValidProfileLink.mockResolvedValue(true);
+    eventsService.validateProfileLink.mockResolvedValue({
+      valid: true,
+      profileId: PROFILE_ID,
+    });
     eventsService.recordEvent.mockResolvedValue(undefined);
 
-    await controller.recordLinkClick(
-      { profileId: PROFILE_ID, linkUrl: LINK_URL },
-      mockRequest({ sub: ACTOR_ID }),
-      mockResponse(),
-    );
+    await expect(
+      controller.recordLinkClick(
+        { username: USERNAME, linkUrl: LINK_URL },
+        mockRequest({ sub: ACTOR_ID }),
+        mockResponse(),
+      ),
+    ).resolves.toEqual({ recorded: true });
 
-    expect(eventsService.isValidProfileLink).toHaveBeenCalledWith(
-      PROFILE_ID,
+    expect(eventsService.validateProfileLink).toHaveBeenCalledWith(
+      USERNAME,
       LINK_URL,
     );
     expect(eventsService.recordEvent).toHaveBeenCalledWith({
@@ -81,13 +87,18 @@ describe('EventsController', () => {
   });
 
   it('does not record an event when the link is not valid for the profile', async () => {
-    eventsService.isValidProfileLink.mockResolvedValue(false);
+    eventsService.validateProfileLink.mockResolvedValue({
+      valid: false,
+      profileId: PROFILE_ID,
+    });
 
-    await controller.recordLinkClick(
-      { profileId: PROFILE_ID, linkUrl: LINK_URL },
-      mockRequest({ sub: ACTOR_ID }),
-      mockResponse(),
-    );
+    await expect(
+      controller.recordLinkClick(
+        { username: USERNAME, linkUrl: LINK_URL },
+        mockRequest({ sub: ACTOR_ID }),
+        mockResponse(),
+      ),
+    ).resolves.toEqual({ recorded: false });
 
     expect(eventsService.recordEvent).not.toHaveBeenCalled();
   });
@@ -95,13 +106,18 @@ describe('EventsController', () => {
   it('records anonymous link clicks using the anonymousId cookie', async () => {
     const ANONYMOUS_ID = 'anon-uuid-123';
     (getOrSetAnonymousId as jest.Mock).mockReturnValue(ANONYMOUS_ID);
-    eventsService.isValidProfileLink.mockResolvedValue(true);
+    eventsService.validateProfileLink.mockResolvedValue({
+      valid: true,
+      profileId: PROFILE_ID,
+    });
 
-    await controller.recordLinkClick(
-      { profileId: PROFILE_ID, linkUrl: LINK_URL },
-      mockRequest(),
-      mockResponse(),
-    );
+    await expect(
+      controller.recordLinkClick(
+        { username: USERNAME, linkUrl: LINK_URL },
+        mockRequest(),
+        mockResponse(),
+      ),
+    ).resolves.toEqual({ recorded: true });
 
     expect(eventsService.recordEvent).toHaveBeenCalledWith({
       eventType: EventType.LINK_CLICKED,

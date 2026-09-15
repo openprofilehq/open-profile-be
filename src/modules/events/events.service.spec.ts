@@ -17,6 +17,8 @@ jest.mock('../../common/redis/redis.service', () => ({
 
 const PROFILE_ID = '660e8400-e29b-41d4-a716-446655440001';
 const ACTOR_ID = '770e8400-e29b-41d4-a716-446655440002';
+const USERNAME = 'AdaLovelace';
+const NORMALIZED_USERNAME = 'adalovelace';
 
 describe('EventsService', () => {
   let service: EventsService;
@@ -300,22 +302,27 @@ describe('EventsService', () => {
     });
   });
 
-  describe('isValidProfileLink', () => {
+  describe('validateProfileLink', () => {
     it('returns false when the profile does not exist', async () => {
       profileRepository.findOne.mockResolvedValue(null);
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
-      ).resolves.toBe(false);
+        service.validateProfileLink(USERNAME, 'https://example.com/link'),
+      ).resolves.toEqual({ valid: false, profileId: null });
 
       expect(profileRepository.findOne).toHaveBeenCalledWith({
-        where: { id: PROFILE_ID, isPublished: true, deletedAt: IsNull() },
-        select: ['content'],
+        where: {
+          username: NORMALIZED_USERNAME,
+          isPublished: true,
+          deletedAt: IsNull(),
+        },
+        select: ['id', 'content'],
       });
     });
 
     it('returns true for a stored link URL', async () => {
       profileRepository.findOne.mockResolvedValue({
+        id: PROFILE_ID,
         content: {
           links: {
             items: [
@@ -327,30 +334,36 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://example.com/link'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
     });
 
     it('returns true from cache on cache hit', async () => {
       redisService.get.mockResolvedValue(
-        JSON.stringify(['https://example.com/link']),
+        JSON.stringify({
+          profileId: PROFILE_ID,
+          links: ['https://example.com/link'],
+        }),
       );
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://example.com/link'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
 
       expect(profileRepository.findOne).not.toHaveBeenCalled();
     });
 
     it('returns false from cache when URL not in cached set', async () => {
       redisService.get.mockResolvedValue(
-        JSON.stringify(['https://example.com/other']),
+        JSON.stringify({
+          profileId: PROFILE_ID,
+          links: ['https://example.com/other'],
+        }),
       );
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
-      ).resolves.toBe(false);
+        service.validateProfileLink(USERNAME, 'https://example.com/link'),
+      ).resolves.toEqual({ valid: false, profileId: PROFILE_ID });
 
       expect(profileRepository.findOne).not.toHaveBeenCalled();
     });
@@ -358,18 +371,20 @@ describe('EventsService', () => {
     it('falls back to DB when Redis throws', async () => {
       redisService.get.mockRejectedValue(new Error('redis down'));
       profileRepository.findOne.mockResolvedValue({
+        id: PROFILE_ID,
         content: {
           links: { items: [{ url: 'https://example.com/link' }] },
         },
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://example.com/link'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
     });
 
     it('normalizes scheme/host case and trailing slashes before comparing URLs', async () => {
       profileRepository.findOne.mockResolvedValue({
+        id: PROFILE_ID,
         content: {
           links: {
             items: [{ url: 'HTTPS://Example.com/Link/' }],
@@ -390,27 +405,28 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/Link'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://example.com/Link'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
       await expect(
-        service.isValidProfileLink(
-          PROFILE_ID,
+        service.validateProfileLink(
+          USERNAME,
           'https://github.com/Example/Project',
         ),
-      ).resolves.toBe(true);
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://project.example.com'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://project.example.com'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://cta.example.com'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://example.com/link'),
-      ).resolves.toBe(false);
+        service.validateProfileLink(USERNAME, 'https://example.com/link'),
+      ).resolves.toEqual({ valid: false, profileId: PROFILE_ID });
     });
 
     it('normalizes non-URL values by trimming a trailing slash while preserving case', async () => {
       profileRepository.findOne.mockResolvedValue({
+        id: PROFILE_ID,
         content: {
           links: {
             items: [{ url: 'mailto:Hello@Example.com/' }],
@@ -419,30 +435,32 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'mailto:Hello@Example.com'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'mailto:Hello@Example.com'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'mailto:hello@example.com'),
-      ).resolves.toBe(false);
+        service.validateProfileLink(USERNAME, 'mailto:hello@example.com'),
+      ).resolves.toEqual({ valid: false, profileId: PROFILE_ID });
     });
 
     it('falls back to case-sensitive string normalization for non-parseable values', async () => {
       profileRepository.findOne.mockResolvedValue({
+        id: PROFILE_ID,
         content: {
           links: { items: [{ url: '/Relative/Path/' }] },
         },
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, '/Relative/Path'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, '/Relative/Path'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
       await expect(
-        service.isValidProfileLink(PROFILE_ID, '/relative/path'),
-      ).resolves.toBe(false);
+        service.validateProfileLink(USERNAME, '/relative/path'),
+      ).resolves.toEqual({ valid: false, profileId: PROFILE_ID });
     });
 
     it('returns true for project repository and live URLs', async () => {
       profileRepository.findOne.mockResolvedValue({
+        id: PROFILE_ID,
         content: {
           projects: {
             items: [
@@ -456,40 +474,43 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(
-          PROFILE_ID,
+        service.validateProfileLink(
+          USERNAME,
           'https://github.com/example/project',
         ),
-      ).resolves.toBe(true);
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://project.example.com'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://project.example.com'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
     });
 
     it('returns true for link CTA values only', async () => {
       profileRepository.findOne.mockResolvedValueOnce({
+        id: PROFILE_ID,
         content: {
           cta: { type: 'link', value: 'https://cta.example.com' },
         },
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
-      ).resolves.toBe(true);
+        service.validateProfileLink(USERNAME, 'https://cta.example.com'),
+      ).resolves.toEqual({ valid: true, profileId: PROFILE_ID });
 
       profileRepository.findOne.mockResolvedValueOnce({
+        id: PROFILE_ID,
         content: {
           cta: { type: 'email', value: 'https://cta.example.com' },
         },
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://cta.example.com'),
-      ).resolves.toBe(false);
+        service.validateProfileLink(USERNAME, 'https://cta.example.com'),
+      ).resolves.toEqual({ valid: false, profileId: PROFILE_ID });
     });
 
     it('returns false when the URL is not in profile content', async () => {
       profileRepository.findOne.mockResolvedValue({
+        id: PROFILE_ID,
         content: {
           links: { items: [{ url: 'https://example.com/link' }] },
           projects: { items: [] },
@@ -498,8 +519,8 @@ describe('EventsService', () => {
       });
 
       await expect(
-        service.isValidProfileLink(PROFILE_ID, 'https://unknown.example.com'),
-      ).resolves.toBe(false);
+        service.validateProfileLink(USERNAME, 'https://unknown.example.com'),
+      ).resolves.toEqual({ valid: false, profileId: PROFILE_ID });
     });
   });
 
