@@ -5,23 +5,23 @@ export class UpdateProfileDto {
   @ApiPropertyOptional({
     description: 'Display name for the profile',
     example: 'Jane Doe',
-    maxLength: 100,
+    maxLength: 255,
   })
   @IsOptional()
   @IsString()
   @IsNotEmpty({ message: 'Full name cannot be empty.' })
-  @MaxLength(100, { message: 'Full name cannot exceed 100 characters.' })
+  @MaxLength(255, { message: 'Full name cannot exceed 255 characters.' })
   fullName?: string;
 
   @ApiPropertyOptional({
     description: 'Short biography. Send null to clear.',
     example: 'Software developer passionate about open source',
-    maxLength: 200,
+    maxLength: 300,
     nullable: true,
   })
   @IsOptional()
   @IsString()
-  @MaxLength(200, { message: 'Bio cannot exceed 200 characters.' })
+  @MaxLength(300, { message: 'Bio cannot exceed 300 characters.' })
   bio?: string | null;
 
   @ApiPropertyOptional({
