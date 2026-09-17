@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -30,6 +31,9 @@ import {
 } from './dto/user-preferences.dto';
 import { UsersService } from './users.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRole } from './entities/user.entity';
 
 @ApiTags('users')
 @ApiBearerAuth('JWT')
@@ -38,30 +42,40 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Create a user' })
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
   }
 
   @Get()
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'List users (paginated)' })
   findAll(@Query() pagination: PaginationDto) {
     return this.usersService.findAll(pagination);
   }
 
   @Get(':id')
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Get a user by id' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.findOne(id);
   }
 
   @Patch(':id')
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
   @ApiOperation({ summary: 'Update a user' })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 
   @Delete(':id')
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a user' })
   remove(@Param('id', ParseUUIDPipe) id: string) {
