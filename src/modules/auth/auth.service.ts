@@ -137,6 +137,7 @@ export class AuthService {
       }
     | {
         status: string;
+        requiresVerification: true;
         message: string;
       }
   > {
@@ -165,37 +166,6 @@ export class AuthService {
     }
 
     this.assertEmailProvider(user);
-
-    if (!user.isVerified) {
-      await this.usersService.clearOtp(user.id);
-
-      const otp = this.generateOtp();
-      const otpHash = await argon2.hash(otp);
-      const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
-      await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
-
-      try {
-        await this.queueService.addJob(
-          QUEUE_NAMES.EMAIL,
-          QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
-          { to: user.email, otp, fullName: user.fullName ?? '' },
-        );
-      } catch (err) {
-        await this.usersService.clearOtpOnly(user.id);
-        this.logger.error(
-          `Failed to enqueue verification email for user ${user.id}`,
-          err instanceof Error ? err.stack : err,
-        );
-        throw new InternalServerErrorException(
-          'Failed to send verification email. Please try again.',
-        );
-      }
-
-      return {
-        status: 'success',
-        message: 'A verification code has been sent to your email address.',
-      };
-    }
 
     const lockKey = `lock:${user.email}`;
     const attemptsKey = `attempts:${user.email}`;
@@ -236,6 +206,36 @@ export class AuthService {
     }
 
     await this.redisService.del(attemptsKey);
+
+    if (!user.isVerified) {
+      const otp = this.generateOtp();
+      const otpHash = await argon2.hash(otp);
+      const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
+      await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
+
+      try {
+        await this.queueService.addJob(
+          QUEUE_NAMES.EMAIL,
+          QUEUE_JOB_NAMES.EMAIL.SEND_OTP,
+          { to: user.email, otp, fullName: user.fullName ?? '' },
+        );
+      } catch (err) {
+        await this.usersService.clearOtpOnly(user.id);
+        this.logger.error(
+          `Failed to enqueue verification email for user ${user.id}`,
+          err instanceof Error ? err.stack : err,
+        );
+        throw new InternalServerErrorException(
+          'Failed to send verification email. Please try again.',
+        );
+      }
+
+      return {
+        status: 'success',
+        requiresVerification: true,
+        message: 'A verification code has been sent to your email address.',
+      };
+    }
 
     const isNewIp = user.lastLoginIp !== ip;
     if (isNewIp && user.lastLoginIp !== null) {
@@ -589,8 +589,17 @@ export class AuthService {
       });
     }
 
+    const attemptsKey = this.verifyOtpAttemptsKey(lowercasedEmail);
     const isValid = await argon2.verify(user.otpHash, dto.otp);
     if (!isValid) {
+      const attempts = await this.redisService.increment(
+        attemptsKey,
+        OTP_TTL_MS / 1000,
+      );
+      if (attempts >= BRUTE_MAX_ATTEMPTS) {
+        await this.usersService.clearOtpOnly(user.id);
+        await this.redisService.del(attemptsKey);
+      }
       throw new BadRequestException({
         errorCode: 'OTP_INVALID',
         message:
@@ -598,6 +607,7 @@ export class AuthService {
       });
     }
 
+    await this.redisService.del(attemptsKey);
     await this.usersService.clearOtp(user.id);
     if (dto.inviteToken) {
       try {
@@ -635,22 +645,31 @@ export class AuthService {
     return crypto.randomInt(100_000, 1_000_000).toString();
   }
 
+  private verifyOtpAttemptsKey(email: string): string {
+    return `verify-otp-attempts:${email}`;
+  }
+
   async validateGoogleUser(
     googleUser: GoogleUser,
   ): Promise<{ user: User; isNewUser: boolean }> {
-    let user = await this.usersService.findByEmail(googleUser.email);
+    const email = googleUser.email.toLowerCase();
+    let user = await this.usersService.findByEmail(email);
     let isNewUser = false;
 
     if (user) {
-      if (user.authProvider === AuthProvider.EMAIL) {
-        await this.usersService.linkGoogleAccount(user.id);
+      if (user.authProvider === AuthProvider.EMAIL && !user.isVerified) {
+        await this.usersService.updatePassword(
+          user.id,
+          crypto.randomBytes(32).toString('hex'),
+        );
+        await this.usersService.clearOtp(user.id);
         user = await this.usersService.findOne(user.id);
       }
       return { user, isNewUser };
     }
 
     const created = await this.usersService.createGoogleUser({
-      email: googleUser.email,
+      email,
       fullName: googleUser.fullName,
       isVerified: true,
       onboardingComplete: false,
@@ -784,12 +803,11 @@ export class AuthService {
       };
     }
 
-    await this.usersService.clearOtp(user.id);
-
     const otp = this.generateOtp();
     const otpHash = await argon2.hash(otp);
     const otpExpiresAt = new Date(Date.now() + OTP_TTL_MS);
     await this.usersService.storeOtpHash(user.id, otpHash, otpExpiresAt);
+    await this.redisService.del(this.verifyOtpAttemptsKey(lowercasedEmail));
 
     await this.queueService.addJob(
       QUEUE_NAMES.EMAIL,

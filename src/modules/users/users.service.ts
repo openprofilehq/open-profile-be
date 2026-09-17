@@ -257,14 +257,6 @@ export class UsersService {
     });
   }
 
-  async linkGoogleAccount(id: string): Promise<void> {
-    await this.userModelAction.update({
-      ...NO_TRANSACTION,
-      identifierOptions: { id },
-      updatePayload: { authProvider: AuthProvider.GOOGLE },
-    });
-  }
-
   async createGoogleUser(dto: {
     email: string;
     fullName: string;
