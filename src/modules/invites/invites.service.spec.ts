@@ -258,7 +258,7 @@ describe('InvitesService', () => {
         QUEUE_JOB_NAMES.EMAIL.SEND_INVITE_EMAIL,
         {
           to: recipientEmail,
-          signupUrl: expect.stringContaining('/auth/register'),
+          signupUrl: expect.stringContaining('/signup?email='),
         },
         { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
       );
@@ -445,7 +445,7 @@ describe('InvitesService', () => {
       expect(error).toBeInstanceOf(BadRequestException);
       expect((error as BadRequestException).getResponse()).toEqual({
         message: 'This invite has expired. Please ask for a new one.',
-        fallbackSignupUrl: `${env.FRONTEND_URL}/auth/register`,
+        fallbackSignupUrl: `${env.FRONTEND_URL}/signup`,
       });
       expect((error as BadRequestException).getResponse()).not.toEqual(
         expect.objectContaining({

@@ -65,12 +65,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip =
-      (req.headers['x-forwarded-for'] as string | undefined)
-        ?.split(',')[0]
-        ?.trim() ??
-      req.socket.remoteAddress ??
-      'unknown';
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
     this.logger.debug(`[login] emailProvided=true ip=${ip}`);
     return this.authService.login(dto, ip, req, res);
   }

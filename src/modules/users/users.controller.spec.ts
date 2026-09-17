@@ -16,10 +16,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ValidationError } from 'class-validator';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { EMAIL_ALREADY_EXISTS, UsersService } from './users.service';
 import { UsersController } from './users.controller';
-import { AuthProvider } from './entities/user.entity';
+import { AuthProvider, UserRole } from './entities/user.entity';
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 
@@ -391,6 +394,58 @@ describe('UsersController (integration)', () => {
   // always invoked with the authenticated caller's id (never anything
   // from the request body or query) is the full scoping guarantee here.
   // -----------------------------------------------------------------------
+  describe('admin-only user management routes', () => {
+    const adminOnlyHandlers = [
+      'create',
+      'findAll',
+      'findOne',
+      'update',
+      'remove',
+    ] as const;
+
+    it.each(adminOnlyHandlers)(
+      'requires the admin role and RolesGuard on %s',
+      (handler) => {
+        const reflector = new Reflector();
+        const method = UsersController.prototype[handler];
+
+        expect(reflector.get(ROLES_KEY, method)).toEqual([UserRole.ADMIN]);
+        expect(Reflect.getMetadata(GUARDS_METADATA, method)).toContain(
+          RolesGuard,
+        );
+      },
+    );
+
+    it('keeps self-service routes open to any authenticated user', () => {
+      const reflector = new Reflector();
+
+      expect(
+        reflector.get(ROLES_KEY, UsersController.prototype.getSettings),
+      ).toBeUndefined();
+      expect(
+        reflector.get(
+          ROLES_KEY,
+          UsersController.prototype.markOnboardingComplete,
+        ),
+      ).toBeUndefined();
+    });
+
+    it('returns 403 to a non-admin listing users and never calls the service', async () => {
+      await request(app.getHttpServer()).get('/api/v1/users').expect(403);
+
+      expect(mockUsersService.findAll).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 to a non-admin updating another user and never calls the service', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/v1/users/${USER_ID}`)
+        .send({ role: 'admin' })
+        .expect(403);
+
+      expect(mockUsersService.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('cross-user scoping', () => {
     it('ignores any userId supplied in the PATCH body and uses only the authenticated caller', async () => {
       mockUsersService.updatePreferences.mockResolvedValue({

@@ -21,6 +21,7 @@ import { plainToInstance } from 'class-transformer';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { LoginDto } from './dto/login.dto';
 import { UsersService } from '../users/users.service';
 import { QueueService } from '../queue/queue.service';
 import { RateLimiterService } from '../rate-limiter/rate-limiter.service';
@@ -342,6 +343,164 @@ describe('AuthService', () => {
 
       expect(invitesService.claimInvite).not.toHaveBeenCalled();
     });
+
+    it('counts a wrong code and does not verify the account', async () => {
+      const { req, res } = buildReqRes();
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+      redisService.increment.mockResolvedValue(1);
+
+      await expect(service.verifyOtp(baseDto, req, res)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(redisService.increment).toHaveBeenCalledWith(
+        `verify-otp-attempts:${baseDto.email}`,
+        300,
+      );
+      expect(usersService.clearOtp).not.toHaveBeenCalled();
+      expect(usersService.clearOtpOnly).not.toHaveBeenCalled();
+    });
+
+    it('invalidates the code after the fifth wrong attempt', async () => {
+      const { req, res } = buildReqRes();
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+      redisService.increment.mockResolvedValue(5);
+
+      await expect(service.verifyOtp(baseDto, req, res)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(usersService.clearOtpOnly).toHaveBeenCalledWith(
+        verifiedOtpUser.id,
+      );
+      expect(usersService.clearOtp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('login verification and ordering', () => {
+    const ip = '203.0.113.5';
+    const unverifiedUser = {
+      ...mockUser,
+      password: 'stored-hash',
+      authProvider: AuthProvider.EMAIL,
+      isVerified: false,
+      role: null,
+      onboardingComplete: false,
+      lastLoginIp: null,
+    } as User;
+
+    function buildReqRes() {
+      const req = { cookies: {} } as unknown as Request;
+      const res = {} as unknown as Response;
+      return { req, res };
+    }
+
+    beforeEach(() => {
+      redisService.increment.mockResolvedValue(1);
+      redisService.get.mockResolvedValue(null);
+      redisService.del.mockResolvedValue(undefined);
+      usersService.findByEmail.mockResolvedValue(unverifiedUser);
+    });
+
+    it('rejects an unverified account with a wrong password without sending a code', async () => {
+      const { req, res } = buildReqRes();
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.login(
+          { email: unverifiedUser.email, password: 'wrong' },
+          ip,
+          req,
+          res,
+        ),
+      ).rejects.toThrow();
+
+      expect(queueService.addJob).not.toHaveBeenCalled();
+      expect(usersService.storeOtpHash).not.toHaveBeenCalled();
+    });
+
+    it('returns requiresVerification for an unverified account with the right password, without verifying it', async () => {
+      const { req, res } = buildReqRes();
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      const result = await service.login(
+        { email: unverifiedUser.email, password: 'StrongPass1!' },
+        ip,
+        req,
+        res,
+      );
+
+      expect(result).toEqual({
+        status: 'success',
+        requiresVerification: true,
+        message: 'A verification code has been sent to your email address.',
+      });
+      expect(usersService.clearOtp).not.toHaveBeenCalled();
+      expect(usersService.storeOtpHash).toHaveBeenCalled();
+      expect(tokenService.setTokenCookies).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resendOtp', () => {
+    it('issues a new code without marking the account verified', async () => {
+      const rateLimiter = { isAllowed: jest.fn().mockResolvedValue(true) };
+      (
+        service as unknown as { rateLimiterService: unknown }
+      ).rateLimiterService = rateLimiter;
+      usersService.findByEmail.mockResolvedValue({
+        ...mockUser,
+        isVerified: false,
+      });
+
+      await service.resendOtp('Test@Example.com');
+
+      expect(usersService.clearOtp).not.toHaveBeenCalled();
+      expect(usersService.storeOtpHash).toHaveBeenCalled();
+      expect(queueService.addJob).toHaveBeenCalled();
+    });
+  });
+
+  describe('validateGoogleUser', () => {
+    const googleProfile = {
+      email: 'Test@Example.com',
+      fullName: 'Test User',
+      googleId: 'google-id',
+    };
+
+    it('keeps a verified email account on the email provider', async () => {
+      const emailUser = {
+        ...mockUser,
+        authProvider: AuthProvider.EMAIL,
+        isVerified: true,
+      } as User;
+      usersService.findByEmail.mockResolvedValue(emailUser);
+
+      const result = await service.validateGoogleUser(googleProfile);
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith('test@example.com');
+      expect(result).toEqual({ user: emailUser, isNewUser: false });
+      expect(usersService.updatePassword).not.toHaveBeenCalled();
+    });
+
+    it('verifies an unverified email account and replaces its unproven password', async () => {
+      const emailUser = {
+        ...mockUser,
+        authProvider: AuthProvider.EMAIL,
+        isVerified: false,
+      } as User;
+      const verifiedUser = { ...emailUser, isVerified: true } as User;
+      usersService.findByEmail.mockResolvedValue(emailUser);
+      usersService.findOne.mockResolvedValue(verifiedUser);
+
+      const result = await service.validateGoogleUser(googleProfile);
+
+      expect(usersService.updatePassword).toHaveBeenCalledWith(
+        emailUser.id,
+        expect.any(String),
+      );
+      expect(usersService.clearOtp).toHaveBeenCalledWith(emailUser.id);
+      expect(result).toEqual({ user: verifiedUser, isNewUser: false });
+    });
   });
 
   describe('changePassword', () => {
@@ -573,6 +732,17 @@ describe('AuthService', () => {
         resetDto.newPassword,
       );
       expect(queueService.addJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('LoginDto transformation', () => {
+    it('trims and lowercases the email', () => {
+      const dto = plainToInstance(LoginDto, {
+        email: '  User@Example.COM ',
+        password: 'StrongPass1!',
+      });
+
+      expect(dto.email).toBe('user@example.com');
     });
   });
 

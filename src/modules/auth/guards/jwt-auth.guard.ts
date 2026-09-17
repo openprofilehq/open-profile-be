@@ -9,6 +9,7 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request, Response } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { TokenService } from '../services/token.service';
+import { UserStatusService } from '../services/user-status.service';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokenService: TokenService,
+    private readonly userStatusService: UserStatusService,
   ) {
     super();
   }
@@ -46,7 +48,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       if (!accessToken) return true;
       try {
         const payload = await this.tokenService.verifyAccessToken(accessToken);
-        req['user'] = payload;
+        if (await this.userStatusService.isActive(payload.sub)) {
+          req['user'] = payload;
+        }
       } catch {
         // invalid/expired token on a public route — try silent refresh,
         // then proceed anonymously if refresh is unavailable/invalid.
@@ -82,6 +86,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       );
     }
 
+    if (!(await this.userStatusService.isActive(payload.sub))) {
+      this.tokenService.clearTokenCookies(res);
+      throw this.inactiveAccountException();
+    }
+
     // Access token valid but expiring soon — proactive silent refresh
     if (this.tokenService.needsSilentRefresh(payload)) {
       await this.attemptRefresh(rawRefreshToken, req, res, 'silent_refresh', {
@@ -92,6 +101,13 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     req['user'] = payload;
     return true;
+  }
+
+  private inactiveAccountException(): UnauthorizedException {
+    return new UnauthorizedException({
+      error: 'ACCOUNT_INACTIVE',
+      message: 'Your account is not active.',
+    });
   }
 
   private async attemptRefresh(
@@ -112,17 +128,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       });
     }
 
-    try {
-      const tokens = await this.tokenService.rotateTokens(rawRefreshToken);
-      this.tokenService.setTokenCookies(res, tokens);
+    let tokens: { accessToken: string; refreshToken: string };
+    let newPayload: JwtPayload & { exp: number };
 
-      const newPayload = await this.tokenService.verifyAccessToken(
+    try {
+      tokens = await this.tokenService.rotateTokens(rawRefreshToken);
+      newPayload = await this.tokenService.verifyAccessToken(
         tokens.accessToken,
       );
-      req['user'] = newPayload;
-
-      this.logger.log(`Token refresh succeeded [${reason}]`);
-      return true;
     } catch (err) {
       if (isSilent) {
         this.logger.warn(`Silent refresh failed [${reason}]`, err);
@@ -135,5 +148,16 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         message: 'Your session has expired. Please log in again.',
       });
     }
+
+    if (!(await this.userStatusService.isActive(newPayload.sub))) {
+      this.tokenService.clearTokenCookies(res);
+      if (isSilent) return true;
+      throw this.inactiveAccountException();
+    }
+
+    this.tokenService.setTokenCookies(res, tokens);
+    req['user'] = newPayload;
+    this.logger.log(`Token refresh succeeded [${reason}]`);
+    return true;
   }
 }
