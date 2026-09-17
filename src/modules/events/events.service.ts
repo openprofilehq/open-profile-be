@@ -142,6 +142,22 @@ export class EventsService {
     }
   }
 
+  async findPublicProfileTarget(
+    username: string,
+  ): Promise<{ profileId: string; userId: string } | null> {
+    const profile = await this.profileRepository.findOne({
+      where: {
+        username: username.toLowerCase(),
+        isPublished: true,
+        isPublic: true,
+        deletedAt: IsNull(),
+      },
+      select: ['id', 'userId'],
+    });
+
+    return profile ? { profileId: profile.id, userId: profile.userId } : null;
+  }
+
   async mergeAnonymousEvents(
     anonymousId: string,
     actorId: string,

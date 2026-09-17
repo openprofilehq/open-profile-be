@@ -587,6 +587,66 @@ describe('ProfileService', () => {
         expect.any(Number),
       );
     });
+
+    it('hides skills, education and work experience the owner marked hidden in content', async () => {
+      redisService.get.mockResolvedValue(null);
+      redisService.set.mockResolvedValue(true);
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        content: {
+          ...mockDraftContent,
+          skills: { visible: false, sectionTitle: 'Skills' },
+          education: { visible: false },
+          workExperience: { visible: true },
+        },
+        user: { id: USER_ID },
+      });
+      skillRepo.find.mockResolvedValue([
+        { id: 's1', name: 'TypeScript', level: null, displayOrder: 0 },
+      ]);
+      educationRepo.find.mockResolvedValue([
+        {
+          id: 'e1',
+          school: 'Unilag',
+          degree: 'BSc',
+          fieldOfStudy: 'CS',
+          location: null,
+          activitiesHonors: null,
+          startYear: 2016,
+          endYear: 2020,
+          displayOrder: 0,
+        },
+      ]);
+      workExperienceRepo.find.mockResolvedValue([
+        {
+          id: 'w1',
+          companyName: 'Acme',
+          jobTitle: 'Engineer',
+          location: null,
+          description: null,
+          startMonth: 1,
+          startYear: 2021,
+          endMonth: null,
+          endYear: null,
+          isCurrent: true,
+          displayOrder: 0,
+        },
+      ]);
+      componentRepo.find.mockResolvedValue([
+        { sectionType: 'skills', isEnabled: true, displayOrder: 6 },
+        { sectionType: 'education', isEnabled: true, displayOrder: 5 },
+        { sectionType: 'work_experience', isEnabled: true, displayOrder: 4 },
+      ]);
+
+      const result = await service.getPublicProfile(USERNAME);
+
+      expect(result.data.skills).toEqual([]);
+      expect(result.data.education).toEqual([]);
+      expect(result.data.workExperience).toHaveLength(1);
+      expect(result.data.sections.map((s) => s.type)).toEqual([
+        'work_experience',
+      ]);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -668,6 +728,29 @@ describe('ProfileService', () => {
           awards: { ...defaultStyle },
         },
       });
+    });
+
+    it('returns the draft appearance over the published one', async () => {
+      const draftStyle = {
+        ...defaultStyle,
+        template: 'portfolio',
+        font: 'mono',
+      };
+      profileRepo.findOne.mockResolvedValue({
+        ...mockProfile,
+        appearance: { global: { ...defaultStyle, template: 'creator' } },
+      });
+      draftRepo.findOne.mockResolvedValue({
+        ...mockDraft,
+        appearance: { global: draftStyle },
+      });
+
+      const result = await service.getAppearance(USER_ID);
+
+      expect(draftRepo.findOne).toHaveBeenCalledWith({
+        where: { profileId: PROFILE_ID },
+      });
+      expect(result.appearance.global).toEqual(draftStyle);
     });
 
     it('returns default appearance when none exists', async () => {
@@ -1548,6 +1631,43 @@ describe('ProfileService', () => {
       await expect(
         service.updateAppearance(USER_ID, appearanceDto),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('keeps styles for every component, not just bio/links/projects/cta', async () => {
+      profileRepo.findOne.mockResolvedValue(mockProfile);
+      const txProfileRepo = txManager.getRepository(Profile);
+      txProfileRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOneOrFail: jest.fn().mockResolvedValue({ ...mockProfile }),
+      });
+      const txDraftRepo = txManager.getRepository(ProfileDraft);
+      txDraftRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({
+          ...mockDraft,
+          appearance: {
+            components: { awards: { accentColour: '#123456' } },
+          },
+        }),
+      });
+
+      const result = await service.updateAppearance(USER_ID, {
+        components: {
+          skills: { accentColour: '#abcdef' },
+          workExperience: { font: 'mono' },
+        },
+      });
+
+      expect(result.appearance.components).toEqual(
+        expect.objectContaining({
+          skills: { accentColour: '#abcdef' },
+          workExperience: { font: 'mono' },
+          awards: { accentColour: '#123456' },
+          education: {},
+        }),
+      );
     });
 
     it('merges partial payload with existing appearance fields', async () => {

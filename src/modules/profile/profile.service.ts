@@ -30,7 +30,10 @@ import {
   PublicProfileResponseDto,
   SectionMetaDto,
 } from './dto/profile-response.dto';
-import { AppearanceSettingsDto } from './dto/appearance-settings.dto';
+import {
+  AppearanceComponentsDto,
+  AppearanceSettingsDto,
+} from './dto/appearance-settings.dto';
 import { DEFAULT_APPEARANCE } from './constants/default-appearance';
 import { LinkItemDto } from './dto/profile-content.dto';
 import { SectionType } from './dto/profile-content.dto';
@@ -467,7 +470,19 @@ export class ProfileService {
     workExperience: WorkExperience[] = [],
     awards: Award[] = [],
   ): PublicProfileResponseDto {
+    const contentVisibilityKey: Partial<
+      Record<SectionType, 'workExperience' | 'education' | 'skills'>
+    > = {
+      [SectionType.WORK_EXPERIENCE]: 'workExperience',
+      [SectionType.EDUCATION]: 'education',
+      [SectionType.SKILLS]: 'skills',
+    };
+
     const isEnabled = (type: SectionType): boolean => {
+      const contentKey = contentVisibilityKey[type];
+      if (contentKey && profile.content?.[contentKey]?.visible === false) {
+        return false;
+      }
       const component = components.find(
         (c) => c.sectionType === (type as string),
       );
@@ -552,7 +567,7 @@ export class ProfileService {
     }
 
     const sections: SectionMetaDto[] = components
-      .filter((c) => c.isEnabled)
+      .filter((c) => isEnabled(c.sectionType as SectionType))
       .sort((a, b) => a.displayOrder - b.displayOrder)
       .map((c) => ({
         type: c.sectionType as SectionType,
@@ -2069,29 +2084,24 @@ export class ProfileService {
       const existingAppearance =
         existingDraft?.appearance ?? lockedProfile.appearance ?? {};
 
+      const componentKeys = Object.keys(
+        DEFAULT_APPEARANCE.components ?? {},
+      ) as (keyof AppearanceComponentsDto)[];
+
       const mergedAppearance: AppearanceSettingsDto = {
         global: {
           ...(existingAppearance.global ?? {}),
           ...(dto.global ?? {}),
         },
-        components: {
-          bio: {
-            ...(existingAppearance.components?.bio ?? {}),
-            ...(dto.components?.bio ?? {}),
-          },
-          links: {
-            ...(existingAppearance.components?.links ?? {}),
-            ...(dto.components?.links ?? {}),
-          },
-          projects: {
-            ...(existingAppearance.components?.projects ?? {}),
-            ...(dto.components?.projects ?? {}),
-          },
-          cta: {
-            ...(existingAppearance.components?.cta ?? {}),
-            ...(dto.components?.cta ?? {}),
-          },
-        },
+        components: Object.fromEntries(
+          componentKeys.map((key) => [
+            key,
+            {
+              ...(existingAppearance.components?.[key] ?? {}),
+              ...(dto.components?.[key] ?? {}),
+            },
+          ]),
+        ),
       };
 
       await txDraftRepo.save({
@@ -2137,7 +2147,11 @@ export class ProfileService {
       'manrope',
     ]);
 
-    const saved = profile.appearance ?? {};
+    const draft = await this.profileDraftRepo.findOne({
+      where: { profileId: profile.id },
+    });
+
+    const saved = draft?.appearance ?? profile.appearance ?? {};
     const appearance: AppearanceSettingsDto = {
       global: {
         ...DEFAULT_APPEARANCE.global,

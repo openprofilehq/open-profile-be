@@ -16,8 +16,6 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
-import { EventsService } from '../events/events.service';
-import { EventType } from '../events/entities/event.entity';
 
 jest.mock('@t3-oss/env-core', () => ({
   createEnv: () => ({}) as never,
@@ -39,7 +37,6 @@ const NOW = '2026-05-20T12:00:00.000Z';
 describe('ProfileController (integration)', () => {
   let app: INestApplication<App>;
   let mockProfileService: Record<string, jest.Mock>;
-  let mockEventsService: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     mockProfileService = {
@@ -57,15 +54,11 @@ describe('ProfileController (integration)', () => {
       getAppearance: jest.fn(),
       updateVisibility: jest.fn(),
     };
-    mockEventsService = {
-      recordEvent: jest.fn().mockResolvedValue(undefined),
-    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProfileController],
       providers: [
         { provide: ProfileService, useValue: mockProfileService },
-        { provide: EventsService, useValue: mockEventsService },
         {
           provide: APP_PIPE,
           useValue: new ValidationPipe({
@@ -423,14 +416,8 @@ describe('ProfileController (integration)', () => {
         .expect((res) => {
           expect(res.body.username).toBe(USERNAME);
           expect(res.body).not.toHaveProperty('isPublic');
+          expect(res.headers['set-cookie']).toBeUndefined();
         });
-      expect(mockEventsService.recordEvent).toHaveBeenCalledWith({
-        eventType: EventType.PROFILE_VIEWED,
-        profileId: UUID_V1,
-        actorId: undefined,
-        anonymousId: expect.any(String),
-        dedupKey: expect.any(String),
-      });
     });
 
     it('returns 304 when ETag matches If-None-Match header', async () => {
@@ -454,8 +441,6 @@ describe('ProfileController (integration)', () => {
         .get(`/api/v1/profiles/${USERNAME}`)
         .set('If-None-Match', etag)
         .expect(304);
-
-      expect(mockEventsService.recordEvent).not.toHaveBeenCalled();
     });
 
     it('returns 404 when profile not found', async () => {

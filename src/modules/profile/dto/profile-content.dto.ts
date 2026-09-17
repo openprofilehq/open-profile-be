@@ -8,6 +8,7 @@ import {
   IsNumber,
   ValidateNested,
   IsOptional,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -75,6 +76,34 @@ export class LinkItemDto {
   @ApiProperty({ example: true })
   @IsBoolean()
   visible: boolean;
+
+  @ApiProperty({ example: 'github', required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  iconId?: string | null;
+
+  @ApiProperty({ example: 'GitHub', required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  iconLabel?: string | null;
+
+  @ApiProperty({
+    example: '/profilebuilder_home/icons/github.svg',
+    required: false,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  iconSrc?: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  imageSrc?: string | null;
 }
 export class LinksDto {
   @ApiProperty({ example: true })
@@ -274,6 +303,39 @@ export class CtaDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
 }
 
+export class ItemSectionContentDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  visible: boolean;
+
+  @ApiProperty({ example: 'Work Experience', required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  sectionTitle?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  textColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() bgColor?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() font?: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  iconColor?: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  paddingTop?: number;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  paddingBottom?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() gap?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsNumber() padding?: number;
+}
+
 export class ProfileContentDto {
   @ApiProperty({
     example: ['bio', 'links', 'projects', 'cta'],
@@ -304,4 +366,22 @@ export class ProfileContentDto {
   @ValidateNested()
   @Type(() => CtaDto)
   cta: CtaDto;
+
+  @ApiProperty({ required: false, type: () => ItemSectionContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ItemSectionContentDto)
+  workExperience?: ItemSectionContentDto;
+
+  @ApiProperty({ required: false, type: () => ItemSectionContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ItemSectionContentDto)
+  education?: ItemSectionContentDto;
+
+  @ApiProperty({ required: false, type: () => ItemSectionContentDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ItemSectionContentDto)
+  skills?: ItemSectionContentDto;
 }

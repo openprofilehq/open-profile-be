@@ -35,6 +35,7 @@ describe('EventsController', () => {
     eventsService = {
       validateProfileLink: jest.fn(),
       recordEvent: jest.fn(),
+      findPublicProfileTarget: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -126,6 +127,85 @@ describe('EventsController', () => {
       anonymousId: ANONYMOUS_ID,
       metadata: { linkUrl: LINK_URL },
       dedupKey: `link-click:${PROFILE_ID}:${LINK_URL}:${ANONYMOUS_ID}`,
+    });
+  });
+
+  describe('recordProfileView', () => {
+    const OWNER_ID = '880e8400-e29b-41d4-a716-446655440003';
+
+    beforeEach(() => {
+      eventsService.findPublicProfileTarget.mockResolvedValue({
+        profileId: PROFILE_ID,
+        userId: OWNER_ID,
+      });
+      eventsService.recordEvent.mockResolvedValue(undefined);
+    });
+
+    it('records one deduplicated view per anonymous visitor with referrer metadata', async () => {
+      const ANONYMOUS_ID = 'anon-uuid-456';
+      (getOrSetAnonymousId as jest.Mock).mockReturnValue(ANONYMOUS_ID);
+
+      await expect(
+        controller.recordProfileView(
+          {
+            username: USERNAME,
+            referrer: 'https://t.co/abc',
+            referrerSearchId: 'search-1',
+          },
+          mockRequest(),
+          mockResponse(),
+        ),
+      ).resolves.toEqual({ recorded: true });
+
+      expect(eventsService.recordEvent).toHaveBeenCalledWith({
+        eventType: EventType.PROFILE_VIEWED,
+        profileId: PROFILE_ID,
+        actorId: undefined,
+        anonymousId: ANONYMOUS_ID,
+        dedupKey: `event-dedup:PROFILE_VIEWED:${PROFILE_ID}:${ANONYMOUS_ID}`,
+        metadata: { referrerSearchId: 'search-1', referrerSource: 'twitter' },
+      });
+    });
+
+    it('prefers an explicit src over the referrer', async () => {
+      await controller.recordProfileView(
+        { username: USERNAME, src: 'whatsapp', referrer: 'https://t.co/abc' },
+        mockRequest({ sub: ACTOR_ID }),
+        mockResponse(),
+      );
+
+      expect(eventsService.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: ACTOR_ID,
+          metadata: { referrerSource: 'whatsapp' },
+        }),
+      );
+    });
+
+    it('does not count the owner viewing their own profile', async () => {
+      await expect(
+        controller.recordProfileView(
+          { username: USERNAME },
+          mockRequest({ sub: OWNER_ID }),
+          mockResponse(),
+        ),
+      ).resolves.toEqual({ recorded: false });
+
+      expect(eventsService.recordEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not record a view for a profile that is not public', async () => {
+      eventsService.findPublicProfileTarget.mockResolvedValue(null);
+
+      await expect(
+        controller.recordProfileView(
+          { username: USERNAME },
+          mockRequest(),
+          mockResponse(),
+        ),
+      ).resolves.toEqual({ recorded: false });
+
+      expect(eventsService.recordEvent).not.toHaveBeenCalled();
     });
   });
 });
