@@ -5,25 +5,22 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-  Logger,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Put,
-  Req,
   Res,
   UseGuards,
   Delete,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiHeader,
   ApiResponse,
-  ApiQuery,
   ApiTags,
   ApiBody,
 } from '@nestjs/swagger';
@@ -48,8 +45,6 @@ import { UpdateVisibilityDto } from './dto/update-visibility.dto';
 import { VisibilityResponseDto } from './dto/visibility-response.dto';
 import { Query } from '@nestjs/common';
 import { ValidateLinkQueryDto } from './dto/validate-link-query.dto';
-import { EventsService } from '../events/events.service';
-import { EventType } from '../events/entities/event.entity';
 import { Skill } from './entities/skill.entity';
 import { WorkExperience } from './entities/work-experience.entity';
 import {
@@ -74,18 +69,11 @@ import {
   UpdateAwardDto,
   ReorderAwardsDto,
 } from './dto/award.dto';
-import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
-import { parseReferrerSource } from '../../common/utils/parse-referrer.util';
 
 @ApiTags('profiles')
 @Controller({ path: 'profiles', version: '1' })
 export class ProfileController {
-  private readonly logger = new Logger(ProfileController.name);
-
-  constructor(
-    private readonly profileService: ProfileService,
-    private readonly eventsService: EventsService,
-  ) {}
+  constructor(private readonly profileService: ProfileService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -344,27 +332,12 @@ export class ProfileController {
     status: 429,
     description: 'Too many requests — rate limit of 60 req/min exceeded',
   })
-  @ApiQuery({
-    name: 'referrerSearchId',
-    required: false,
-    description:
-      'searchId from a prior search response, if this view originated from search results',
-  })
-  @ApiQuery({
-    name: 'src',
-    required: false,
-    description:
-      'Explicit share source (e.g. whatsapp, twitter) set by share-button links; falls back to Referer header parsing if omitted',
-  })
   async getPublicProfile(
     @Param('username') username: string,
     @Headers('if-none-match') ifNoneMatch: string | undefined,
     @Res({ passthrough: true }) res: Response,
-    @Req() req: Request,
-    @Query('referrerSearchId') referrerSearchId?: string,
-    @Query('src') src?: string,
   ) {
-    const { profileId, userId, data, etag, fromCache } =
+    const { data, etag, fromCache } =
       await this.profileService.getPublicProfile(username);
 
     res.setHeader('ETag', etag);
@@ -374,33 +347,6 @@ export class ProfileController {
     if (ifNoneMatch && ifNoneMatch === etag) {
       res.status(HttpStatus.NOT_MODIFIED);
       return;
-    }
-    const actorId = (req as Request & { user?: { sub: string } }).user?.sub;
-    const isOwner = !!actorId && actorId === userId;
-
-    if (!isOwner) {
-      const anonymousId = actorId ? undefined : getOrSetAnonymousId(req, res);
-      const dedupIdentifier = actorId ?? anonymousId;
-
-      const referrerSource = src ?? parseReferrerSource(req.headers.referer);
-      const metadata: Record<string, unknown> = {};
-      if (referrerSearchId) metadata.referrerSearchId = referrerSearchId;
-      if (referrerSource) metadata.referrerSource = referrerSource;
-
-      void this.eventsService
-        .recordEvent({
-          eventType: EventType.PROFILE_VIEWED,
-          profileId: profileId || undefined,
-          actorId: actorId ?? undefined,
-          anonymousId,
-          dedupKey: dedupIdentifier
-            ? `event-dedup:PROFILE_VIEWED:${profileId}:${dedupIdentifier}`
-            : undefined,
-          metadata: Object.keys(metadata).length ? metadata : undefined,
-        })
-        .catch((err) =>
-          this.logger?.warn(`Failed to record PROFILE_VIEWED event: ${err}`),
-        );
     }
     return data;
   }

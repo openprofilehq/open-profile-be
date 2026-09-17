@@ -13,6 +13,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { TokenService } from './services/token.service';
 import { RedisLockService } from './services/redis-lock.service';
+import { UserStatusService } from './services/user-status.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -41,10 +42,17 @@ import { InvitesModule } from '../invites/invites.module';
     AuthService,
     TokenService,
     RedisLockService,
+    UserStatusService,
     JwtAuthGuard,
     JwtStrategy,
     GoogleStrategy,
   ],
-  exports: [AuthService, TokenService, RedisLockService, JwtAuthGuard],
+  exports: [
+    AuthService,
+    TokenService,
+    RedisLockService,
+    UserStatusService,
+    JwtAuthGuard,
+  ],
 })
 export class AuthModule {}

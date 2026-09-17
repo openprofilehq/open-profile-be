@@ -12,6 +12,8 @@ import {
 import { EventsService } from './events.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { RecordLinkClickDto } from './dto/record-link-click.dto';
+import { RecordProfileViewDto } from './dto/record-profile-view.dto';
+import { parseReferrerSource } from '../../common/utils/parse-referrer.util';
 import { EventType } from './entities/event.entity';
 import type { Request, Response } from 'express';
 import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
@@ -54,6 +56,48 @@ export class EventsController {
       anonymousId,
       metadata: { linkUrl: dto.linkUrl },
       dedupKey: `link-click:${profileId}:${dto.linkUrl}:${actorId ?? anonymousId ?? 'anon'}`,
+    });
+
+    return { recorded: true };
+  }
+
+  @Public()
+  @Post('profile-view')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  async recordProfileView(
+    @Body() dto: RecordProfileViewDto,
+    @Req() req: Request & { user?: { sub: string } },
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ recorded: boolean }> {
+    const target = await this.eventsService.findPublicProfileTarget(
+      dto.username,
+    );
+
+    if (!target) {
+      return { recorded: false };
+    }
+
+    const actorId = req.user?.sub ?? undefined;
+
+    if (actorId && actorId === target.userId) {
+      return { recorded: false };
+    }
+
+    const anonymousId = actorId ? undefined : getOrSetAnonymousId(req, res);
+    const referrerSource = dto.src ?? parseReferrerSource(dto.referrer);
+    const metadata: Record<string, unknown> = {};
+    if (dto.referrerSearchId) metadata.referrerSearchId = dto.referrerSearchId;
+    if (referrerSource) metadata.referrerSource = referrerSource;
+
+    await this.eventsService.recordEvent({
+      eventType: EventType.PROFILE_VIEWED,
+      profileId: target.profileId,
+      actorId,
+      anonymousId,
+      dedupKey: `event-dedup:PROFILE_VIEWED:${target.profileId}:${actorId ?? anonymousId}`,
+      metadata: Object.keys(metadata).length ? metadata : undefined,
     });
 
     return { recorded: true };

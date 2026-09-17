@@ -120,7 +120,7 @@ export class InvitesService {
       throw err;
     }
 
-    const signupUrl = `${env.FRONTEND_URL}/auth/register?email=${encodeURIComponent(dto.recipientEmail)}&invite=${token}`;
+    const signupUrl = `${env.FRONTEND_URL}/signup?email=${encodeURIComponent(dto.recipientEmail)}&invite=${token}`;
 
     try {
       await this.queueService.addJob(
@@ -208,7 +208,7 @@ export class InvitesService {
     if (invite.expiresAt < new Date()) {
       throw new BadRequestException({
         message: 'This invite has expired. Please ask for a new one.',
-        fallbackSignupUrl: `${env.FRONTEND_URL}/auth/register`,
+        fallbackSignupUrl: `${env.FRONTEND_URL}/signup`,
       });
     }
 
