@@ -77,10 +77,31 @@ describe('PlatformSnapshotAction', () => {
   describe('getLatestBefore', () => {
     it('returns the most recent snapshot before the given date', async () => {
       const date = new Date('2026-08-19T00:00:00.000Z');
-      const snapshot = { periodDate: '2026-08-18', totalUsers: 100 };
-      snapshotRepo.query.mockResolvedValue([snapshot]);
+      snapshotRepo.query.mockResolvedValue([
+        {
+          period_date: '2026-08-18',
+          total_users: 100,
+          published_profiles: 40,
+          profile_completion_rate: '72.50',
+          weekly_active_profiles: 12,
+          new_users_today: 3,
+          profiles_published_today: 1,
+          flagged_for_review: 0,
+          active_suspensions: 0,
+        },
+      ]);
 
-      await expect(action.getLatestBefore(date)).resolves.toEqual(snapshot);
+      await expect(action.getLatestBefore(date)).resolves.toEqual({
+        periodDate: '2026-08-18',
+        totalUsers: 100,
+        publishedProfiles: 40,
+        profileCompletionRate: 72.5,
+        weeklyActiveProfiles: 12,
+        newUsersToday: 3,
+        profilesPublishedToday: 1,
+        flaggedForReview: 0,
+        activeSuspensions: 0,
+      });
 
       const [sql, params] = snapshotRepo.query.mock.calls[0];
       expect(sql).toContain('SELECT * FROM platform_daily_snapshot');

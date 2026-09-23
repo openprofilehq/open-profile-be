@@ -8,7 +8,10 @@ import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import type { Request, Response } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
-import { TokenService } from '../services/token.service';
+import {
+  RefreshInProgressException,
+  TokenService,
+} from '../services/token.service';
 import { UserStatusService } from '../services/user-status.service';
 import { JwtPayload } from '../strategies/jwt.strategy';
 
@@ -140,6 +143,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       if (isSilent) {
         this.logger.warn(`Silent refresh failed [${reason}]`, err);
         return true;
+      }
+      if (err instanceof RefreshInProgressException) {
+        this.logger.warn(`Refresh contended [${reason}]; cookies left intact`);
+        throw err;
       }
       this.tokenService.clearTokenCookies(res);
       this.logger.warn(`Refresh failed [${reason}]`, err);

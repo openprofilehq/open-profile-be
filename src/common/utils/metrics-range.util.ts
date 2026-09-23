@@ -1,6 +1,7 @@
 export enum MetricsRange {
   THIS_WEEK = 'this_week',
   LAST_THIRTY_DAYS = 'last_thirty_days',
+  ALL_TIME = 'all_time',
 }
 
 export interface ResolvedRange {
@@ -46,6 +47,11 @@ export function resolveMetricsRange(
       const prevStart = new Date(start);
       prevStart.setUTCDate(prevStart.getUTCDate() - 30);
       return { start, end, prevStart, prevEnd };
+    }
+
+    case MetricsRange.ALL_TIME: {
+      const epoch = new Date(0);
+      return { start: epoch, end: now, prevStart: epoch, prevEnd: epoch };
     }
   }
 }
