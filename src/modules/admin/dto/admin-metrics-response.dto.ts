@@ -156,6 +156,15 @@ export class AdminMetricsRecentActivityDto {
 
   @ApiProperty({ example: 3 })
   invitesClaimedToday: number;
+
+  @ApiProperty({
+    example: 1,
+    description: 'Users currently flagged for review',
+  })
+  flaggedForReview: number;
+
+  @ApiProperty({ example: 0, description: 'Users currently suspended' })
+  activeSuspensions: number;
 }
 
 export class AdminMetricsRecentActivityResponseDto {

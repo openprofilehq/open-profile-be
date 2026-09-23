@@ -139,6 +139,8 @@ export class AdminMetricsService {
       profilesPublishedToday: snapshot?.profilesPublishedToday ?? 0,
       invitesSentToday: Number(invites.sent),
       invitesClaimedToday: Number(invites.claimed),
+      flaggedForReview: snapshot?.flaggedForReview ?? 0,
+      activeSuspensions: snapshot?.activeSuspensions ?? 0,
     };
 
     await this.trySetCache(cacheKey, result);

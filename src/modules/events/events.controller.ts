@@ -18,7 +18,14 @@ import { EventType } from './entities/event.entity';
 import type { Request, Response } from 'express';
 import { getOrSetAnonymousId } from '../../common/cookies/anonymous-id.util';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import {
+  ApiOkResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
+@ApiTags('events')
 @Controller('events')
 export class EventsController {
   private readonly logger = new Logger(EventsController.name);
@@ -27,6 +34,17 @@ export class EventsController {
   @Public()
   @Post('link-click')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Record an outbound click on a public profile',
+    description:
+      'Public. Counts links, project URLs and the CTA. Returns recorded:false when the URL is not on the profile or the viewer owns it. Throttled to 30 per minute per IP.',
+  })
+  @ApiOkResponse({
+    schema: { example: { recorded: true } },
+    description: 'recorded is false when the click was not counted',
+  })
+  @ApiResponse({ status: 422, description: 'linkUrl is not a valid URL' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async recordLinkClick(
@@ -64,6 +82,18 @@ export class EventsController {
   @Public()
   @Post('profile-view')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Record a view of a public profile',
+    description:
+      'Public. Called from the visitor browser so the real IP and cookies are used. Views by the owner are not counted, and repeat views are deduplicated per visitor for five minutes. Throttled to 30 per minute per IP.',
+  })
+  @ApiOkResponse({
+    schema: { example: { recorded: true } },
+    description:
+      'recorded is false when the profile is not public or the viewer is its owner',
+  })
+  @ApiResponse({ status: 422, description: 'Invalid payload' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded' })
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async recordProfileView(
