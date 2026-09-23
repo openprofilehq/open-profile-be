@@ -5,6 +5,7 @@ jest.mock('../../../config/env', () => ({
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { RefreshInProgressException } from '../services/token.service';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -121,5 +122,35 @@ describe('JwtAuthGuard account status enforcement', () => {
       { accessToken: 'new-access', refreshToken: 'new-refresh' },
     );
     expect(req.user).toEqual(payload);
+  });
+
+  it('keeps cookies intact when a refresh loses the race', async () => {
+    tokenService.rotateTokens.mockRejectedValue(
+      new RefreshInProgressException(),
+    );
+    const req: MockRequest = {
+      cookies: { refreshToken: 'raw-refresh' },
+      headers: {},
+    };
+
+    await expect(guard.canActivate(buildContext(req))).rejects.toBeInstanceOf(
+      RefreshInProgressException,
+    );
+    expect(tokenService.clearTokenCookies).not.toHaveBeenCalled();
+  });
+
+  it('clears cookies when the refresh token is genuinely invalid', async () => {
+    tokenService.rotateTokens.mockRejectedValue(
+      new UnauthorizedException({ error: 'SESSION_EXPIRED' }),
+    );
+    const req: MockRequest = {
+      cookies: { refreshToken: 'raw-refresh' },
+      headers: {},
+    };
+
+    await expect(guard.canActivate(buildContext(req))).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(tokenService.clearTokenCookies).toHaveBeenCalled();
   });
 });
