@@ -157,6 +157,8 @@ describe('AdminMetricsService', () => {
       snapshotAction.computeLive.mockResolvedValue({
         newUsersToday: 5,
         profilesPublishedToday: 2,
+        flaggedForReview: 4,
+        activeSuspensions: 1,
       });
       inviteMetricAction.conversionInWindow.mockResolvedValue({
         sent: '8',
@@ -169,6 +171,8 @@ describe('AdminMetricsService', () => {
       expect(result.profilesPublishedToday).toBe(2);
       expect(result.invitesSentToday).toBe(8);
       expect(result.invitesClaimedToday).toBe(3);
+      expect(result.flaggedForReview).toBe(4);
+      expect(result.activeSuspensions).toBe(1);
     });
 
     it('returns zeros when nothing happened today', async () => {

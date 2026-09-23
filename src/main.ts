@@ -89,7 +89,13 @@ async function bootstrap() {
   if (env.SWAGGER_ENABLED) {
     const config = new DocumentBuilder()
       .setTitle('Open Profile API')
-      .setDescription('REST API documentation')
+      .setDescription(
+        'REST API documentation. ' +
+          'Authenticated routes read the accessToken cookie or a Bearer header, and refresh an expired access token from the refreshToken cookie transparently. ' +
+          'When several requests refresh at once, one rotates the tokens and the others reuse the result. ' +
+          'A request that cannot is answered 401 with error REFRESH_IN_PROGRESS and its cookies left untouched; clients should retry it once after a short delay. ' +
+          '401 with error SESSION_EXPIRED means the session is genuinely over.',
+      )
       .setVersion('1.0.0')
       .addBearerAuth(
         { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
