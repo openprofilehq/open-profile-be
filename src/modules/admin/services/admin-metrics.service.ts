@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../../../common/redis/redis.service';
+import { env } from '../../../config/env';
 import {
   MetricsRange,
   resolveMetricsRange,
@@ -32,7 +33,7 @@ export class AdminMetricsService {
   async getSummary(
     range: MetricsRange = MetricsRange.THIS_WEEK,
   ): Promise<AdminMetricsSummaryDto> {
-    const cacheKey = `admin:metrics:summary:${range}`;
+    const cacheKey = this.cacheKey(`summary:${range}`);
     const cached = await this.tryGetCache<AdminMetricsSummaryDto>(cacheKey);
     if (cached) return cached;
 
@@ -40,7 +41,7 @@ export class AdminMetricsService {
 
     const [currentSnapshot, prevSnapshot, currentInvites, prevInvites] =
       await Promise.all([
-        this.snapshotAction.getLatestBefore(end),
+        this.snapshotAction.computeLive(end),
         this.snapshotAction.getLatestBefore(prevEnd),
         this.inviteMetricAction.conversionInWindow(start, end),
         this.inviteMetricAction.conversionInWindow(prevStart, prevEnd),
@@ -80,7 +81,7 @@ export class AdminMetricsService {
   async getSearchActivity(
     range: MetricsRange = MetricsRange.THIS_WEEK,
   ): Promise<AdminMetricsSearchActivityDto> {
-    const cacheKey = `admin:metrics:search-activity:${range}`;
+    const cacheKey = this.cacheKey(`search-activity:${range}`);
     const cached =
       await this.tryGetCache<AdminMetricsSearchActivityDto>(cacheKey);
     if (cached) return cached;
@@ -118,7 +119,7 @@ export class AdminMetricsService {
   }
 
   async getRecentActivity(): Promise<AdminMetricsRecentActivityDto> {
-    const cacheKey = 'admin:metrics:recent-activity:today';
+    const cacheKey = this.cacheKey('recent-activity:today');
     const cached =
       await this.tryGetCache<AdminMetricsRecentActivityDto>(cacheKey);
     if (cached) return cached;
@@ -129,7 +130,7 @@ export class AdminMetricsService {
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
     const [snapshot, invites] = await Promise.all([
-      this.snapshotAction.getLatestBefore(tomorrow),
+      this.snapshotAction.computeLive(),
       this.inviteMetricAction.conversionInWindow(today, tomorrow),
     ]);
 
@@ -138,6 +139,8 @@ export class AdminMetricsService {
       profilesPublishedToday: snapshot?.profilesPublishedToday ?? 0,
       invitesSentToday: Number(invites.sent),
       invitesClaimedToday: Number(invites.claimed),
+      flaggedForReview: snapshot?.flaggedForReview ?? 0,
+      activeSuspensions: snapshot?.activeSuspensions ?? 0,
     };
 
     await this.trySetCache(cacheKey, result);
@@ -147,7 +150,7 @@ export class AdminMetricsService {
   async getPlatformHealth(
     range: MetricsRange = MetricsRange.THIS_WEEK,
   ): Promise<AdminMetricsPlatformHealthDto> {
-    const cacheKey = `admin:metrics:platform-health:${range}`;
+    const cacheKey = this.cacheKey(`platform-health:${range}`);
     const cached =
       await this.tryGetCache<AdminMetricsPlatformHealthDto>(cacheKey);
     if (cached) return cached;
@@ -156,7 +159,7 @@ export class AdminMetricsService {
 
     const [currentSnapshot, prevSnapshot, publishingTimeseries] =
       await Promise.all([
-        this.snapshotAction.getLatestBefore(end),
+        this.snapshotAction.computeLive(end),
         this.snapshotAction.getLatestBefore(prevEnd),
         this.snapshotAction.publishingTimeseriesInWindow(start, end),
       ]);
@@ -174,6 +177,10 @@ export class AdminMetricsService {
 
     await this.trySetCache(cacheKey, result);
     return result;
+  }
+
+  private cacheKey(suffix: string): string {
+    return `admin:metrics:${env.DATABASE_NAME}:${suffix}`;
   }
 
   private compareCount(current: number, previous: number): MetricComparisonDto {

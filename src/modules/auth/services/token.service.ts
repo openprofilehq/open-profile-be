@@ -11,6 +11,15 @@ import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../../users/entities/user.entity';
 import { JwtPayload } from '../strategies/jwt.strategy';
 import { RedisLockService } from './redis-lock.service';
+
+export class RefreshInProgressException extends UnauthorizedException {
+  constructor() {
+    super({
+      error: 'REFRESH_IN_PROGRESS',
+      message: 'Your session is being refreshed. Please retry.',
+    });
+  }
+}
 import { resolveAuthCookieOptions } from '../utils/auth-cookie-policy';
 
 const ACCESS_TOKEN_COOKIE = 'accessToken';
@@ -89,10 +98,10 @@ export class TokenService {
 
     const lockAcquired = await this.redisLockService.acquireLock(hashedToken);
     if (!lockAcquired) {
-      throw new UnauthorizedException({
-        error: 'SESSION_EXPIRED',
-        message: 'Your session has expired. Please log in again.',
-      });
+      const rotatedByWinner =
+        await this.redisLockService.waitForGrace(hashedToken);
+      if (rotatedByWinner) return rotatedByWinner;
+      throw new RefreshInProgressException();
     }
 
     try {
@@ -106,6 +115,9 @@ export class TokenService {
       });
 
       if (!matchedRecord) {
+        const rotatedRecently =
+          await this.redisLockService.readGrace(hashedToken);
+        if (rotatedRecently) return rotatedRecently;
         this.logger.warn(
           `[rotateTokens] No matching record found tokenHash=${hashedToken.slice(0, 16)}...`,
         );
@@ -160,11 +172,11 @@ export class TokenService {
       );
 
       const accessToken = await this.generateAccessToken(user);
+      const rotated = { accessToken, refreshToken: newRawRefreshToken };
 
-      return {
-        accessToken,
-        refreshToken: newRawRefreshToken,
-      };
+      await this.redisLockService.storeGrace(hashedToken, rotated);
+
+      return rotated;
     } finally {
       await this.redisLockService.releaseLock(hashedToken);
     }
