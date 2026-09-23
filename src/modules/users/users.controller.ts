@@ -44,6 +44,7 @@ export class UsersController {
   @Post()
   @Roles(UserRole.ADMIN)
   @UseGuards(RolesGuard)
+  @ApiResponse({ status: 403, description: 'Admin role required' })
   @ApiOperation({ summary: 'Create a user' })
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);
@@ -52,6 +53,7 @@ export class UsersController {
   @Get()
   @Roles(UserRole.ADMIN)
   @UseGuards(RolesGuard)
+  @ApiResponse({ status: 403, description: 'Admin role required' })
   @ApiOperation({ summary: 'List users (paginated)' })
   findAll(@Query() pagination: PaginationDto) {
     return this.usersService.findAll(pagination);
@@ -60,6 +62,7 @@ export class UsersController {
   @Get(':id')
   @Roles(UserRole.ADMIN)
   @UseGuards(RolesGuard)
+  @ApiResponse({ status: 403, description: 'Admin role required' })
   @ApiOperation({ summary: 'Get a user by id' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.findOne(id);
@@ -68,6 +71,7 @@ export class UsersController {
   @Patch(':id')
   @Roles(UserRole.ADMIN)
   @UseGuards(RolesGuard)
+  @ApiResponse({ status: 403, description: 'Admin role required' })
   @ApiOperation({ summary: 'Update a user' })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
@@ -76,6 +80,7 @@ export class UsersController {
   @Delete(':id')
   @Roles(UserRole.ADMIN)
   @UseGuards(RolesGuard)
+  @ApiResponse({ status: 403, description: 'Admin role required' })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a user' })
   remove(@Param('id', ParseUUIDPipe) id: string) {

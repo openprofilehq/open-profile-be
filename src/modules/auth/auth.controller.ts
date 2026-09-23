@@ -59,7 +59,42 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Log in with email and password' })
+  @ApiOperation({
+    summary: 'Log in with email and password',
+    description:
+      'Email is matched case-insensitively. For an account that has not verified its email, the password is still checked, a new code is sent, and the response carries requiresVerification: true instead of a user; no session cookies are set.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Logged in, or verification required',
+    schema: {
+      oneOf: [
+        {
+          example: {
+            status: 'success',
+            user: {
+              id: 'uuid',
+              email: 'user@example.com',
+              role: 'user',
+              onboardingComplete: true,
+            },
+          },
+        },
+        {
+          example: {
+            status: 'success',
+            requiresVerification: true,
+            message: 'A verification code has been sent to your email address.',
+          },
+        },
+      ],
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Invalid email or password' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many attempts; account temporarily locked',
+  })
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
@@ -177,7 +212,15 @@ export class AuthController {
   @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify OTP for email verification' })
+  @ApiOperation({
+    summary: 'Verify OTP for email verification',
+    description:
+      'Wrong codes are counted. After too many failures the code is invalidated and a new one must be requested.',
+  })
+  @ApiResponse({ status: 200, description: 'Verified; session cookies set' })
+  @ApiResponse({ status: 400, description: 'OTP_INVALID, or no code on file' })
+  @ApiResponse({ status: 409, description: 'Account already verified' })
+  @ApiResponse({ status: 410, description: 'OTP_EXPIRED' })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
     @Req() req: Request,
