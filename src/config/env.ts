@@ -46,7 +46,7 @@ export const env = createEnv({
       .transform((val) => val.split(',').map((v) => v.trim())),
     SWAGGER_ENABLED: z
       .union([z.boolean(), z.enum(['true', 'false'])])
-      .default(true)
+      .default(false)
       .transform((v) => v === true || v === 'true'),
     RESEND_API_KEY: z.string().min(1),
     MAIL_FROM: z.string().min(1),
