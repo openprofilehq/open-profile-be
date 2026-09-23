@@ -29,7 +29,9 @@ export class RedisIoAdapter extends IoAdapter {
       throw err;
     }
 
-    this.adapterConstructor = createAdapter(this.pubClient, this.subClient);
+    this.adapterConstructor = createAdapter(this.pubClient, this.subClient, {
+      key: `socket.io:${env.DATABASE_NAME}`,
+    });
     this.logger.log('Redis adapter connected for Socket.IO');
   }
 
