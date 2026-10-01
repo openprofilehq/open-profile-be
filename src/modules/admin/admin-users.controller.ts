@@ -47,8 +47,9 @@ export class AdminUsersController {
   @ApiOperation({
     summary: 'Search users',
     description:
-      'Search users by full name or username (case-insensitive, minimum ' +
-      '2 characters). Exact username matches rank first. Paginated.',
+      'Search users by profile username, name or email (case-insensitive, ' +
+      'minimum 2 characters). An exact username or email match ranks first. ' +
+      'Users without a profile are found by name or email. Paginated.',
   })
   @ApiResponse({
     status: 200,
