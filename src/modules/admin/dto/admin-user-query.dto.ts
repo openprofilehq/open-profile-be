@@ -21,8 +21,8 @@ export class AdminUsersQueryDto {
     example: 'john',
     minLength: USER_SEARCH_MIN_LENGTH,
     description:
-      'Search term matched against the user full name or username ' +
-      '(case-insensitive).',
+      'Search term matched against profile username, name and email ' +
+      '(case-insensitive). % and _ are matched literally.',
   })
   @IsString()
   @Length(USER_SEARCH_MIN_LENGTH)

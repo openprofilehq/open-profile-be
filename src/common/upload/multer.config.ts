@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -12,10 +13,19 @@ export const imageFileFilter = (
 ) => {
   const validExt = allowedExtensions.test(extname(file.originalname));
   const validMime = allowedMimeTypes.includes(file.mimetype);
-  cb(null, validExt && validMime);
+  if (!validExt || !validMime) {
+    cb(new BadRequestException(IMAGE_TYPE_MESSAGE), false);
+    return;
+  }
+  cb(null, true);
 };
 
-export const imageLimits = { fileSize: 2 * 1024 * 1024 };
+export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+export const IMAGE_SIZE_MESSAGE = 'Image must be 5 MB or smaller.';
+export const IMAGE_TYPE_MESSAGE =
+  'Only JPG, PNG, WebP or GIF images are allowed.';
+
+export const imageLimits = { fileSize: IMAGE_MAX_BYTES + 1024 * 1024 };
 
 export const createImageStorage = (subdirectory: string) =>
   diskStorage({
