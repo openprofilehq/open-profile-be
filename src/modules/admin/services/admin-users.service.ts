@@ -68,7 +68,7 @@ export class AdminUsersService {
 
     return {
       id: user.id,
-      fullName: user.fullName,
+      fullName: profile?.fullName ?? user.fullName,
       username: profile?.username ?? user.username,
       email: user.email,
       status: user.status,
