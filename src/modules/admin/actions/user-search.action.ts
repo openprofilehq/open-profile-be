@@ -36,6 +36,10 @@ export type SearchUsersOptions = {
   limit?: number;
 };
 
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 @Injectable()
 export class UserSearchAction extends AbstractModelAction<User> {
   constructor(
@@ -65,10 +69,17 @@ export class UserSearchAction extends AbstractModelAction<User> {
 
     const baseQuery = this.repo
       .createQueryBuilder('u')
+      .leftJoin('profiles', 'p', 'p.user_id = u.id AND p.deleted_at IS NULL')
       .where('u.deleted_at IS NULL')
-      .andWhere('(u.full_name ILIKE :pattern OR u.username ILIKE :pattern)', {
-        pattern: `%${normalizedQ}%`,
-      });
+      .andWhere(
+        `(
+          p.username ILIKE :pattern
+          OR p.full_name ILIKE :pattern
+          OR u.full_name ILIKE :pattern
+          OR u.email ILIKE :pattern
+        )`,
+        { pattern: `%${escapeLikePattern(normalizedQ)}%` },
+      );
 
     const [total, results] = await Promise.all([
       baseQuery.getCount(),
@@ -76,17 +87,17 @@ export class UserSearchAction extends AbstractModelAction<User> {
         .clone()
         .select([
           'u.id                                        AS "id"',
-          'u.full_name                                 AS "fullName"',
-          'u.username                                  AS "username"',
+          'COALESCE(p.full_name, u.full_name)          AS "fullName"',
+          'p.username                                  AS "username"',
           'u.email                                     AS "email"',
           'u.role                                      AS "role"',
           'u.status                                    AS "status"',
-          'u.is_published                              AS "isPublished"',
-          'u.photo_url                                 AS "photoUrl"',
+          'COALESCE(p.is_published, false)             AS "isPublished"',
+          'p.photo_url                                 AS "photoUrl"',
           'u.created_at                                AS "createdAt"',
         ])
         .orderBy(
-          'CASE WHEN lower(u.username) = lower(:q) THEN 1 ELSE 0 END',
+          'CASE WHEN lower(p.username) = lower(:q) OR lower(u.email) = lower(:q) THEN 1 ELSE 0 END',
           'DESC',
         )
         .addOrderBy('u.created_at', 'DESC')
